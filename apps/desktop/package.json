@@ -1,0 +1,43 @@
+{
+  "name": "@gepetta/desktop",
+  "productName": "Gepetta Studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Estudio de animación stop-motion y cuadro a cuadro",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "build:main": "node build.mjs",
+    "dev": "concurrently -k -n web,app -c yellow,cyan \"pnpm --filter @gepetta/studio dev\" \"wait-on tcp:127.0.0.1:5173 && node build.mjs && cross-env GEPETTA_DEV_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "pnpm --filter @gepetta/studio build && node build.mjs && node copy-renderer.mjs",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit",
+    "dist": "pnpm build && electron-builder",
+    "dist:dir": "pnpm build && electron-builder --dir"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "concurrently": "9.2.5",
+    "cross-env": "10.1.0",
+    "electron": "38.8.6",
+    "electron-builder": "26.0.12",
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3",
+    "wait-on": "8.0.5"
+  },
+  "build": {
+    "appId": "com.gepetta.studio",
+    "productName": "Gepetta Studio",
+    "directories": { "output": "release" },
+    "files": ["dist-electron/**", "renderer/**", "package.json"],
+    "mac": {
+      "category": "public.app-category.video",
+      "target": ["dmg"],
+      "extendInfo": {
+        "NSCameraUsageDescription": "Gepetta Studio usa la cámara para sacar las fotos de tu animación.",
+        "NSMicrophoneUsageDescription": "Gepetta Studio puede grabar sonido para tu animación."
+      }
+    },
+    "win": { "target": ["nsis"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  }
+}

@@ -1,0 +1,46 @@
+const PATHS = {
+  camera: "M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
+  play: "M7 5v14l12-7Z",
+  stop: "M6 6h12v12H6Z",
+  tail: "M4 5v14 M9 5v14l11-7Z",
+  loop: "M17 2l3 3-3 3 M4 11V9a4 4 0 0 1 4-4h12 M7 22l-3-3 3-3 M20 13v2a4 4 0 0 1-4 4H4",
+  onion: "M9 12a5 5 0 1 0 10 0 5 5 0 0 0-10 0Z M5 12a5 5 0 0 1 5-5 M3 12a7 7 0 0 1 7-7",
+  trash: "M4 7h16 M10 11v6 M14 11v6 M6 7l1 13h10l1-13 M9 7V4h6v3",
+  copy: "M8 8h11v11H8Z M5 16V5h11",
+  plus: "M12 5v14 M5 12h14",
+  minus: "M5 12h14",
+  history: "M3 12a9 9 0 1 0 3-6.7L3 8 M3 3v5h5 M12 7v5l3 3",
+  export: "M12 3v12 M7 10l5 5 5-5 M5 21h14",
+  import: "M12 15V3 M7 8l5-5 5 5 M5 21h14",
+  back: "M15 5l-7 7 7 7",
+  undo: "M9 14L4 9l5-5 M4 9h11a5 5 0 0 1 0 10h-3",
+  redo: "M15 14l5-5-5-5 M20 9H9a5 5 0 0 0 0 10h3",
+  settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z",
+  left: "M14 6l-6 6 6 6",
+  right: "M10 6l6 6-6 6",
+  close: "M6 6l12 12 M18 6L6 18",
+  image: "M4 5h16v14H4Z M4 16l5-5 4 4 3-3 4 4 M15 9.5a1.5 1.5 0 1 0 0-.01",
+  video: "M3 6h12v12H3Z M15 10l6-3v10l-6-3",
+  folder: "M3 6h6l2 2h10v11H3Z",
+  film: "M4 4h16v16H4Z M8 4v16 M16 4v16 M4 8h4 M4 12h4 M4 16h4 M16 8h4 M16 12h4 M16 16h4",
+} as const;
+
+export type IconName = keyof typeof PATHS;
+
+export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={PATHS[name]} />
+    </svg>
+  );
+}

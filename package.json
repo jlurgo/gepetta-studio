@@ -1,0 +1,21 @@
+{
+  "name": "gepetta-studio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Estudio de animaci\u00f3n stop-motion y cuadro a cuadro",
+  "packageManager": "pnpm@10.18.0",
+  "scripts": {
+    "dev": "pnpm --filter @gepetta/desktop dev",
+    "dev:web": "pnpm --filter @gepetta/studio dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "dist": "pnpm --filter @gepetta/desktop dist"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  }
+}
