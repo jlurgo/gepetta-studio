@@ -235,7 +235,7 @@ export function Stage() {
       let probesToDraw: LiveFrame | null = null;
       liveRect.current = null;
       if (view === "live") {
-        const live = useCamera.getState().source?.live();
+        const live = useCamera.getState().live();
         if (live) {
           drawContained(ctx, live.image, live, size);
           // Where the picture landed, in CSS pixels of the stage, for pointer interactions.

@@ -10,6 +10,7 @@ export function openPhone(sessionId: string): CameraSource {
   const frames = new FrameSlot();
   const listeners = new Listeners();
   let controls: CameraControl[] = phoneControls(sessionId);
+  let rotation: number | null = null;
   const pending = new Map<string, { resolve(b: Blob): void; reject(e: Error): void }>();
 
   const unsubscribe = onRemoteMessage((sid, header, payload) => {
@@ -17,6 +18,10 @@ export function openPhone(sessionId: string): CameraSource {
     switch (header.t) {
       case "preview":
         if (payload) frames.push(payload.slice(), () => listeners.emit());
+        if ((header.rotation ?? null) !== rotation) {
+          rotation = header.rotation ?? null;
+          listeners.emit();
+        }
         break;
       case "controls":
         controls = header.controls;
@@ -45,6 +50,7 @@ export function openPhone(sessionId: string): CameraSource {
     id: `phone:${sessionId}`,
     kind: "phone",
     live: () => frames.get(),
+    autoRotation: () => rotation,
     controls: () => controls,
     async setControl(control: CameraControl, value: ControlValue) {
       await sendToPhone(sessionId, { t: "setControl", key: control.key, value });

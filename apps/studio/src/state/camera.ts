@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { dslrAvailable, listDslrs, openDslr } from "../capture/dslr";
 import { openPhone } from "../capture/phone";
 import { useRemote } from "../capture/remote";
-import type { CameraSource, SourceOption } from "../capture/types";
+import { type CameraSource, type LiveFrame, type SourceOption, quarterTurns, rotateFrame } from "../capture/types";
 import { RESOLUTIONS, describeMediaError, listWebcams, openWebcam } from "../capture/webcam";
 import type { DslrErrorCode } from "../native";
 import { useBusy } from "./busy";
@@ -27,6 +27,16 @@ interface CameraState {
   setPointerTool(tool: "none" | "focus" | "probe"): void;
   /** The current camera's name as listed. */
   sourceLabel(): string | null;
+  /** Turn chosen for each camera (by name): "auto" follows the device when it knows (phones). */
+  rotations: Record<string, "auto" | number>;
+  /** Clockwise degrees applied to the current camera's picture. */
+  rotation(): 0 | 90 | 180 | 270;
+  /** Turns the current camera's picture a quarter turn (±90) from what is shown now, or back to automatic. */
+  rotate(delta: 90 | -90 | "auto"): void;
+  /** What the device last said about its orientation (phones), so the UI can show it. */
+  autoRotation: number | null;
+  /** The live picture, upright. */
+  live(): LiveFrame | null;
   start(): Promise<void>;
   stop(): void;
   select(id: string): Promise<void>;
@@ -63,9 +73,27 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(e);
 }
 
+const ROTATIONS_KEY = "gepetta.camera.rotations";
+
+function loadRotations(): Record<string, "auto" | number> {
+  try {
+    return JSON.parse(localStorage.getItem(ROTATIONS_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveRotations(rotations: Record<string, "auto" | number>) {
+  try {
+    localStorage.setItem(ROTATIONS_KEY, JSON.stringify(rotations));
+  } catch {
+    // Only a convenience.
+  }
+}
+
 /** A small JPEG data URL of the current live frame. */
-function snapshot(source: CameraSource | null): string | null {
-  const live = source?.live();
+function snapshot(): string | null {
+  const live = useCamera.getState().live();
   if (!live) return null;
   const scale = Math.min(1, 480 / live.width);
   const canvas = document.createElement("canvas");
@@ -96,7 +124,8 @@ export const useCamera = create<CameraState>((set, get) => {
     offChange = null;
     get().source?.close();
     set({ source, controls: source?.controls() ?? [] });
-    if (source) offChange = source.onChange(() => set({ controls: source.controls() }));
+    if (source)
+      offChange = source.onChange(() => set({ controls: source.controls(), autoRotation: source.autoRotation?.() ?? null }));
   }
 
   async function open(id: string | null): Promise<CameraSource> {
@@ -158,6 +187,30 @@ export const useCamera = create<CameraState>((set, get) => {
     error: null,
     pointerTool: "none",
     overview: null,
+    rotations: loadRotations(),
+    autoRotation: null,
+
+    rotation() {
+      const { source } = get();
+      const label = get().sourceLabel();
+      const chosen = label ? get().rotations[label] : undefined;
+      if (typeof chosen === "number") return quarterTurns(chosen);
+      return quarterTurns(source?.autoRotation?.() ?? 0);
+    },
+
+    rotate(delta) {
+      const label = get().sourceLabel();
+      if (!label) return;
+      const value: "auto" | number = delta === "auto" ? "auto" : quarterTurns(get().rotation() + delta);
+      const rotations = { ...get().rotations, [label]: value };
+      set({ rotations, overview: null });
+      saveRotations(rotations);
+    },
+
+    live() {
+      const frame = get().source?.live();
+      return frame ? rotateFrame(frame, get().rotation()) : null;
+    },
 
     setPointerTool(tool) {
       set({ pointerTool: tool });
@@ -218,7 +271,7 @@ export const useCamera = create<CameraState>((set, get) => {
 
     async setControl(control, value) {
       // Remember the whole picture before magnifying, to show where the magnifier is looking.
-      if (control.kind === "magnify" && value !== "1" && control.value === "1") set({ overview: snapshot(get().source) });
+      if (control.kind === "magnify" && value !== "1" && control.value === "1") set({ overview: snapshot() });
       try {
         await get().source?.setControl(control, value);
       } catch (e) {

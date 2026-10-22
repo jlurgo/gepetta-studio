@@ -1,5 +1,6 @@
 import { type CaptureMeta, type FrameId, type MediaRef, type Op, newId } from "@gepetta/core";
 import { onRemoteMessage } from "../capture/remote";
+import { rotateBlob } from "../capture/types";
 import { ingestImage, isImageFile, sortFiles } from "../media/ingest";
 import { grabStill } from "../media/video";
 import { runTask, useBusy } from "./busy";
@@ -51,8 +52,9 @@ export async function capture() {
       meta.focusPosition = focus.position;
       meta.focusOrigin = focus.origin;
     }
+    const rotation = useCamera.getState().rotation();
     const still = await source.capture(captureAverage);
-    await insertStill(still.image, still.raw?.blob ?? null, "Foto", meta);
+    await insertStill(await rotateBlob(still.image, rotation), still.raw?.blob ?? null, "Foto", meta);
   } catch (e) {
     useBusy.getState().notify(e instanceof Error ? e.message : "No se pudo sacar la foto", "error");
   } finally {
@@ -64,11 +66,10 @@ export async function capture() {
 onRemoteMessage((_sessionId, header, payload) => {
   if (header.t !== "photo" || header.requestId !== null || !payload) return;
   if (!useEditor.getState().filmId) return;
-  insertStill(new Blob([payload.slice()], { type: header.mime || "image/jpeg" }), null, "Foto del celular", {
-    sourceKind: "phone",
-  }).catch((e) =>
-    useBusy.getState().notify(e instanceof Error ? e.message : "No se pudo agregar la foto", "error"),
-  );
+  const photo = new Blob([payload.slice()], { type: header.mime || "image/jpeg" });
+  rotateBlob(photo, header.rotation ?? 0)
+    .then((upright) => insertStill(upright, null, "Foto del celular", { sourceKind: "phone" }))
+    .catch((e) => useBusy.getState().notify(e instanceof Error ? e.message : "No se pudo agregar la foto", "error"));
 });
 
 export async function importImages(files: File[]) {

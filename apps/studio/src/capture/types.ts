@@ -31,6 +31,8 @@ export interface CameraSource {
   setControl(control: CameraControl, value: ControlValue): Promise<void>;
   /** `average` > 1 averages that many frames to reduce noise (webcams only). */
   capture(average: number): Promise<CapturedStill>;
+  /** Clockwise degrees the picture must turn to be upright, when the device knows (phones). */
+  autoRotation?(): number | null;
   /** Called whenever controls or readiness change. Returns an unsubscribe function. */
   onChange(cb: () => void): () => void;
   close(): void;
@@ -77,5 +79,50 @@ export class Listeners {
   }
   emit() {
     this.set.forEach((cb) => cb());
+  }
+}
+
+/** Normalizes any angle to 0, 90, 180 or 270. */
+export function quarterTurns(deg: number): 0 | 90 | 180 | 270 {
+  return ((((Math.round(deg / 90) * 90) % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+}
+
+let turnCanvas: HTMLCanvasElement | null = null;
+
+/** The frame turned `deg` degrees clockwise (reuses one canvas; draw it before the next call). */
+export function rotateFrame(frame: LiveFrame, deg: number): LiveFrame {
+  const turn = quarterTurns(deg);
+  if (turn === 0) return frame;
+  const side = turn === 90 || turn === 270;
+  const width = side ? frame.height : frame.width;
+  const height = side ? frame.width : frame.height;
+  turnCanvas ??= document.createElement("canvas");
+  if (turnCanvas.width !== width || turnCanvas.height !== height) {
+    turnCanvas.width = width;
+    turnCanvas.height = height;
+  }
+  const ctx = turnCanvas.getContext("2d")!;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.translate(width / 2, height / 2);
+  ctx.rotate((turn * Math.PI) / 180);
+  ctx.drawImage(frame.image, -frame.width / 2, -frame.height / 2, frame.width, frame.height);
+  return { image: turnCanvas, width, height };
+}
+
+/** A still turned `deg` degrees clockwise, re-encoded as JPEG (EXIF orientation applied first). */
+export async function rotateBlob(blob: Blob, deg: number): Promise<Blob> {
+  const turn = quarterTurns(deg);
+  if (turn === 0) return blob;
+  const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
+  try {
+    const side = turn === 90 || turn === 270;
+    const canvas = new OffscreenCanvas(side ? bitmap.height : bitmap.width, side ? bitmap.width : bitmap.height);
+    const ctx = canvas.getContext("2d")!;
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((turn * Math.PI) / 180);
+    ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+    return await canvas.convertToBlob({ type: "image/jpeg", quality: 0.95 });
+  } finally {
+    bitmap.close();
   }
 }

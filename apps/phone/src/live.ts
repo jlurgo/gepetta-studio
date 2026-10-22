@@ -1,3 +1,4 @@
+import { uprightRotation, watchOrientation } from "./orientation";
 import {
   type CameraControl,
   type ControlValue,
@@ -296,7 +297,7 @@ export function renderLive(root: HTMLElement) {
     encoding = true;
     void toJpeg(previewCanvas, 0.7)
       .then((bytes) => {
-        if (bytes) conn?.send({ t: "preview", w, h: hgt }, bytes);
+        if (bytes) conn?.send({ t: "preview", w, h: hgt, rotation: uprightRotation() }, bytes);
       })
       .finally(() => (encoding = false));
   }
@@ -312,8 +313,9 @@ export function renderLive(root: HTMLElement) {
     void flash.offsetWidth;
     flash.classList.add("on");
     try {
+      const rotation = uprightRotation();
       const photo = await takePhoto();
-      const sent = !!conn?.send({ t: "photo", requestId, mime: photo.mime }, photo.bytes);
+      const sent = !!conn?.send({ t: "photo", requestId, mime: photo.mime, rotation }, photo.bytes);
       if (!sent) toast("Sin conexión con la compu: la foto no se envió.", "error");
       else if (!requestId) toast("¡Foto enviada!");
     } catch (error) {
@@ -362,6 +364,9 @@ export function renderLive(root: HTMLElement) {
   }
   document.addEventListener("visibilitychange", () => void keepAwake());
   document.addEventListener("click", () => void keepAwake(), { once: true });
+  // The motion sensor tells which way the phone is held (iOS asks permission on the first tap).
+  void watchOrientation();
+  document.addEventListener("click", () => void watchOrientation(), { once: true });
 
   // ---- Errors ----
   function showError(message: string) {

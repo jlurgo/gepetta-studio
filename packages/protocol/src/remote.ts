@@ -14,10 +14,13 @@ export type RemoteMode = "live" | "photo";
 export type PhoneMessage =
   | { t: "hello"; protocol: number; device: string; mode: RemoteMode }
   | { t: "controls"; controls: CameraControl[] }
-  /** Payload: JPEG preview frame. */
-  | { t: "preview"; w: number; h: number }
+  /**
+   * Payload: JPEG preview frame. `rotation`: clockwise degrees (0/90/180/270)
+   * the picture must turn to be upright, from the phone's motion sensor; absent when unknown.
+   */
+  | { t: "preview"; w: number; h: number; rotation?: number }
   /** Payload: full-resolution photo. requestId is null when shot from the phone itself. */
-  | { t: "photo"; requestId: string | null; mime: string }
+  | { t: "photo"; requestId: string | null; mime: string; rotation?: number }
   | { t: "error"; requestId?: string; message: string };
 
 export type DesktopMessage =

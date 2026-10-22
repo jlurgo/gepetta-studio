@@ -23,6 +23,39 @@ function useDslrStatus(): DslrStatus | null {
   return status;
 }
 
+/** Turn the picture of cameras mounted or held sideways; phones can follow their motion sensor. */
+function RotationControl() {
+  const label = useCamera((s) => s.sourceLabel());
+  const chosen = useCamera((s) => (label ? s.rotations[label] : undefined));
+  const canAuto = useCamera((s) => typeof s.source?.autoRotation === "function");
+  const rotation = useCamera((s) => s.rotation());
+  // Re-render when a phone reports a new orientation.
+  useCamera((s) => s.autoRotation);
+  const auto = typeof chosen !== "number";
+  const { rotate } = useCamera.getState();
+  return (
+    <div className="control">
+      <span>Orientación</span>
+      <div className="action-row rotation">
+        <button className="btn small" onClick={() => rotate(-90)} title="Girar a la izquierda">
+          ⟲
+        </button>
+        <span className="rotation-value">
+          {auto && canAuto ? `Automática · ${rotation}°` : `${rotation}°`}
+        </span>
+        <button className="btn small" onClick={() => rotate(90)} title="Girar a la derecha">
+          ⟳
+        </button>
+        {canAuto && !auto && (
+          <button className="btn small ghost" onClick={() => rotate("auto")} title="Seguir cómo se sostiene el celular">
+            Auto
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function CameraPanel() {
   const { webcams, dslrs, selectedId, resolutionId, source, controls, error, opening } = useCamera();
   const { select, selectResolution, setControl, start, refreshDevices } = useCamera.getState();
@@ -82,6 +115,7 @@ export function CameraPanel() {
           )}
         </select>
       </label>
+      {source && <RotationControl />}
       <button className="btn small ghost" onClick={() => void search()} disabled={searching}>
         {searching ? "Buscando…" : "Buscar cámaras conectadas"}
       </button>

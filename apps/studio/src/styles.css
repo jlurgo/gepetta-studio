@@ -1124,3 +1124,15 @@ input[type="range"] {
   letter-spacing: 0.06em;
   font-weight: 700;
 }
+
+.rotation {
+  align-items: center;
+}
+
+.rotation-value {
+  min-width: 7.5em;
+  text-align: center;
+  color: var(--text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
