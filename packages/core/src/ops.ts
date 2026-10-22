@@ -1,5 +1,5 @@
-import type { Channel, FilmState, Frame, FrameId, ImageLayer, LayerId, MediaRef } from "./model";
-import { IDENTITY_TRANSFORM } from "./model";
+import type { FilmState, Frame, FrameId, ImageLayer, LayerId, MediaRef, Track, TrackId } from "./model";
+import { IDENTITY_TRANSFORM, PHOTO_TRACK, trackOf } from "./model";
 
 /**
  * Every change to a film is one of these serializable operations. They address
@@ -23,20 +23,18 @@ export type Op =
   | { type: "frame.duplicate"; sourceFrameId: FrameId; frameId: FrameId; layerIds: LayerId[] }
   | { type: "frame.setHold"; frameId: FrameId; hold: number }
   | { type: "frame.move"; frameId: FrameId; afterFrameId: FrameId | null }
-  | { type: "layer.add"; frameId: FrameId; layerId: LayerId; media: MediaRef; name: string }
+  /** Puts a picture in a frame's cell of a "cells" track (replacing what was there). */
+  | { type: "layer.add"; frameId: FrameId; layerId: LayerId; media: MediaRef; name: string; trackId?: TrackId }
   | { type: "layer.remove"; frameId: FrameId; layerId: LayerId }
   | { type: "layer.update"; frameId: FrameId; layerId: LayerId; patch: LayerPatch }
-  /** Moves a layer to `index` in its frame's stack (0 = bottom). */
-  | { type: "layer.move"; frameId: FrameId; layerId: LayerId; index: number }
-  | { type: "channel.add"; channel: Channel }
-  | { type: "channel.remove"; channelId: LayerId }
-  | { type: "channel.update"; channelId: LayerId; patch: ChannelPatch }
-  | { type: "channel.move"; channelId: LayerId; index: number };
+  | { type: "track.add"; track: Track }
+  | { type: "track.remove"; trackId: TrackId }
+  | { type: "track.update"; trackId: TrackId; patch: TrackPatch }
+  /** Moves a track to `index` in the stack (0 = bottom). */
+  | { type: "track.move"; trackId: TrackId; index: number };
 
 export type LayerPatch = Partial<Pick<ImageLayer, "name" | "visible" | "opacity" | "transform">>;
-export type ChannelPatch = Partial<
-  Pick<Channel, "name" | "visible" | "opacity" | "transform" | "placement" | "exported" | "from" | "to">
->;
+export type TrackPatch = Partial<Pick<Track, "name" | "visible" | "opacity" | "transform" | "exported" | "from" | "to">>;
 
 export type OpType = Op["type"];
 
@@ -54,9 +52,9 @@ function requireLayer(frame: Frame, id: LayerId) {
   return i;
 }
 
-function requireChannel(film: FilmState, id: LayerId) {
-  const i = film.channels.findIndex((c) => c.id === id);
-  if (i < 0) throw new OpError("El canal ya no existe");
+function requireTrack(film: FilmState, id: TrackId) {
+  const i = film.tracks.findIndex((t) => t.id === id);
+  if (i < 0) throw new OpError("El track ya no existe");
   return i;
 }
 
@@ -71,12 +69,12 @@ function withFrame(film: FilmState, frame: Frame): FilmState {
   return { ...film, frames: { ...film.frames, [frame.id]: frame } };
 }
 
-/** Channels that started or ended on a deleted frame move to its neighbors. */
-function channelsWithout(film: FilmState, frameId: FrameId): Channel[] {
+/** Tracks that started or ended on a deleted frame move to its neighbors. */
+function tracksWithout(film: FilmState, frameId: FrameId): Track[] {
   const i = film.frameOrder.indexOf(frameId);
   const next = film.frameOrder[i + 1] ?? null;
   const prev = i > 0 ? film.frameOrder[i - 1]! : null;
-  return film.channels.map((c) => {
+  return film.tracks.map((c) => {
     if (c.from !== frameId && c.to !== frameId) return c;
     return { ...c, from: c.from === frameId ? next : c.from, to: c.to === frameId ? prev : c.to };
   });
@@ -113,7 +111,8 @@ export function applyOp(film: FilmState, op: Op): FilmState {
               {
                 id: op.layerId,
                 kind: "image",
-                name: "Base",
+                track: PHOTO_TRACK,
+                name: "Foto",
                 media: op.media,
                 visible: true,
                 opacity: 1,
@@ -131,7 +130,7 @@ export function applyOp(film: FilmState, op: Op): FilmState {
         ...film,
         frameOrder: film.frameOrder.filter((id) => id !== op.frameId),
         frames,
-        channels: channelsWithout(film, op.frameId),
+        tracks: tracksWithout(film, op.frameId),
       };
     }
     case "frame.duplicate": {
@@ -161,16 +160,21 @@ export function applyOp(film: FilmState, op: Op): FilmState {
     case "layer.add": {
       const frame = requireFrame(film, op.frameId);
       if (frame.layers.some((l) => l.id === op.layerId)) throw new OpError("La capa ya existe");
+      const trackId = op.trackId ?? PHOTO_TRACK;
+      const track = film.tracks[requireTrack(film, trackId)]!;
+      if (track.source.kind !== "cells") throw new OpError("Ese track no tiene cuadros propios");
       const layer: ImageLayer = {
         id: op.layerId,
         kind: "image",
+        track: trackId,
         name: op.name,
         media: op.media,
         visible: true,
         opacity: 1,
         transform: IDENTITY_TRANSFORM,
       };
-      return withFrame(film, { ...frame, layers: [...frame.layers, layer] });
+      const others = frame.layers.filter((l) => trackOf(l) !== trackId);
+      return withFrame(film, { ...frame, layers: [...others, layer] });
     }
     case "layer.remove": {
       const frame = requireFrame(film, op.frameId);
@@ -183,28 +187,32 @@ export function applyOp(film: FilmState, op: Op): FilmState {
       const layers = frame.layers.map((l, j) => (j === i ? { ...l, ...op.patch } : l));
       return withFrame(film, { ...frame, layers });
     }
-    case "layer.move": {
-      const frame = requireFrame(film, op.frameId);
-      return withFrame(film, { ...frame, layers: moveItem(frame.layers, requireLayer(frame, op.layerId), op.index) });
+    case "track.add": {
+      if (film.tracks.some((t) => t.id === op.track.id)) throw new OpError("El track ya existe");
+      return { ...film, tracks: [...film.tracks, op.track] };
     }
-    case "channel.add": {
-      if (film.channels.some((c) => c.id === op.channel.id)) throw new OpError("El canal ya existe");
-      return { ...film, channels: [...film.channels, op.channel] };
+    case "track.remove": {
+      if (op.trackId === PHOTO_TRACK) throw new OpError("El track de fotos no se puede borrar");
+      const i = requireTrack(film, op.trackId);
+      // Its cells go with it.
+      const frames = Object.fromEntries(
+        Object.entries(film.frames).map(([id, f]) => [id, { ...f, layers: f.layers.filter((l) => trackOf(l) !== op.trackId) }]),
+      );
+      return { ...film, frames, tracks: film.tracks.filter((_, j) => j !== i) };
     }
-    case "channel.remove": {
-      const i = requireChannel(film, op.channelId);
-      return { ...film, channels: film.channels.filter((_, j) => j !== i) };
+    case "track.update": {
+      const i = requireTrack(film, op.trackId);
+      return { ...film, tracks: film.tracks.map((t, j) => (j === i ? { ...t, ...op.patch } : t)) };
     }
-    case "channel.update": {
-      const i = requireChannel(film, op.channelId);
-      return { ...film, channels: film.channels.map((c, j) => (j === i ? { ...c, ...op.patch } : c)) };
-    }
-    case "channel.move":
-      return { ...film, channels: moveItem(film.channels, requireChannel(film, op.channelId), op.index) };
+    case "track.move":
+      return { ...film, tracks: moveItem(film.tracks, requireTrack(film, op.trackId), op.index) };
+    default:
+      // Ops from a newer or older version of the app.
+      throw new OpError("Este paso no se reconoce");
   }
 }
 
-function describePatch(patch: LayerPatch | ChannelPatch, what: string): string {
+function describePatch(patch: LayerPatch | TrackPatch, what: string): string {
   const keys = Object.keys(patch);
   if (keys.length !== 1) return `Cambiar ${what}`;
   switch (keys[0]) {
@@ -216,13 +224,11 @@ function describePatch(patch: LayerPatch | ChannelPatch, what: string): string {
       return patch.visible ? `Mostrar ${what}` : `Ocultar ${what}`;
     case "name":
       return `Renombrar ${what}`;
-    case "placement":
-      return (patch as ChannelPatch).placement === "below" ? `Canal debajo de los cuadros` : `Canal encima de los cuadros`;
     case "exported":
-      return (patch as ChannelPatch).exported ? "Exportar el canal" : "Canal solo de referencia";
+      return (patch as TrackPatch).exported ? `Exportar ${what}` : `${what[0]!.toUpperCase()}${what.slice(1)} solo de referencia`;
     case "from":
     case "to":
-      return "Cambiar el tramo del canal";
+      return `Cambiar el tramo del ${what}`;
     default:
       return `Cambiar ${what}`;
   }
@@ -253,16 +259,16 @@ export function describeOp(op: Op): string {
       return "Borrar capa";
     case "layer.update":
       return describePatch(op.patch, "capa");
-    case "layer.move":
-      return "Ordenar capas";
-    case "channel.add":
-      return `Agregar canal "${op.channel.name}"`;
-    case "channel.remove":
-      return "Borrar canal";
-    case "channel.update":
-      return describePatch(op.patch, "canal");
-    case "channel.move":
-      return "Ordenar canales";
+    case "track.add":
+      return `Agregar track "${op.track.name}"`;
+    case "track.remove":
+      return "Borrar track";
+    case "track.update":
+      return describePatch(op.patch, "track");
+    case "track.move":
+      return "Ordenar tracks";
+    default:
+      return "Paso desconocido";
   }
 }
 
@@ -277,7 +283,6 @@ export function frameOfOp(op: Op): FrameId | null {
     case "layer.add":
     case "layer.remove":
     case "layer.update":
-    case "layer.move":
       return op.frameId;
     default:
       return null;

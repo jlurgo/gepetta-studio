@@ -1,4 +1,4 @@
-import type { Frame, MediaRef, Transform2D } from "@gepetta/core";
+import type { MediaRef, Transform2D } from "@gepetta/core";
 
 export interface Size {
   width: number;
@@ -23,11 +23,6 @@ export interface Drawable {
   media: MediaRef;
   opacity: number;
   transform: Transform2D;
-}
-
-/** A frame's own visible layers (no channels), bottom to top: what onion skin shows. */
-export function ownLayers(frame: Frame): Drawable[] {
-  return frame.layers.filter((l) => l.visible);
 }
 
 /**

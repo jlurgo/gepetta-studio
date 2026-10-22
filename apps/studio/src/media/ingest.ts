@@ -15,7 +15,7 @@ async function storeBlob(filmId: string, blob: Blob): Promise<AssetId> {
   return id;
 }
 
-async function downscale(bitmap: ImageBitmap, max: number, quality: number): Promise<Blob> {
+function shrink(bitmap: ImageBitmap, max: number): OffscreenCanvas {
   const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
   const h = Math.max(1, Math.round(bitmap.height * scale));
@@ -23,7 +23,19 @@ async function downscale(bitmap: ImageBitmap, max: number, quality: number): Pro
   const ctx = canvas.getContext("2d")!;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(bitmap, 0, 0, w, h);
-  return canvas.convertToBlob({ type: "image/jpeg", quality });
+  return canvas;
+}
+
+/** Whether any pixel is see-through (checked on the thumbnail). */
+function hasTransparency(canvas: OffscreenCanvas): boolean {
+  const data = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+  for (let i = 3; i < data.length; i += 4) if (data[i]! < 255) return true;
+  return false;
+}
+
+/** JPEG for photos; WebP keeps the transparency of cut-outs, overlays and drawings. */
+function encode(canvas: OffscreenCanvas, alpha: boolean, quality: number): Promise<Blob> {
+  return canvas.convertToBlob({ type: alpha ? "image/webp" : "image/jpeg", quality });
 }
 
 /**
@@ -40,10 +52,12 @@ export async function ingestImage(
   const exif = blob.type === "image/jpeg" || blob.type === "" ? readCaptureInfo(new Uint8Array(await blob.arrayBuffer())) : {};
   const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
   try {
+    const thumbCanvas = shrink(bitmap, THUMB_MAX);
+    const alpha = blob.type !== "image/jpeg" && hasTransparency(thumbCanvas);
     const [original, proxy, thumb, rawId] = await Promise.all([
       storeBlob(filmId, blob),
-      downscale(bitmap, PROXY_MAX, 0.9).then((b) => storeBlob(filmId, b)),
-      downscale(bitmap, THUMB_MAX, 0.8).then((b) => storeBlob(filmId, b)),
+      encode(shrink(bitmap, PROXY_MAX), alpha, 0.9).then((b) => storeBlob(filmId, b)),
+      encode(thumbCanvas, alpha, 0.8).then((b) => storeBlob(filmId, b)),
       raw ? storeBlob(filmId, raw) : undefined,
     ]);
     const media: MediaRef = { original, proxy, thumb, width: bitmap.width, height: bitmap.height };

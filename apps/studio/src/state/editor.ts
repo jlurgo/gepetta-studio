@@ -13,6 +13,7 @@ import {
   tailStartTick,
   undo as historyUndo,
   updateEntryOp,
+  photoOf,
 } from "@gepetta/core";
 import { create } from "zustand";
 import { type FilmMeta, storage } from "../storage";
@@ -79,7 +80,7 @@ function metaOf(id: string, film: FilmState): FilmMeta {
     name: film.settings.name,
     updatedAt: Date.now(),
     frameCount: film.frameOrder.length,
-    thumb: first ? (film.frames[first]!.layers[0]?.media.thumb ?? null) : null,
+    thumb: first ? (photoOf(film.frames[first]!)?.media.thumb ?? null) : null,
   };
 }
 

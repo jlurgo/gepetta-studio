@@ -12,9 +12,10 @@ import {
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
+import { useLayers } from "../state/layers";
 import { CameraPanel } from "./CameraPanel";
 import { GuidesControl } from "./GuidesControl";
-import { LayersPanel } from "./LayersPanel";
+import { TrackPanel } from "./TrackPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ExportDialog } from "./ExportDialog";
 import { HistoryPanel } from "./HistoryPanel";
@@ -288,6 +289,12 @@ function SidePanel() {
       // Not remembered.
     }
   };
+  // Picking a track in the timeline shows its settings.
+  const trackId = useLayers((s) => s.trackId);
+  useEffect(() => {
+    if (trackId) setTab("layers");
+  }, [trackId]);
+
   return (
     <aside className="side-panel">
       <div className="side-tabs" role="tablist">
@@ -295,7 +302,7 @@ function SidePanel() {
           <Icon name="camera" size={16} /> Cámara
         </button>
         <button role="tab" aria-selected={tab === "layers"} className={tab === "layers" ? "active" : ""} onClick={() => choose("layers")}>
-          <Icon name="layers" size={16} /> Capas
+          <Icon name="layers" size={16} /> Track
         </button>
       </div>
       <div className="side-body" hidden={tab !== "camera"}>
@@ -304,8 +311,8 @@ function SidePanel() {
         </ErrorBoundary>
       </div>
       <div className="side-body" hidden={tab !== "layers"}>
-        <ErrorBoundary label="el panel de capas">
-          <LayersPanel />
+        <ErrorBoundary label="el panel del track">
+          <TrackPanel />
         </ErrorBoundary>
       </div>
     </aside>

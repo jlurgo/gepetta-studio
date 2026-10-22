@@ -1,3 +1,4 @@
+import { photoOf } from "@gepetta/core";
 import { storage } from "../storage";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
@@ -20,7 +21,7 @@ async function sync() {
   }
   const sessionId = source.id.slice("phone:".length);
   const frame = film && selected ? film.frames[selected] : undefined;
-  const asset = frame?.layers[0]?.media.proxy;
+  const asset = (frame ? photoOf(frame) : undefined)?.media.proxy;
   const key = `${sessionId}|${filmId}|${asset ?? ""}`;
   if (key === lastKey) return;
   lastKey = key;

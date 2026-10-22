@@ -38,9 +38,12 @@ export interface Transform2D {
 
 export const IDENTITY_TRANSFORM: Transform2D = { x: 0, y: 0, rotation: 0, scale: 1 };
 
+/** A frame's picture in one track (a "cell"). */
 export interface ImageLayer {
   id: LayerId;
   kind: "image";
+  /** Track the cell belongs to; missing in films made before tracks = the photo track. */
+  track?: TrackId;
   name: string;
   media: MediaRef;
   visible: boolean;
@@ -50,8 +53,18 @@ export interface ImageLayer {
 
 export type Layer = ImageLayer;
 
-/** What a channel shows: one picture, or a sequence (e.g. video frames) that advances with the film. */
-export type ChannelSource =
+export type TrackId = string;
+
+/** The track every photo goes to. Films always have it (it can be hidden or moved, not removed). */
+export const PHOTO_TRACK: TrackId = "photos";
+
+/**
+ * What a track shows: a picture per frame ("cells", like the photos), one
+ * picture over a stretch of frames, or a sequence (e.g. video frames) that
+ * advances with the film's time.
+ */
+export type TrackSource =
+  | { kind: "cells" }
   | { kind: "image"; media: MediaRef }
   | {
       kind: "sequence";
@@ -61,30 +74,44 @@ export type ChannelSource =
     };
 
 /**
- * A layer that spans frames ("canal"): a background, an overlay, or a video
- * to rotoscope. It starts at the beginning of frame `from` (null = the film's
- * start) and ends after frame `to` (null = the film's end, or the sequence's).
+ * A row of the timeline. The film is all tracks combined, bottom to top, each
+ * with its own visibility, opacity and placement. Image and sequence tracks
+ * start at the beginning of frame `from` (null = the film's start) and end
+ * after frame `to` (null = the film's end, or the sequence's).
  */
-export interface Channel {
-  id: LayerId;
+export interface Track {
+  id: TrackId;
   name: string;
-  source: ChannelSource;
+  source: TrackSource;
   visible: boolean;
   opacity: number;
+  /** Applied to everything in the track, on top of each cell's own transform. */
   transform: Transform2D;
-  /** Under or over the frames' own layers. */
-  placement: "below" | "above";
   /** false = reference only: seen while animating, left out of exports. */
   exported: boolean;
   from: FrameId | null;
   to: FrameId | null;
 }
 
+export function photoTrack(): Track {
+  return {
+    id: PHOTO_TRACK,
+    name: "Fotos",
+    source: { kind: "cells" },
+    visible: true,
+    opacity: 1,
+    transform: IDENTITY_TRANSFORM,
+    exported: true,
+    from: null,
+    to: null,
+  };
+}
+
 export interface Frame {
   id: FrameId;
   /** How many timeline ticks (1/fps) the frame stays on screen. 1 = "on ones". */
   hold: number;
-  /** Bottom to top. */
+  /** Its cells, at most one per track. */
   layers: Layer[];
 }
 
@@ -99,18 +126,27 @@ export interface FilmState {
   settings: FilmSettings;
   frameOrder: FrameId[];
   frames: Record<FrameId, Frame>;
-  /** Bottom to top within each placement. */
-  channels: Channel[];
+  /** Bottom to top. */
+  tracks: Track[];
 }
 
 export const DEFAULT_FPS = 12;
 
 export function emptyFilm(settings: FilmSettings): FilmState {
-  return { settings, frameOrder: [], frames: {}, channels: [] };
+  return { settings, frameOrder: [], frames: {}, tracks: [photoTrack()] };
 }
 
 export function orderedFrames(film: FilmState): Frame[] {
   return film.frameOrder.map((id) => film.frames[id]!);
+}
+
+export function trackOf(layer: Layer): TrackId {
+  return layer.track ?? PHOTO_TRACK;
+}
+
+/** The frame's photo (what thumbnails and capture info show). */
+export function photoOf(frame: Frame): Layer | undefined {
+  return frame.layers.find((l) => trackOf(l) === PHOTO_TRACK) ?? frame.layers[0];
 }
 
 export function frameIndex(film: FilmState, id: FrameId): number {

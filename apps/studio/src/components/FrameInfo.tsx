@@ -1,4 +1,4 @@
-import { formatDistance, formatExposure } from "@gepetta/core";
+import { formatDistance, formatExposure, photoOf } from "@gepetta/core";
 import { useEditor } from "../state/editor";
 
 /** What is known about how the selected frame's picture was taken. */
@@ -6,7 +6,7 @@ export function FrameInfo() {
   const frame = useEditor((s) => (s.film && s.selected ? s.film.frames[s.selected] : undefined));
   const view = useEditor((s) => s.view);
   if (view !== "frame" || !frame) return null;
-  const media = frame.layers[0]?.media;
+  const media = photoOf(frame)?.media;
   const c = media?.capture;
   const rows: [string, string | undefined][] = c
     ? [

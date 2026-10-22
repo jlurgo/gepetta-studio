@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { type VideoInfo, loadVideo, sampleTimes } from "../media/video";
-import { importVideoChannel, importVideoStills } from "../state/actions";
+import { importVideoTrack, importVideoStills } from "../state/actions";
 import { useBusy } from "../state/busy";
 import { useEditor } from "../state/editor";
 import { Dialog } from "./Dialog";
 
-/** "frames": the video's pictures become frames. "channel": a channel to rotoscope over. */
-export function VideoImportDialog({ file, mode = "frames", onClose }: { file: File; mode?: "frames" | "channel"; onClose(): void }) {
+/** "frames": the video's pictures become frames. "track": a track to rotoscope over. */
+export function VideoImportDialog({ file, mode = "frames", onClose }: { file: File; mode?: "frames" | "track"; onClose(): void }) {
   const filmFps = useEditor((s) => s.film!.settings.fps);
   const loaded = useRef<Awaited<ReturnType<typeof loadVideo>> | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -51,7 +51,7 @@ export function VideoImportDialog({ file, mode = "frames", onClose }: { file: Fi
     v.video.remove();
     onClose();
     try {
-      if (mode === "channel") await importVideoChannel(v.video, times, file.name, fps);
+      if (mode === "track") await importVideoTrack(v.video, times, file.name, fps);
       else await importVideoStills(v.video, times, file.name);
     } finally {
       v.dispose();
@@ -64,7 +64,7 @@ export function VideoImportDialog({ file, mode = "frames", onClose }: { file: Fi
   };
 
   return (
-    <Dialog title={`${mode === "channel" ? "Video como canal" : "Importar video"}: ${file.name}`} onClose={onClose}>
+    <Dialog title={`${mode === "track" ? "Video como track" : "Importar video"}: ${file.name}`} onClose={onClose}>
       <div className="video-preview" ref={previewRef} />
       {info && (
         <>
@@ -89,9 +89,9 @@ export function VideoImportDialog({ file, mode = "frames", onClose }: { file: Fi
             <input type="number" min={1} max={60} value={fps} onChange={(e) => setFps(Math.max(1, Number(e.target.value)))} />
           </label>
           <p className="hint">
-            {mode === "channel" ? (
+            {mode === "track" ? (
               <>
-                Se va a crear un canal de <strong>{times.length}</strong> imágenes que empieza en el cuadro seleccionado
+                Se va a crear un track de <strong>{times.length}</strong> imágenes que empieza en el cuadro seleccionado
                 y avanza con la película.
               </>
             ) : (

@@ -1,14 +1,15 @@
 import {
-  type Channel,
   type FilmState,
   type Frame,
-  type ImageLayer,
   type MediaRef,
   type Point,
   type Transform2D,
   type FrameSpans,
   type TimedFrame,
-  channelMediaAt,
+  composeTransforms,
+  splitAtPhotos,
+  trackMediaAt,
+  trackOf,
   frameIndexAtTick,
   frameSpans,
   frameStack,
@@ -19,9 +20,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { proxyCache } from "../media/cache";
 import type { LiveFrame } from "../capture/types";
-import { type Drawable, type Size, containScale, drawContained, drawStack, ownLayers } from "../render/frame";
+import { type Drawable, type Size, containScale, drawContained, drawStack } from "../render/frame";
 import { drawHandles, dragTransform, hitHandle, type HandleKind } from "../render/handles";
-import { commitTransform, resolveTarget, useLayers } from "../state/layers";
+import { selectedTrack, updateTrack, useLayers } from "../state/layers";
 import { useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
 import { useEditor } from "../state/editor";
@@ -55,20 +56,20 @@ function drawProxies(ctx: CanvasRenderingContext2D, filmId: string, film: FilmSt
 /** Loads the proxies the next ticks will show. */
 function prefetch(filmId: string, film: FilmState, frames: TimedFrame[], index: number, tick: number, spans: FrameSpans) {
   for (const f of frames.slice(index + 1, index + 1 + PREFETCH)) for (const l of f.frame.layers) void proxyCache.load(filmId, l.media.proxy);
-  for (const c of film.channels) {
+  for (const c of film.tracks) {
     if (!c.visible || c.source.kind !== "sequence") continue;
     for (let t = tick + 1; t <= tick + PREFETCH; t++) {
-      const m = channelMediaAt(film, c, t, spans);
+      const m = trackMediaAt(film, c, t, spans);
       if (m) void proxyCache.load(filmId, m.proxy);
     }
   }
 }
 
-/** Applies the transform being dragged, so the picture follows the pointer before the change is committed. */
-function withPreview<T extends Drawable & { layerId?: string; channelId?: string }>(items: T[]): T[] {
+/** The film with the transform being dragged applied, so pictures follow the pointer before the change is committed. */
+function withPreview(film: FilmState): FilmState {
   const preview = useLayers.getState().preview;
-  if (!preview) return items;
-  return items.map((i) => (i.layerId === preview.id || i.channelId === preview.id ? { ...i, transform: preview.transform } : i));
+  if (!preview) return film;
+  return { ...film, tracks: film.tracks.map((t) => (t.id === preview.trackId ? { ...t, transform: preview.transform } : t)) };
 }
 
 /** Previous frames (nearest first) for onion skinning, ending at `anchorIndex`. */
@@ -264,27 +265,30 @@ function useGuideDrag(filmRect: React.RefObject<FilmRect | null>) {
   return { onPointerDown, onPointerMove, onPointerUp, dragging: () => drag.current !== null };
 }
 
-/** The selected layer or channel as it shows on the stage now, or null when it is not on screen. */
-function targetOnStage(): { media: MediaRef; transform: Transform2D } | null {
+/**
+ * The selected track as it shows on the stage now (its picture, and the
+ * transform it is drawn with), or null when nothing of it is on screen.
+ * `trackTransform` is what dragging changes.
+ */
+function targetOnStage(): { media: MediaRef; transform: Transform2D; trackTransform: Transform2D } | null {
   const { film, selected, view, playback } = useEditor.getState();
-  const { target, preview } = useLayers.getState();
-  const item = resolveTarget(target);
-  if (!film || playback || !target || !item || !item.visible) return null;
-  let media: MediaRef | null;
-  if (target.kind === "layer") {
-    if (view !== "frame" || target.frameId !== selected) return null;
-    media = (item as ImageLayer).media;
-  } else {
-    const channel = item as Channel;
-    const spans = frameSpans(film);
-    const span = selected ? spans.get(selected) : undefined;
-    const tick = view === "live" ? (span?.end ?? 0) : (span?.start ?? 0);
-    media =
-      channelMediaAt(film, channel, tick, spans) ??
-      (channel.source.kind === "image" ? channel.source.media : (channel.source.media[0] ?? null));
+  const { preview } = useLayers.getState();
+  const track = selectedTrack();
+  if (!film || playback || !track || !track.visible) return null;
+  const trackTransform = preview?.trackId === track.id ? preview.transform : track.transform;
+  if (track.source.kind === "cells") {
+    // In the live view the photo track's place is the camera, which does not move.
+    const frame = view === "frame" && selected ? film.frames[selected] : undefined;
+    const cell = frame?.layers.find((l) => trackOf(l) === track.id);
+    if (!cell) return null;
+    return { media: cell.media, transform: composeTransforms(trackTransform, cell.transform), trackTransform };
   }
-  if (!media) return null;
-  return { media, transform: preview?.id === item.id ? preview.transform : item.transform };
+  const spans = frameSpans(film);
+  const span = selected ? spans.get(selected) : undefined;
+  const tick = view === "live" ? (span?.end ?? 0) : (span?.start ?? 0);
+  const media =
+    trackMediaAt(film, track, tick, spans) ?? (track.source.kind === "image" ? track.source.media : (track.source.media[0] ?? null));
+  return media ? { media, transform: trackTransform, trackTransform } : null;
 }
 
 /** Moving, scaling and rotating the selected layer with its handles. */
@@ -305,24 +309,24 @@ function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
     const kind = hitHandle(shown.media, shown.transform, film.settings, p, 1 / filmRect.current.s);
     if (!kind) return false;
     capturePointer(e);
-    drag.current = { kind, start: p, t0: shown.transform };
+    drag.current = { kind, start: p, t0: shown.trackTransform };
     return true;
   };
 
   const onPointerMove = (e: React.PointerEvent): boolean => {
     const d = drag.current;
     const { film } = useEditor.getState();
-    const { target, setPreview } = useLayers.getState();
-    if (!d || !film || !target) return false;
-    setPreview({ id: target.id, transform: dragTransform(d.kind, d.t0, film.settings, d.start, filmPoint(e), e.shiftKey) });
+    const { trackId, setPreview } = useLayers.getState();
+    if (!d || !film || !trackId) return false;
+    setPreview({ trackId, transform: dragTransform(d.kind, d.t0, film.settings, d.start, filmPoint(e), e.shiftKey) });
     return true;
   };
 
   const onPointerUp = (): boolean => {
     if (!drag.current) return false;
     drag.current = null;
-    const { target, preview, setPreview } = useLayers.getState();
-    if (target && preview) commitTransform(target, preview.transform);
+    const { preview, setPreview } = useLayers.getState();
+    if (preview) updateTrack(preview.trackId, { transform: preview.transform });
     setPreview(null);
     return true;
   };
@@ -434,10 +438,12 @@ export function Stage() {
       liveRect.current = null;
       if (view === "live") {
         const live = useCamera.getState().live();
-        // Channels as they will be on the next picture, which goes after the selected frame.
+        // Tracks as they will be on the next picture, which goes after the selected frame;
+        // the camera takes the photo track's place among them.
         const nextTick = selected ? (spans.get(selected)?.end ?? 0) : 0;
-        const channels = withPreview(frameStack(film, null, nextTick, { spans }));
-        drawProxies(ctx, filmId, film, channels.filter((c) => film.channels.find((ch) => ch.id === c.channelId)?.placement === "below"));
+        const shown = withPreview(film);
+        const tracks = splitAtPhotos(shown, frameStack(shown, null, nextTick, { spans }));
+        drawProxies(ctx, filmId, film, tracks.below);
         if (live) {
           drawContained(ctx, live.image, live, size);
           // Where the picture landed, in CSS pixels of the stage, for pointer interactions.
@@ -446,7 +452,7 @@ export function Stage() {
           const ly = oy + ((size.height - live.height * c) / 2) * s;
           liveRect.current = { x: lx / dpr, y: ly / dpr, w: (live.width * c * s) / dpr, h: (live.height * c * s) / dpr };
         }
-        drawProxies(ctx, filmId, film, channels.filter((c) => film.channels.find((ch) => ch.id === c.channelId)?.placement === "above"));
+        drawProxies(ctx, filmId, film, tracks.above);
         // A magnified view does not line up with earlier frames, nor with the measuring spots.
         const magnify = magnifyControl(useCamera.getState().controls);
         const magnified = magnify !== undefined && magnify.value !== "1";
@@ -458,7 +464,8 @@ export function Stage() {
         }
       } else {
         const frame = selected ? film.frames[selected] : undefined;
-        if (frame) drawProxies(ctx, filmId, film, withPreview(frameStack(film, frame, spans.get(frame.id)?.start ?? 0, { spans })));
+        const shown = withPreview(film);
+        if (frame) drawProxies(ctx, filmId, film, frameStack(shown, frame, spans.get(frame.id)?.start ?? 0, { spans }));
         onionAnchor = selIndex - 1;
       }
 
@@ -467,7 +474,7 @@ export function Stage() {
         // Farthest first so the nearest frame ends on top.
         skins.reverse().forEach((frame, i) => {
           const distance = skins.length - i - 1;
-          drawProxies(ctx, filmId, film, ownLayers(frame), onion.opacity * (1 - distance / (onion.count + 1)));
+          drawProxies(ctx, filmId, film, frameStack(film, frame, 0, { spans, cellsOnly: true }), onion.opacity * (1 - distance / (onion.count + 1)));
         });
       }
       ctx.restore();

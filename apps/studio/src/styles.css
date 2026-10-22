@@ -488,21 +488,196 @@ input[type="range"] {
 /* Timeline */
 
 .timeline {
+  --track-h: 34px;
+  display: flex;
+  align-items: flex-start;
+  max-height: 42vh;
+  overflow-y: auto;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+
+.tl-heads {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  flex: 0 0 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 8px 12px 12px;
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+  min-height: 100%;
+}
+
+.tl-head {
   display: flex;
   align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tl-head.main {
+  height: var(--thumb-h);
+  padding-left: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tl-head.track {
+  height: var(--track-h);
+  border-radius: 8px;
+}
+
+.tl-head.track.selected {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.tl-head.track.off .tl-name {
+  color: var(--muted);
+}
+
+.tl-head input[type="range"] {
+  width: 44px;
+  flex-shrink: 0;
+}
+
+.tl-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  padding: 4px 2px;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.ref-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+  flex-shrink: 0;
+}
+
+.tl-add {
+  position: relative;
+  margin-top: 2px;
+}
+
+.menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  z-index: 20;
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgb(0 0 0 / 0.45);
+}
+
+.menu button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu button:hover {
+  background: var(--panel);
+}
+
+.menu button span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.tl-columns {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
   gap: 6px;
   padding: 10px 12px 12px;
   overflow-x: auto;
-  background: var(--bg);
-  border-top: 1px solid var(--line);
-  min-height: calc(var(--thumb-h) + 24px);
 }
 
 .cell-wrap {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.tl-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.tl-cell {
+  height: var(--track-h);
+  width: 100%;
+  padding: 0;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.tl-cell.filled {
+  border-style: solid;
+  background: #000;
+}
+
+.tl-cell.span {
+  border-color: color-mix(in srgb, var(--teal) 55%, transparent);
+}
+
+.tl-cell.selected {
+  border-color: var(--accent);
+}
+
+.tl-cell.off {
+  opacity: 0.35;
+}
+
+.tl-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.cell canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .cell {
@@ -574,7 +749,7 @@ input[type="range"] {
 .insert-marker,
 .drop-marker {
   width: 4px;
-  height: var(--thumb-h);
+  align-self: stretch;
   border-radius: 2px;
   background: var(--danger);
   flex-shrink: 0;

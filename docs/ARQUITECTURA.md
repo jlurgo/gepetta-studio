@@ -42,13 +42,15 @@ docs/             Este documento, roadmap y decisiones.
 - **Capa** (`Layer`): por ahora capa de imagen (referencia a `MediaRef`), con
   visibilidad, opacidad y transformación (traslación, rotación, escala; más adelante
   matrices afines/homografía/TPS portadas de `CasitaDesign/src/lib/calibration.ts`).
-- **Canales** (`Channel`, capas de película): abarcan un tramo de cuadros (`from`/`to`
-  por id de cuadro) y van debajo o encima de las capas de cada cuadro. Su fuente es
-  una imagen o una secuencia (cuadros de video con su fps) que avanza con el tiempo
-  de la película, retenciones incluidas: sirven para fondos, marcos y rotoscopia.
-  Los de referencia (`exported: false`) se ven al animar pero no se exportan.
-  `frameStack(film, frame, tick)` arma lo que se dibuja; la vista en vivo usa el tick
-  donde va a caer la próxima foto.
+- **Tracks** (`Track`): la película es la combinación de sus tracks, de abajo hacia
+  arriba, cada uno con visibilidad, opacidad, transformación y "sale en la
+  exportación". Un track tiene una celda por cuadro (`cells`: el de **Fotos**, capas
+  de dibujo o recortes), una imagen fija, o una secuencia (cuadros de video con su
+  fps) que avanza con el tiempo de la película, retenciones incluidas; estos dos
+  abarcan un tramo `from`/`to` por id de cuadro. Las celdas son las `layers` de cada
+  cuadro, con su `track`. `frameStack(film, frame, tick)` arma lo que se dibuja; en
+  vivo la cámara ocupa el lugar del track de fotos. La línea de tiempo muestra el
+  resultado arriba y un renglón por track debajo.
 - **MediaRef**: `{ original, proxy, thumb, width, height }`. Cada importación
   genera un proxy (≤1920 px) para edición/reproducción fluida y una miniatura.
   La exportación usa el original.

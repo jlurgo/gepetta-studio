@@ -28,7 +28,7 @@
 - [ ] App nativa de celular (mismo protocolo) para foco/ISO manual en iPhone
 
 ## Fase 3 — Editor de cuadros
-- [x] Capas por cuadro y canales (capas de película con tramo; imagen o video para rotoscopia)
+- [x] Tracks en la línea de tiempo: fotos, capas por cuadro, imagen fija y video para rotoscopia; resultado combinado arriba
 - [x] Transformar capas: mover, rotar, escalar con manijas
 - Alinear capas por puntos de control
   (afín/homografía/TPS de CasitaDesign); deformación trapezoidal
