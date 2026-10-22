@@ -28,6 +28,7 @@ interface CameraState {
 }
 
 const PREFS_KEY = "gepetta.camera";
+const MODEL_KEY = "gepetta.camera.dslrModel";
 
 function loadPrefs(): { selectedId: string | null; resolutionId: string } {
   try {
@@ -57,6 +58,14 @@ function errorMessage(e: unknown): string {
 /** Bumped by every start/stop so a slow, superseded open does not win. */
 let generation = 0;
 let offChange: (() => void) | null = null;
+let reconnectTimer: ReturnType<typeof setInterval> | undefined;
+
+const RECONNECT_MS = 3000;
+
+function stopReconnecting() {
+  clearInterval(reconnectTimer);
+  reconnectTimer = undefined;
+}
 
 export const useCamera = create<CameraState>((set, get) => {
   function attach(source: CameraSource | null) {
@@ -72,8 +81,11 @@ export const useCamera = create<CameraState>((set, get) => {
     const ref = rest.join(":");
     if (kind === "phone") return openPhone(ref);
     if (kind === "dslr") {
-      return openDslr(ref, (message, code) => {
-        if (get().source?.id === `dslr:${ref}`) set({ error: { message, code } });
+      const port = await resolveDslrPort(ref);
+      return openDslr(port, (message, code) => {
+        if (get().source?.id !== `dslr:${port}`) return;
+        set({ error: { message, code } });
+        if (code === "disconnected") reconnect();
       });
     }
     const res = RESOLUTIONS.find((r) => r.id === get().resolutionId) ?? RESOLUTIONS[1]!;
@@ -84,6 +96,33 @@ export const useCamera = create<CameraState>((set, get) => {
       if (!ref) throw e;
       return openWebcam(null, res);
     }
+  }
+
+  /**
+   * USB ports change when a camera is replugged or wakes up, so a remembered
+   * "dslr:<port>" that is gone falls back to the camera of the same model (or any).
+   */
+  async function resolveDslrPort(port: string): Promise<string> {
+    const dslrs = await listDslrs().catch(() => []);
+    set({ dslrs });
+    if (dslrs.some((d) => d.id === `dslr:${port}`)) return port;
+    const model = localStorage.getItem(MODEL_KEY);
+    const match = dslrs.find((d) => d.label === model) ?? dslrs[0];
+    if (!match) throw new Error("No encuentro la cámara réflex. Revisá que esté prendida y enchufada.");
+    return match.id.slice("dslr:".length);
+  }
+
+  /** While a DSLR is gone (asleep, unplugged), look for it again every few seconds. */
+  function reconnect() {
+    if (reconnectTimer) return;
+    reconnectTimer = setInterval(async () => {
+      const { selectedId, source } = get();
+      if (!selectedId?.startsWith("dslr:") || (source && !get().error)) return stopReconnecting();
+      const dslrs = await listDslrs().catch(() => []);
+      if (dslrs.length === 0) return;
+      stopReconnecting();
+      await get().start();
+    }, RECONNECT_MS);
   }
 
   return {
@@ -97,16 +136,25 @@ export const useCamera = create<CameraState>((set, get) => {
 
     async start() {
       const gen = ++generation;
+      stopReconnecting();
       attach(null);
       set({ opening: true, error: null });
       try {
         const source = await open(get().selectedId);
         if (gen !== generation) return source.close();
         attach(source);
+        if (source.kind === "dslr") {
+          const label = get().dslrs.find((d) => d.id === source.id)?.label;
+          if (label) localStorage.setItem(MODEL_KEY, label);
+          // Remember the camera by its current port too.
+          set({ selectedId: source.id });
+          savePrefs(source.id, get().resolutionId);
+        }
       } catch (e) {
         if (gen !== generation) return;
         console.error("[gepetta] camera", e);
         set({ error: { message: errorMessage(e) } });
+        if (get().selectedId?.startsWith("dslr:")) reconnect();
       } finally {
         if (gen === generation) set({ opening: false });
       }
@@ -115,6 +163,7 @@ export const useCamera = create<CameraState>((set, get) => {
 
     stop() {
       generation++;
+      stopReconnecting();
       attach(null);
       set({ opening: false });
     },

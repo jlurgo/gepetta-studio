@@ -194,6 +194,11 @@ interface CameraSession {
   paths: Map<string, string>;
   /** Canon reports eoszoom as 0 whatever it is set to, so we remember what we set. */
   zoom: string;
+  /**
+   * open() calls not yet matched by close(). Overlapping open/close pairs (React
+   * mounts effects twice in development) must not tear down a session in use.
+   */
+  leases: number;
 }
 
 export function createGphoto2Driver(): DslrDriver {
@@ -211,7 +216,7 @@ export function createGphoto2Driver(): DslrDriver {
   function session(id: string): CameraSession {
     let s = sessions.get(id);
     if (!s) {
-      s = { id, shell: null, queue: Promise.resolve(), wantLive: false, loopRunning: false, onFrame: null, onError: null, paths: new Map(), zoom: "1" };
+      s = { id, shell: null, queue: Promise.resolve(), wantLive: false, loopRunning: false, onFrame: null, onError: null, paths: new Map(), zoom: "1", leases: 0 };
       sessions.set(id, s);
     }
     return s;
@@ -280,6 +285,22 @@ export function createGphoto2Driver(): DslrDriver {
     }
   }
 
+  /** Drops one open() lease; the last one stops live view and ends the shell. */
+  async function release(s: CameraSession) {
+    s.leases = Math.max(0, s.leases - 1);
+    if (s.leases > 0) return;
+    s.wantLive = false;
+    s.onFrame = null;
+    s.onError = null;
+    await s.queue;
+    if (s.leases > 0) return; // reopened while we waited
+    const shell = s.shell;
+    s.shell = null;
+    s.paths.clear();
+    s.zoom = "1";
+    await shell?.close();
+  }
+
   async function listControls(s: CameraSession): Promise<CameraControl[]> {
     return enqueue(s, async (shell) => {
       if (s.paths.size === 0) {
@@ -314,27 +335,24 @@ export function createGphoto2Driver(): DslrDriver {
     async open(id, onFrame, onError) {
       assertPort(id);
       const s = session(id);
+      s.leases++;
       s.onFrame = onFrame;
       s.onError = onError;
       s.wantLive = true;
-      await bin();
-      await preview(s); // first frame, so errors reach the caller
+      try {
+        await bin();
+        await preview(s); // first frame, so errors reach the caller
+      } catch (err) {
+        await release(s);
+        throw err;
+      }
       void liveLoop(s);
     },
 
     async close(id) {
       assertPort(id);
       const s = sessions.get(id);
-      if (!s) return;
-      s.wantLive = false;
-      s.onFrame = null;
-      s.onError = null;
-      await s.queue;
-      const shell = s.shell;
-      s.shell = null;
-      s.paths.clear();
-      s.zoom = "1";
-      await shell?.close();
+      if (s) await release(s);
     },
 
     async capture(id) {
@@ -419,6 +437,7 @@ export function createGphoto2Driver(): DslrDriver {
     async dispose() {
       const all = [...sessions.values()];
       for (const s of all) {
+        s.leases = 0;
         s.wantLive = false;
         s.onFrame = null;
         s.onError = null;

@@ -1,4 +1,6 @@
-import { type BrowserWindow, ipcMain } from "electron";
+import { appendFile } from "node:fs/promises";
+import path from "node:path";
+import { type BrowserWindow, app, ipcMain } from "electron";
 import { createGphoto2Driver } from "./gphoto2";
 import { DslrError, type DslrDriver } from "./types";
 
@@ -13,16 +15,23 @@ const CHANNELS = [
   "dslr:releaseUsb",
 ] as const;
 
+/** Camera problems go to the console and to <logs>/dslr.log, where they can be read after the fact. */
+function log(channel: string, text: string) {
+  const line = `${new Date().toISOString()} ${channel} ${text.trim()}\n`;
+  console.warn(`[dslr] ${line.trim()}`);
+  void appendFile(path.join(app.getPath("logs"), "dslr.log"), line).catch(() => undefined);
+}
+
 /** Errors reach the renderer as plain messages, so make sure they are Spanish. */
-async function guarded<T>(fn: () => Promise<T>): Promise<T> {
+async function guarded<T>(channel: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
     if (err instanceof DslrError) {
-      if (err.detail) console.warn(`[dslr] ${err.code}: ${err.detail.trim()}`);
+      log(channel, `${err.code}: ${err.message} | ${err.detail}`);
       throw new Error(err.message);
     }
-    console.error("[dslr]", err);
+    log(channel, String(err instanceof Error ? err.stack : err));
     throw new Error("Algo falló con la cámara réflex. Probá de nuevo.");
   }
 }
@@ -41,24 +50,33 @@ export function registerDslrIpc(
     if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(channel, ...args);
   };
 
-  ipcMain.handle("dslr:status", () => guarded(() => driver.status()));
-  ipcMain.handle("dslr:detect", () => guarded(() => driver.detect()));
+  ipcMain.handle("dslr:status", () =>
+    guarded("dslr:status", () => driver.status()));
+  ipcMain.handle("dslr:detect", () =>
+    guarded("dslr:detect", () => driver.detect()));
   ipcMain.handle("dslr:open", (_e, id: string) =>
-    guarded(() =>
+    guarded("dslr:open", () =>
       driver.open(
         id,
         (jpeg) => send("dslr:frame", id, jpeg),
-        (message, code) => send("dslr:error", id, message, code),
+        (message, code) => {
+          log("dslr:live", `${code}: ${message}`);
+          send("dslr:error", id, message, code);
+        },
       ),
     ),
   );
-  ipcMain.handle("dslr:close", (_e, id: string) => guarded(() => driver.close(id)));
-  ipcMain.handle("dslr:capture", (_e, id: string) => guarded(() => driver.capture(id)));
-  ipcMain.handle("dslr:getControls", (_e, id: string) => guarded(() => driver.getControls(id)));
+  ipcMain.handle("dslr:close", (_e, id: string) =>
+    guarded("dslr:close", () => driver.close(id)));
+  ipcMain.handle("dslr:capture", (_e, id: string) =>
+    guarded("dslr:capture", () => driver.capture(id)));
+  ipcMain.handle("dslr:getControls", (_e, id: string) =>
+    guarded("dslr:getControls", () => driver.getControls(id)));
   ipcMain.handle("dslr:setControl", (_e, id: string, key: string, value: string) =>
-    guarded(() => driver.setControl(id, key, String(value))),
+    guarded("dslr:setControl", () => driver.setControl(id, key, String(value))),
   );
-  ipcMain.handle("dslr:releaseUsb", () => guarded(() => driver.releaseUsb()));
+  ipcMain.handle("dslr:releaseUsb", () =>
+    guarded("dslr:releaseUsb", () => driver.releaseUsb()));
 
   return {
     dispose() {
