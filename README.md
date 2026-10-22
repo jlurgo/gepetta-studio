@@ -27,7 +27,7 @@ pnpm dist       # instalador (.dmg en Mac, .exe en Windows) en apps/desktop/rele
   (la página del celular explica los pasos).
 
 ### Windows
-- **Instalador:** `pnpm --filter @gepetta/desktop exec electron-builder --win nsis --x64`
+- **Instalador:** `pnpm --filter @gepetta/desktop dist:win`
   (se puede generar desde la Mac) → `apps/desktop/release/Gepetta Studio Setup <versión>.exe`.
   No está firmado: Windows muestra "Windows protegió su PC" → "Más información" →
   "Ejecutar de todas formas".
