@@ -294,14 +294,14 @@ export function Timeline() {
     const p = at(e);
     if (p.y < RULER_H) {
       // Ruler: pick the moment and show the film there.
-      useEditor.getState().moveTo(p.cell, undefined, "frame");
+      useEditor.getState().moveTo(p.cell, undefined);
       return;
     }
     if (p.y < rowsTop) {
       // Results: select the column (the film as it comes out there); drag it to move it.
       const { setColumns, moveTo } = useEditor.getState();
       const run = runs.find((r) => p.cell >= r.start && p.cell < r.end);
-      moveTo(p.cell, undefined, "frame");
+      moveTo(p.cell, undefined);
       if (!run) return setColumns(null);
       if (e.shiftKey && columns) setColumns({ start: Math.min(columns.start, run.start), end: Math.max(columns.end, run.end) });
       else if (!(columns && p.cell >= columns.start && p.cell < columns.end)) setColumns(run);
@@ -325,7 +325,7 @@ export function Timeline() {
       if (add) ids = selected.has(id) ? selection.filter((s) => s !== id) : [...selection, id];
       else if (!selected.has(id)) ids = [id];
       setSelection(ids);
-      useEditor.getState().moveTo(Math.max(clip.start, Math.min(p.cell, clipEnd(clip) - 1)), clip.track, "frame");
+      useEditor.getState().moveTo(Math.max(clip.start, Math.min(p.cell, clipEnd(clip) - 1)), clip.track);
       if (ids.includes(id)) setGesture({ kind: "move", x0: p.x, y0: p.y, id, ids, moved: false, dx: 0, dy: 0 });
       return;
     }
@@ -388,7 +388,7 @@ export function Timeline() {
       // A click on an empty cell: that is where the next picture goes.
       if (!g.add) useEditor.getState().setSelection([]);
       useEditor.getState().setColumns(null);
-      useEditor.getState().moveTo(p.cell, p.track.id, "frame");
+      useEditor.getState().moveTo(p.cell, p.track.id);
     }
   }
 
