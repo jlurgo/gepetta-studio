@@ -94,8 +94,12 @@ export const CellCanvas = memo(function CellCanvas({ filmId, film, items }: { fi
     });
     if (!live) {
       draw(canvas, filmId, film, items);
+      // Zooming the timeline resizes the cell: draw again at the new size, never stretched.
+      const ro = new ResizeObserver(() => alive && draw(canvas, filmId, film, items));
+      ro.observe(canvas);
       return () => {
         alive = false;
+        ro.disconnect();
       };
     }
     let raf = 0;

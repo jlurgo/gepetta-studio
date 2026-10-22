@@ -130,6 +130,9 @@ export function Timeline() {
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ left: 0, width: 1200 });
   const [gesture, setGestureState] = useState<Gesture | null>(null);
+  /** The picture ranges start from (the last one picked), and the last one pressed (for double/triple clicks). */
+  const anchorRef = useRef<ClipId | null>(null);
+  const lastDown = useRef<ClipId | null>(null);
   // Pointer events can arrive faster than React re-renders: handlers read the ref.
   const gestureRef = useRef<Gesture | null>(null);
   const setGesture = (g: Gesture | null) => {
@@ -259,6 +262,33 @@ export function Timeline() {
     }
   }
 
+  /** Pictures in the block between two pictures: the rows from one to the other, and the cells they span. */
+  const rangeBetween = (a: Clip, b: Clip): ClipId[] => {
+    const ra = tracks.findIndex((t) => t.id === a.track);
+    const rb = tracks.findIndex((t) => t.id === b.track);
+    const rows = new Set(tracks.slice(Math.min(ra, rb), Math.max(ra, rb) + 1).map((t) => t.id));
+    const from = Math.min(a.start, b.start);
+    const to = Math.max(clipEnd(a), clipEnd(b));
+    return Object.values(film.clips)
+      .filter((c) => rows.has(c.track) && c.start < to && clipEnd(c) > from)
+      .map((c) => c.id);
+  };
+  /** The picture and the ones right after it in its track, up to the first empty cell. */
+  const runFrom = (c: Clip): ClipId[] => {
+    const list = index.get(c.track) ?? [];
+    const out: ClipId[] = [];
+    let end = c.start;
+    for (const x of list) {
+      if (x.start < c.start) continue;
+      if (x.start !== end) break;
+      out.push(x.id);
+      end = clipEnd(x);
+    }
+    return out;
+  };
+  /** The picture and every one after it in its track. */
+  const forwardFrom = (c: Clip): ClipId[] => (index.get(c.track) ?? []).filter((x) => x.start >= c.start).map((x) => x.id);
+
   /** A camera's live picture as a cell item, drawn as its track draws pictures. */
   const liveItem = (rigId: string, track: Track): CellItem => ({
     kind: "live",
@@ -337,16 +367,28 @@ export function Timeline() {
         setGesture({ kind: "resize", x0: p.x, id, length0: clip.length, dx: 0 });
         return;
       }
-      const add = e.shiftKey || e.metaKey || e.ctrlKey;
+      const add = e.metaKey || e.ctrlKey;
+      const anchor = anchorRef.current ? film!.clips[anchorRef.current] : undefined;
       let ids = selection;
-      if (add) ids = selected.has(id) ? selection.filter((s) => s !== id) : [...selection, id];
-      else if (!selected.has(id)) ids = [id];
+      if (e.shiftKey && anchor) {
+        // ⇧: everything between the last picked picture and this one (⌘/Ctrl too: added).
+        const range = rangeBetween(anchor, clip);
+        ids = add ? [...new Set([...selection, ...range])] : range;
+      } else if (add) {
+        ids = selected.has(id) ? selection.filter((s) => s !== id) : [...selection, id];
+        anchorRef.current = id;
+      } else {
+        if (!selected.has(id)) ids = [id];
+        anchorRef.current = id;
+      }
+      lastDown.current = id;
       setSelection(ids);
       useEditor.getState().moveTo(Math.max(clip.start, Math.min(p.cell, clipEnd(clip) - 1)), clip.track);
       if (ids.length === 1) useLayers.getState().showClip(clip.track);
       if (ids.includes(id)) setGesture({ kind: "move", x0: p.x, y0: p.y, id, ids, moved: false, dx: 0, dy: 0 });
       return;
     }
+    lastDown.current = null;
     setGesture({ kind: "band", x0: p.x, y0: p.y, x1: p.x, y1: p.y, add: e.shiftKey || e.metaKey || e.ctrlKey, base: selection });
   }
 
@@ -394,7 +436,7 @@ export function Timeline() {
         return { id, track: to.id, start: c.start + g.dx };
       });
       if (moves.every((m) => m.start >= 0)) moveClips(moves);
-    } else if (g.kind === "move" && !g.moved && !(e.shiftKey || e.metaKey || e.ctrlKey)) {
+    } else if (g.kind === "move" && !g.moved && !(e.shiftKey || e.metaKey || e.ctrlKey) && e.detail < 2) {
       // A plain click on a picture of a group picks just that one.
       useEditor.getState().setSelection([g.id]);
       useLayers.getState().showClip(film!.clips[g.id]!.track);
@@ -409,6 +451,16 @@ export function Timeline() {
       useEditor.getState().setColumns(null);
       useEditor.getState().moveTo(p.cell, p.track.id);
     }
+  }
+
+  /** Double click: the connected row from the picture on; triple: the whole track from it on. */
+  function onClick(e: React.MouseEvent) {
+    if (e.detail < 2 || !lastDown.current) return;
+    const clip = film!.clips[lastDown.current];
+    if (!clip) return;
+    const ids = e.detail === 2 ? runFrom(clip) : forwardFrom(clip);
+    useEditor.getState().setSelection(ids);
+    anchorRef.current = clip.id;
   }
 
   function onDoubleClick(e: React.MouseEvent) {
@@ -466,6 +518,7 @@ export function Timeline() {
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onClick={onClick}
           onDoubleClick={onDoubleClick}
           onDragOver={(e) => e.preventDefault()}
           onDrop={onDrop}
