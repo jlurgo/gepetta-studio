@@ -50,9 +50,14 @@ docs/             Este documento, roadmap y decisiones.
   clips no se superponen: **poner o mover una imagen pisa lo que haya** (recorta,
   parte o quita), y la parte cortada recibe un id derivado del corte para que el
   replay dé siempre lo mismo.
-- **Herramientas**: la cámara (y después pincel, sello, etc.) "pinta" en la celda
-  del cursor (`track` + `cell`); la foto dura `captureStep` celdas ("en unos",
-  "en dos"…) y el cursor avanza.
+- **Herramientas**: cada cámara (y después pincel, sello, etc.) "pinta" en su
+  celda destino (`track` + `cell`); la foto dura `captureStep` celdas ("en unos",
+  "en dos"…) y el destino avanza. Puede haber **varias cámaras abiertas a la vez**
+  (`Rig` en `state/camera.ts`), cada una con su destino; la "elegida" maneja los
+  paneles y su destino es el cursor. En la celda que se ve, cada cámara que apunta
+  ahí se dibuja en vivo en su track, con la transparencia y posición del track.
+  Cada cámara también graba video: una imagen por celda a la velocidad de la
+  película, desde su vista en vivo, que se pone de una vez al detenerla.
 - `stackAt(film, cell)` arma lo que se ve en una celda; en vivo, la cámara ocupa el
   lugar del track del cursor (`splitAtTrack`). El papel de cebolla muestra las
   imágenes anteriores de ese track. La línea de tiempo muestra la regla, el

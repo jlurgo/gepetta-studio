@@ -1561,3 +1561,106 @@ input[type="range"] {
   z-index: 5;
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
+
+/* Cameras in use */
+
+.rigs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rig-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px 4px 2px 2px;
+}
+
+.rig-row.active {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 10%, transparent);
+}
+
+.rig-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  padding: 4px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rig-dot {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-text);
+}
+
+.rig-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rig-text strong,
+.rig-text small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rig-text strong {
+  font-size: 12px;
+}
+
+.rig-text small {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.icon-btn.recording {
+  color: var(--danger);
+  animation: blink 1s steps(2) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Where each camera (other than the chosen one) puts its photos. */
+.tl-rig {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  border: 2px dashed;
+  border-radius: 6px;
+}
+
+.tl-rig span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  color: var(--accent-text);
+}

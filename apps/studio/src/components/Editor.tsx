@@ -8,8 +8,7 @@ import {
   duplicateSelected,
   importImages,
   nudgeSelected,
-  selectRelative,
-} from "../state/actions";
+  selectRelative, stopAllRecordings } from "../state/actions";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
@@ -377,7 +376,10 @@ export function Editor() {
 
   useEffect(() => {
     void useCamera.getState().start();
-    return () => useCamera.getState().stop();
+    return () => {
+      stopAllRecordings();
+      useCamera.getState().stop();
+    };
   }, []);
 
   return (

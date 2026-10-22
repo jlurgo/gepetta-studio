@@ -17,7 +17,7 @@ import { rotateBlob } from "../capture/types";
 import { ingestImage, isImageFile, sortFiles } from "../media/ingest";
 import { grabStill } from "../media/video";
 import { runTask, useBusy } from "./busy";
-import { useCamera } from "./camera";
+import { type Rig, useCamera } from "./camera";
 import { type GridCursor, useEditor } from "./editor";
 import { useLayers } from "./layers";
 
@@ -36,65 +36,152 @@ function clipsFrom(at: GridCursor, media: MediaRef[], length: number, name: stri
   }));
 }
 
-let capturing = false;
+/** Cameras taking a photo right now (one shot at a time per camera). */
+const capturing = new Set<string>();
 /** Stills are placed one after another, in arrival order. */
 let placeQueue: Promise<unknown> = Promise.resolve();
 
+/** The camera to use: the given one, or the active one. */
+function rigFor(rigId?: string): Rig | undefined {
+  const { rigs, activeRig } = useCamera.getState();
+  return rigs.find((r) => r.id === (rigId ?? activeRig));
+}
+
 /**
- * Puts a photo at the cursor (replacing what was in that cell) and moves the
- * cursor past it, ready for the next one.
+ * Puts a photo at the camera's target (replacing what was in that cell) and
+ * moves the target past it, ready for the next one.
  */
-function placeStill(image: Blob, raw: Blob | null, label: string, meta?: CaptureMeta): Promise<void> {
+function placeStill(rigId: string | null, image: Blob, raw: Blob | null, label: string, meta?: CaptureMeta): Promise<void> {
   const run = async () => {
     const { filmId } = useEditor.getState();
     if (!filmId) return;
     const media = await ingestImage(filmId, image, raw, meta);
     const state = useEditor.getState();
     if (state.filmId !== filmId) return;
-    const [clip] = clipsFrom(state.cursor, [media], state.captureStep, label);
-    state.commit([{ type: "clip.place", clips: [clip!], label }], undefined, {
-      cursor: { track: clip!.track, cell: clipEnd(clip!) },
-      selection: [],
-    });
-    if (state.view === "live" || state.playback) state.setView("live");
+    const rig = rigId ? rigFor(rigId) : undefined;
+    const target = rig ? useCamera.getState().targetOf(rig) : state.cursor;
+    const [clip] = clipsFrom(target, [media], state.captureStep, label);
+    state.commit([{ type: "clip.place", clips: [clip!], label }], undefined, { selection: [] });
+    const next = { track: clip!.track, cell: clipEnd(clip!) };
+    if (rig) useCamera.getState().setTarget(rig.id, next);
+    else state.moveTo(next.cell, next.track);
   };
   const next = placeQueue.then(run);
   placeQueue = next.catch(() => undefined);
   return next;
 }
 
-export async function capture() {
+/** Takes a photo with a camera (the active one by default) into its target cell. */
+export async function capture(rigId?: string) {
   const { filmId, captureAverage } = useEditor.getState();
-  const { source, controls } = useCamera.getState();
-  if (!filmId || !source || capturing) return;
-  capturing = true;
+  const rig = rigFor(rigId);
+  const source = rig?.source;
+  if (!filmId || !rig || !source || capturing.has(rig.id) || rig.recording) return;
+  capturing.add(rig.id);
   try {
     // Snapshot what the app knows before the shot (the lens may move right after).
-    const meta: CaptureMeta = { source: useCamera.getState().sourceLabel() ?? undefined, sourceKind: source.kind };
-    const focus = controls.find((c) => c.kind === "focus");
+    const meta: CaptureMeta = { source: useCamera.getState().labelOf(source.id) ?? undefined, sourceKind: source.kind };
+    const focus = rig.controls.find((c) => c.kind === "focus");
     if (focus?.kind === "focus" && focus.position !== null && focus.origin) {
       meta.focusPosition = focus.position;
       meta.focusOrigin = focus.origin;
     }
-    const rotation = useCamera.getState().rotation();
+    const rotation = useCamera.getState().rotationOf(rig);
     const still = await source.capture(captureAverage);
-    await placeStill(await rotateBlob(still.image, rotation), still.raw?.blob ?? null, "Foto", meta);
+    await placeStill(rig.id, await rotateBlob(still.image, rotation), still.raw?.blob ?? null, "Foto", meta);
   } catch (e) {
     useBusy.getState().notify(e instanceof Error ? e.message : "No se pudo sacar la foto", "error");
   } finally {
-    capturing = false;
+    capturing.delete(rig.id);
   }
 }
 
-// Photos shot from a phone (its own shutter or photo mode) go straight into the film.
-onRemoteMessage((_sessionId, header, payload) => {
+// Photos shot from a phone (its own shutter or photo mode) go to that phone's target.
+onRemoteMessage((sessionId, header, payload) => {
   if (header.t !== "photo" || header.requestId !== null || !payload) return;
   if (!useEditor.getState().filmId) return;
+  const rig = useCamera.getState().rigs.find((r) => r.deviceId === `phone:${sessionId}`);
   const photo = new Blob([payload.slice()], { type: header.mime || "image/jpeg" });
   rotateBlob(photo, header.rotation ?? 0)
-    .then((upright) => placeStill(upright, null, "Foto del celular", { sourceKind: "phone" }))
+    .then((upright) => placeStill(rig?.id ?? null, upright, null, "Foto del celular", { sourceKind: "phone" }))
     .catch((e) => useBusy.getState().notify(e instanceof Error ? e.message : "No se pudo agregar la foto", "error"));
 });
+
+interface Recorder {
+  timer: ReturnType<typeof setInterval>;
+  start: GridCursor;
+  /** Each picture as it is stored, in order. */
+  pictures: Promise<MediaRef>[];
+  meta: CaptureMeta;
+}
+const recorders = new Map<string, Recorder>();
+
+/**
+ * Records video with a camera: one picture per cell, at the film's speed,
+ * from the camera's live view (on a DSLR that is its live-view size). They
+ * go to the camera's target when the recording stops, as one step.
+ */
+export function startRecording(rigId?: string) {
+  const { filmId, film } = useEditor.getState();
+  const rig = rigFor(rigId);
+  if (!filmId || !film || !rig?.source || rig.recording || recorders.has(rig.id)) return;
+  const id = rig.id;
+  const camera = useCamera.getState();
+  const rec: Recorder = {
+    timer: 0 as unknown as ReturnType<typeof setInterval>,
+    start: camera.targetOf(rig),
+    pictures: [],
+    meta: { source: camera.labelOf(rig.source.id) ?? undefined, sourceKind: rig.source.kind },
+  };
+  let chain: Promise<unknown> = Promise.resolve();
+  const grab = () => {
+    const current = rigFor(id);
+    const live = current ? useCamera.getState().liveOf(current) : null;
+    if (!live) return;
+    const canvas = new OffscreenCanvas(live.width, live.height);
+    canvas.getContext("2d")!.drawImage(live.image, 0, 0, live.width, live.height);
+    // Stored one after another, so the pictures keep their order.
+    const picture = chain.then(async () => ingestImage(filmId, await canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 }), null, rec.meta));
+    chain = picture.catch(() => undefined);
+    rec.pictures.push(picture);
+    useCamera.getState().setRecording(id, { cells: rec.pictures.length });
+  };
+  rec.timer = setInterval(grab, 1000 / film.settings.fps);
+  recorders.set(id, rec);
+  grab();
+}
+
+/** Stops a recording and puts its pictures in the film. */
+export async function stopRecording(rigId?: string) {
+  const rig = rigFor(rigId);
+  const rec = rig && recorders.get(rig.id);
+  if (!rig || !rec) return;
+  clearInterval(rec.timer);
+  recorders.delete(rig.id);
+  useCamera.getState().setRecording(rig.id, null);
+  const results = await runTask("Guardando el video", rec.pictures.length, async (progress) => {
+    const out: MediaRef[] = [];
+    for (const p of rec.pictures) {
+      try {
+        out.push(await p);
+      } catch {
+        // A picture that could not be stored is skipped.
+      }
+      progress(out.length);
+    }
+    return out;
+  });
+  const state = useEditor.getState();
+  if (!results?.length || !state.film) return;
+  const clips = clipsFrom(rec.start, results, 1, `Video de ${rec.meta.source ?? "la cámara"}`);
+  state.commit([{ type: "clip.place", clips, label: "Video grabado" }], `Video grabado (${clips.length} imágenes)`, { selection: [] });
+  useCamera.getState().setTarget(rig.id, { track: rec.start.track, cell: clipEnd(clips.at(-1)!) });
+}
+
+/** Stops every recording (e.g. when leaving the film). */
+export function stopAllRecordings() {
+  for (const id of recorders.keys()) void stopRecording(id);
+}
 
 /** Images in a row from the cursor (or `at`), in name order. */
 export async function importImages(files: File[], at?: GridCursor) {

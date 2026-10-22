@@ -31,7 +31,8 @@
 - [x] Línea de tiempo en grilla fija: tracks como filas de celdas, imágenes que se ponen, mueven (también en grupo y entre tracks) y alargan; resultado combinado arriba
 - [x] Exportar el resultado, un track solo o cada track por separado
 - [ ] Publicaciones versionadas al exportar, e historial de versiones (fecha, archivo, volver a exportar una versión)
-- [ ] Barra de herramientas: la cámara como herramienta que pinta una celda; pincel, sello, etc.
+- [x] Varias cámaras a la vez, cada una con su track y celda destino; en vivo con la transparencia de su track; grabar video con cada una
+- [ ] Barra de herramientas: pincel, sello, etc., como la cámara (pintan en una celda)
 - [x] Transformar capas: mover, rotar, escalar con manijas
 - Alinear capas por puntos de control
   (afín/homografía/TPS de CasitaDesign); deformación trapezoidal

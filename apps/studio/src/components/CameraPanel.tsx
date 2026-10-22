@@ -1,3 +1,4 @@
+import { CamerasList } from "./CamerasList";
 import { useEffect, useMemo, useState } from "react";
 import { useRemote } from "../capture/remote";
 import { RESOLUTIONS, webcamSettings } from "../capture/webcam";
@@ -79,7 +80,8 @@ export function CameraPanel() {
   return (
     <>
       <FrameInfo />
-      <h3>Cámara</h3>
+      <CamerasList />
+      <h3>Cámara elegida</h3>
       <label className="control">
         <span>Fuente {opening && <small>abriendo…</small>}</span>
         <select value={current} onChange={(e) => void select(e.target.value)}>

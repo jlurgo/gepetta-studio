@@ -5,6 +5,8 @@ import { drawStack } from "../render/frame";
 import { addImageTrack, addTrack, extendFilm, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
+import { useCamera } from "../state/camera";
+import { RIG_COLORS } from "./CamerasList";
 import { Icon } from "./Icon";
 import { capturePointer } from "./pointer";
 import { OpacitySlider } from "./TrackPanel";
@@ -177,6 +179,8 @@ export function Timeline() {
   const cursor = useEditor((s) => s.cursor);
   const selection = useEditor((s) => s.selection);
   const columns = useEditor((s) => s.columns);
+  const rigs = useCamera((s) => s.rigs);
+  const activeRig = useCamera((s) => s.activeRig);
   const view = useEditor((s) => s.view);
   const [cw, setCw] = useState(loadZoom);
   const scroller = useRef<HTMLDivElement>(null);
@@ -506,6 +510,19 @@ export function Timeline() {
               )}
             </>
           )}
+
+          {/* Where each of the other cameras puts its photos. */}
+          {rigs.map((r, i) => {
+            if (r.id === activeRig) return null;
+            const row = tracks.findIndex((t) => t.id === r.target.track);
+            if (row < 0) return null;
+            const color = RIG_COLORS[i % RIG_COLORS.length];
+            return (
+              <div key={r.id} className="tl-rig" style={{ left: r.target.cell * cw, width: cw, top: rowTop(row), height: TRACK_H, borderColor: color }}>
+                <span style={{ background: color }}>{i + 1}</span>
+              </div>
+            );
+          })}
 
           {/* The selected cell, across every row; it stays marked while playing. */}
           <div className={`tl-selected${playing ? " playing" : ""}`} style={{ left: cursor.cell * cw, width: cw, height }} />

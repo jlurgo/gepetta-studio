@@ -6,10 +6,10 @@ import {
   type Transform2D,
   cellIndex,
   clipAt,
+  IDENTITY_TRANSFORM,
   composeTransforms,
   moveVanishingPoint,
   previousClips,
-  splitAtTrack,
   stackAt,
   vanishingPoints,
 } from "@gepetta/core";
@@ -405,29 +405,47 @@ export function Stage() {
       liveRect.current = null;
       const shown = withPreview(film);
       if (view === "live") {
-        const live = useCamera.getState().live();
-        // The film at the cursor, with the camera in place of the cursor track's picture.
-        const tracks = splitAtTrack(shown, stackAt(shown, cursor.cell), cursor.track);
-        drawProxies(ctx, filmId, film, tracks.below);
-        if (live) {
-          drawContained(ctx, live.image, live, size);
-          // Where the picture landed, in CSS pixels of the stage, for pointer interactions.
-          const c = containScale(live, size);
-          const lx = ox + ((size.width - live.width * c) / 2) * s;
-          const ly = oy + ((size.height - live.height * c) / 2) * s;
-          liveRect.current = { x: lx / dpr, y: ly / dpr, w: (live.width * c * s) / dpr, h: (live.height * c * s) / dpr };
-        }
-        drawProxies(ctx, filmId, film, tracks.above);
-        // A magnified view does not line up with earlier pictures, nor with the measuring spots.
-        const magnify = magnifyControl(useCamera.getState().controls);
+        const camera = useCamera.getState();
+        const active = camera.rigs.find((r) => r.id === camera.activeRig);
+        const magnify = magnifyControl(camera.controls);
         const magnified = magnify !== undefined && magnify.value !== "1";
-        if (magnified) {
+        let activeLive: LiveFrame | null = null;
+        /** Draws a camera's live picture as its track shows pictures (transparency, position). */
+        const drawLive = (live: LiveFrame, transform: Transform2D, opacity: number, isActive: boolean) => {
+          drawStack(ctx, [{ media: { width: live.width, height: live.height } as MediaRef, opacity, transform }], size, () => live.image);
+          if (!isActive) return;
+          activeLive = live;
+          // Where the picture landed, in CSS pixels of the stage, for pointer interactions (rotation aside).
+          const c = containScale(live, size) * transform.scale;
+          const lx = ox + (size.width / 2 + transform.x - (live.width * c) / 2) * s;
+          const ly = oy + (size.height / 2 + transform.y - (live.height * c) / 2) * s;
+          liveRect.current = { x: lx / dpr, y: ly / dpr, w: (live.width * c * s) / dpr, h: (live.height * c * s) / dpr };
+        };
+        if (magnified && active) {
+          // A magnified view does not line up with the film: only the camera, plain.
+          const live = camera.liveOf(active);
+          if (live) drawLive(live, IDENTITY_TRANSFORM, 1, true);
           showGuides = false;
           showOnion = false;
+        } else {
+          // The film at the cursor, bottom to top; every camera aimed at this cell shows
+          // live in its track, with the track's transparency and position.
+          const items = stackAt(shown, cursor.cell, { index });
+          const here = camera.rigs.filter((r) => r.source && camera.targetOf(r).cell === cursor.cell);
+          for (const t of shown.tracks) {
+            const rig = here.find((r) => camera.targetOf(r).track === t.id);
+            if (rig) {
+              const live = t.visible ? camera.liveOf(rig) : null;
+              if (live) drawLive(live, t.transform, t.opacity, rig.id === camera.activeRig);
+              continue;
+            }
+            const item = items.find((i) => i.trackId === t.id);
+            if (item) drawProxies(ctx, filmId, film, [item]);
+          }
         }
-        if (live && !magnified) {
-          measureProbes(live);
-          probesToDraw = live;
+        if (activeLive && !magnified) {
+          measureProbes(activeLive);
+          probesToDraw = activeLive;
         }
       } else {
         drawProxies(ctx, filmId, film, stackAt(shown, cursor.cell, { index }));
