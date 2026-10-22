@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld("gepetta", {
     get: (filmId: string, assetId: string) => ipcRenderer.invoke("assets:get", filmId, assetId),
   },
   saveFile: (defaultName: string, data: ArrayBuffer) => ipcRenderer.invoke("file:save", defaultName, data),
+  fileExists: (filePath: string) => ipcRenderer.invoke("file:exists", filePath),
+  revealFile: (filePath: string) => ipcRenderer.invoke("file:reveal", filePath),
   remote: {
     start: () => ipcRenderer.invoke("remote:start"),
     stop: () => ipcRenderer.invoke("remote:stop"),

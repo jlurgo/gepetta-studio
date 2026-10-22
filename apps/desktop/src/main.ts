@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { BrowserWindow, app, dialog, ipcMain, session, shell, systemPreferences } from "electron";
 import { type FilmMeta, FilmLibrary } from "./films";
@@ -32,6 +32,17 @@ function registerIpc() {
     if (result.canceled || !result.filePath) return null;
     await writeFile(result.filePath, Buffer.from(data));
     return result.filePath;
+  });
+  // Exported files listed in a film's versions: still there? show them.
+  ipcMain.handle("file:exists", async (_e, filePath: unknown) => {
+    if (typeof filePath !== "string" || !path.isAbsolute(filePath)) return false;
+    return stat(filePath).then(
+      (s) => s.isFile(),
+      () => false,
+    );
+  });
+  ipcMain.handle("file:reveal", (_e, filePath: unknown) => {
+    if (typeof filePath === "string" && path.isAbsolute(filePath)) shell.showItemInFolder(filePath);
   });
   const dslr = registerDslrIpc(getWindow);
   releaseCameras = dslr.releaseCameras;

@@ -21,6 +21,7 @@ import {
 } from "@gepetta/core";
 import { create } from "zustand";
 import { type FilmFile, type FilmMeta, storage } from "../storage";
+import type { Release } from "./releases";
 
 export interface OnionSettings {
   enabled: boolean;
@@ -57,6 +58,8 @@ interface EditorState {
   history: History | null;
   /** A converted film's original history, saved along so nothing is lost. */
   legacy: History | null;
+  /** Published versions, oldest first. */
+  releases: Release[];
   film: FilmState | null;
   /** History entries that no longer apply, with the reason. */
   errors: Record<string, string>;
@@ -103,6 +106,7 @@ interface EditorState {
   /** Moves the grid cursor; keeps the track when not given. */
   moveTo(cell: number, track?: TrackId): void;
   setSelection(ids: ClipId[]): void;
+  addRelease(release: Release): void;
   setColumns(columns: { start: number; end: number } | null): void;
   setOnion(patch: Partial<OnionSettings>): void;
   set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep" | "focusOpacity">>): void;
@@ -154,7 +158,8 @@ export const useEditor = create<EditorState>((set, get) => {
     const legacy = get().legacy;
     pendingSave = async () => {
       try {
-        const file: FilmFile = { version: 2, id, history, ...(legacy && { legacy }) };
+        const releases = get().releases;
+        const file: FilmFile = { version: 2, id, history, ...(legacy && { legacy }), ...(releases.length && { releases }) };
         await storage.saveFilm(file, metaOf(id, film));
         if (get().filmId === id && get().history === history) set({ saveStatus: "saved" });
       } catch (e) {
@@ -186,6 +191,7 @@ export const useEditor = create<EditorState>((set, get) => {
     filmId: null,
     history: null,
     legacy: null,
+    releases: [],
     film: null,
     errors: {},
     cursor: { track: PHOTO_TRACK, cell: 0 },
@@ -212,6 +218,7 @@ export const useEditor = create<EditorState>((set, get) => {
         filmId: id,
         history,
         legacy,
+        releases: file.releases ?? [],
         film,
         errors,
         cursor: { track: PHOTO_TRACK, cell: nextPhotoCell(film) },
@@ -228,7 +235,7 @@ export const useEditor = create<EditorState>((set, get) => {
 
     async close() {
       await flushSave();
-      set({ filmId: null, history: null, legacy: null, film: null, errors: {}, selection: [], playback: null });
+      set({ filmId: null, history: null, legacy: null, releases: [], film: null, errors: {}, selection: [], playback: null });
     },
 
     commit(ops, label, after) {
@@ -277,6 +284,12 @@ export const useEditor = create<EditorState>((set, get) => {
     setSelection(ids) {
       // Pictures or columns: one kind of selection at a time.
       set({ selection: ids, ...(ids.length && { columns: null }) });
+    },
+    addRelease(release) {
+      const { filmId, history, film } = get();
+      if (!filmId || !history || !film) return;
+      set({ releases: [...get().releases, release], saveStatus: "pending" });
+      scheduleSave(filmId, history, film);
     },
     setColumns(columns) {
       set({ columns, ...(columns && { selection: [] }) });

@@ -1,4 +1,5 @@
 import type { AssetId, History } from "@gepetta/core";
+import type { Release } from "../state/releases";
 
 export interface FilmMeta {
   id: string;
@@ -17,6 +18,8 @@ export interface FilmFile {
   history: History;
   /** A version-1 film's original history, kept untouched when it was converted. */
   legacy?: History;
+  /** Published versions, oldest first. */
+  releases?: Release[];
 }
 
 export interface StorageBackend {

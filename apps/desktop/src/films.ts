@@ -17,6 +17,8 @@ export interface FilmMeta {
 
 const EXT_BY_MIME: Record<string, string> = {
   "image/jpeg": "jpg",
+  // Snapshots of the film kept by its published versions.
+  "application/json": "json",
   "image/png": "png",
   "image/webp": "webp",
   "image/gif": "gif",

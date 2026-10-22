@@ -176,6 +176,13 @@ puede tomar la cámara por USB: el botón "Liberar cámara" lo resuelve.
 
 ## Reproducción y exportación
 
+- **Versiones publicadas** (`Release`, en el archivo de la película): al exportar se
+  puede publicar una versión (número sugerido nueva/revisión, título, notas). Guarda
+  la fecha, el paso del historial, las opciones de exportación, el archivo (y en
+  escritorio su ruta, para avisar si ya no está y mostrarlo) y una **foto de la
+  película** (`FilmState` como asset JSON) para volver a exportarla aunque después
+  cambie. Los assets nunca se borran, así que las imágenes siguen disponibles.
+
 - Reproductor por celdas; reproducir todo, los últimos N segundos o en loop.
 - Exportar el resultado, un track solo, o cada track por separado.
 - Exportación de video con WebCodecs (librería `mediabunny`): MP4 (H.264), WebM

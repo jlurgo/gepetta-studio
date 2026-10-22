@@ -72,6 +72,9 @@ export interface GepettaNative {
     get(filmId: string, assetId: string): Promise<ArrayBuffer>; // assets:get
   };
   saveFile(defaultName: string, data: ArrayBuffer): Promise<string | null>; // file:save
+  fileExists(filePath: string): Promise<boolean>; // file:exists
+  /** Shows the file in Finder / Explorer. */
+  revealFile(filePath: string): Promise<void>; // file:reveal
   remote: {
     start(): Promise<RemoteServerInfo>; // remote:start
     stop(): Promise<void>; // remote:stop

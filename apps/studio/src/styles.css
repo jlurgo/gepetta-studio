@@ -52,12 +52,14 @@ h3 {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
 
 select,
+textarea,
 input[type="text"],
 input[type="number"],
 input:not([type]) {
@@ -1713,4 +1715,85 @@ input[type="range"] {
   pointer-events: none;
   border-radius: 5px;
   overflow: hidden;
+}
+
+/* Publishing a version, in the export dialog. */
+.publish {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.publish textarea {
+  resize: vertical;
+}
+
+/* Published versions */
+.releases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.release {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.release-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.release-version {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--accent);
+  min-width: 44px;
+}
+
+.release-title {
+  display: flex;
+  flex-direction: column;
+}
+
+.release-title small,
+.release-path {
+  color: var(--muted);
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.release-notes {
+  margin: 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.missing {
+  color: var(--danger);
+}
+
+.version-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent-text);
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 0 6px;
+  margin-left: 6px;
 }

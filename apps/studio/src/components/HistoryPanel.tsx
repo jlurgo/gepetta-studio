@@ -34,6 +34,9 @@ function editableParam(op: Op): { label: string; value: string; numeric: boolean
 function EntryRow({ entry, index, active, error }: { entry: HistoryEntry; index: number; active: boolean; error?: string }) {
   const { setCursor, setEntryEnabled, removeEntry, updateEntryOp, moveTo } = useEditor.getState();
   const [open, setOpen] = useState(false);
+  const versions = useEditor((s) => s.releases.filter((r) => r.entryId === entry.id).map((r) => r.version).join("|"))
+    .split("|")
+    .filter(Boolean);
   const op = entry.ops.length === 1 ? entry.ops[0]! : null;
   const param = op ? editableParam(op) : null;
   const [draft, setDraft] = useState(param?.value ?? "");
@@ -56,7 +59,14 @@ function EntryRow({ entry, index, active, error }: { entry: HistoryEntry; index:
             if (cell !== null) moveTo(cell);
           }}
         >
-          <span>{entry.label}</span>
+          <span>
+            {entry.label}
+            {versions.map((v) => (
+              <span key={v} className="version-tag" title={`Versión ${v} publicada en este punto`}>
+                {v}
+              </span>
+            ))}
+          </span>
           {error && <small className="entry-error">⚠ {error}</small>}
         </button>
         {param && (

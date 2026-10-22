@@ -2,6 +2,7 @@ const PATHS = {
   camera: "M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
   play: "M7 5v14l12-7Z",
   stop: "M6 6h12v12H6Z",
+  tag: "M3 12V4h8l10 10-8 8Z M7.5 8.5a1 1 0 1 0 0-.01",
   record: "M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z",
   pause: "M7 5h3v14H7Z M14 5h3v14h-3Z",
   tail: "M4 5v14 M9 5v14l11-7Z",

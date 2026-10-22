@@ -1,4 +1,4 @@
-import { clipAt } from "@gepetta/core";
+import { type FilmState, clipAt } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { isVideoFile } from "../media/ingest";
 import {
@@ -18,6 +18,8 @@ import { GuidesControl } from "./GuidesControl";
 import { DetailPanel } from "./TrackPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ExportDialog } from "./ExportDialog";
+import { VersionsDialog } from "./VersionsDialog";
+import type { Release } from "../state/releases";
 import { HistoryPanel } from "./HistoryPanel";
 import { Icon } from "./Icon";
 import { Stage } from "./Stage";
@@ -76,7 +78,18 @@ function useShortcuts() {
   }, []);
 }
 
-function TopBar({ onExport, onToggleHistory, historyOpen }: { onExport(): void; onToggleHistory(): void; historyOpen: boolean }) {
+function TopBar({
+  onExport,
+  onToggleHistory,
+  onVersions,
+  historyOpen,
+}: {
+  onExport(): void;
+  onToggleHistory(): void;
+  onVersions(): void;
+  historyOpen: boolean;
+}) {
+  const releaseCount = useEditor((s) => s.releases.length);
   const film = useEditor((s) => s.film)!;
   const saveStatus = useEditor((s) => s.saveStatus);
   const { close, commit } = useEditor.getState();
@@ -129,6 +142,9 @@ function TopBar({ onExport, onToggleHistory, historyOpen }: { onExport(): void; 
       </button>
       <button className={`btn${historyOpen ? " active" : ""}`} onClick={onToggleHistory} title="Historial de cambios">
         <Icon name="history" /> Historial
+      </button>
+      <button className="btn" onClick={onVersions} title="Versiones publicadas: fecha, archivo, exportar de nuevo">
+        <Icon name="tag" /> Versiones{releaseCount ? ` (${releaseCount})` : ""}
       </button>
       <button className="btn primary" onClick={onExport} disabled={film.length === 0}>
         <Icon name="export" /> Exportar
@@ -364,6 +380,9 @@ function SidePanel() {
 
 export function Editor() {
   const [exporting, setExporting] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  /** A published version being exported again: the film as it was. */
+  const [past, setPast] = useState<{ film: FilmState; release: Release } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   useShortcuts();
 
@@ -377,7 +396,12 @@ export function Editor() {
 
   return (
     <div className="editor">
-      <TopBar onExport={() => setExporting(true)} onToggleHistory={() => setHistoryOpen(!historyOpen)} historyOpen={historyOpen} />
+      <TopBar
+        onExport={() => setExporting(true)}
+        onToggleHistory={() => setHistoryOpen(!historyOpen)}
+        onVersions={() => setVersionsOpen(true)}
+        historyOpen={historyOpen}
+      />
       <div className="workspace">
         {historyOpen && (
           <ErrorBoundary label="el historial">
@@ -390,6 +414,16 @@ export function Editor() {
       <Transport />
       <Timeline />
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
+      {versionsOpen && (
+        <VersionsDialog
+          onClose={() => setVersionsOpen(false)}
+          onExport={(film, release) => {
+            setVersionsOpen(false);
+            setPast({ film, release });
+          }}
+        />
+      )}
+      {past && <ExportDialog past={past} onClose={() => setPast(null)} />}
     </div>
   );
 }
