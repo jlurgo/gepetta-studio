@@ -211,6 +211,29 @@ export function Timeline() {
     else if (x + cw > el.scrollLeft + el.clientWidth) el.scrollLeft = x + 2 * cw - el.clientWidth;
   }, [cursor.cell, cw]);
 
+  // While playing, a line runs over the cells being shown (outside React: it moves every frame).
+  const playing = useEditor((s) => s.playback !== null);
+  const playRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    const step = () => {
+      raf = requestAnimationFrame(step);
+      const { playback, film: f } = useEditor.getState();
+      const line = playRef.current;
+      const el = scroller.current;
+      if (!playback || !f || !line || !el) return;
+      const cell = Math.min(f.length - 1, playback.startCell + Math.floor(((performance.now() - playback.startedAt) * f.settings.fps) / 1000));
+      const x = cell * cw;
+      line.style.transform = `translateX(${x}px)`;
+      line.style.width = `${cw}px`;
+      // Page along, like a video editor, when the line reaches an edge.
+      if (x < el.scrollLeft || x + cw > el.scrollLeft + el.clientWidth) el.scrollLeft = Math.max(0, x - el.clientWidth * 0.1);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, cw]);
+
   if (!film || !filmId) return null;
   const fps = film.settings.fps;
   const tracks = [...film.tracks].reverse(); // top first, like the picture
@@ -448,7 +471,11 @@ export function Timeline() {
             }),
           )}
 
-          <div className="tl-playhead" style={{ left: cursor.cell * cw + cw / 2, height }} />
+          {playing ? (
+            <div className="tl-play" ref={playRef} style={{ height }} />
+          ) : (
+            <div className="tl-playhead" style={{ left: cursor.cell * cw + cw / 2, height }} />
+          )}
 
           {gesture?.kind === "band" && (
             <div

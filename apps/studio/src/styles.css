@@ -1523,3 +1523,15 @@ input[type="range"] {
   gap: 10px;
   padding-top: 4px;
 }
+
+/* The cell being played: a band over every row, moved each frame. */
+.tl-play {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-left: 2px solid var(--danger);
+  border-right: 1px solid color-mix(in srgb, var(--danger) 50%, transparent);
+}
