@@ -433,8 +433,10 @@ export function Stage() {
         drawProxies(ctx, filmId, film, stackAt(shown, cursor.cell, { index }));
       }
 
-      // Onion skin: the previous pictures of the track being worked on.
+      // Onion skin: the previous pictures of the track being worked on. Looking at
+      // the film, only over a picture of that track (an empty cell shows just the film).
       const track = shown.tracks.find((t) => t.id === cursor.track);
+      if (view === "frame" && !clipAt(film, cursor.track, cursor.cell)) showOnion = false;
       if (showOnion && track) {
         const skins = previousClips(film, cursor.track, cursor.cell, onion.count, index);
         // Farthest first so the nearest one ends on top.
