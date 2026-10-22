@@ -5,8 +5,8 @@ import { thumbUrl } from "../media/cache";
 import { type Size, drawStack } from "../render/frame";
 
 /**
- * One timeline cell drawn like the film shows it: the film's frame shape,
- * letterboxed, with pictures at their opacity and position (so a picture
+ * One timeline cell drawn like the film shows it: the film's frame filling
+ * the cell (cropped to its shape), with pictures at their opacity and position (so a picture
  * made smaller shows smaller), and cameras live where they aim.
  */
 export type CellItem =
@@ -53,8 +53,8 @@ function draw(canvas: HTMLCanvasElement, filmId: string, film: Size, items: Cell
   const ctx = canvas.getContext("2d")!;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  // The film's frame, letterboxed in the cell.
-  const s = Math.min(w / film.width, h / film.height);
+  // The film's frame fills the cell, cropped as needed (centered).
+  const s = Math.max(w / film.width, h / film.height);
   const ox = (w - film.width * s) / 2;
   const oy = (h - film.height * s) / 2;
   ctx.fillStyle = "#000";
