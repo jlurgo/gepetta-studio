@@ -22,6 +22,8 @@ const PATHS = {
   image: "M4 5h16v14H4Z M4 16l5-5 4 4 3-3 4 4 M15 9.5a1.5 1.5 0 1 0 0-.01",
   video: "M3 6h12v12H3Z M15 10l6-3v10l-6-3",
   folder: "M3 6h6l2 2h10v11H3Z",
+  grid: "M4 4h16v16H4Z M9.3 4v16 M14.7 4v16 M4 9.3h16 M4 14.7h16",
+  more: "M6 10l6 6 6-6",
   film: "M4 4h16v16H4Z M8 4v16 M16 4v16 M4 8h4 M4 12h4 M4 16h4 M16 8h4 M16 12h4 M16 16h4",
 } as const;
 

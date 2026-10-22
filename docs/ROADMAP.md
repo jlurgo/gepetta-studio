@@ -33,7 +33,7 @@
   (afín/homografía/TPS de CasitaDesign); deformación trapezoidal
 - Dibujo vectorial con presión (tableta), herramientas raster/foto
 - Sello de clonar entre cuadros (elegir cuadro origen)
-- Guías y grillas: regla de tercios, grilla, perspectiva 1/2/3 puntos
+- [x] Guías y grillas: tercios, grilla, centro, márgenes seguros, perspectiva 1/2/3 puntos (puntos arrastrables)
 - Importar SVG/PDF/raster como capas
 
 ## Fase 4 — Loops y dispositivos

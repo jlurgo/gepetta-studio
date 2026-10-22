@@ -11,7 +11,9 @@ import {
 } from "../state/actions";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
+import { useGuides } from "../state/guides";
 import { CameraPanel } from "./CameraPanel";
+import { GuidesControl } from "./GuidesControl";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ExportDialog } from "./ExportDialog";
 import { HistoryPanel } from "./HistoryPanel";
@@ -55,6 +57,10 @@ function useShortcuts() {
       else if (e.key === "-") changeHold(-1);
       else if (key === "o") s.setOnion({ enabled: !s.onion.enabled });
       else if (key === "l") s.set({ loop: !s.loop });
+      else if (key === "g" && s.filmId) {
+        const guides = useGuides.getState();
+        guides.update(s.filmId, { visible: !guides.get(s.filmId).visible });
+      }
       else if (key === "c") s.setView("live");
       else return;
       e.preventDefault();
@@ -256,6 +262,8 @@ function Transport() {
           title="Transparencia"
         />
       </div>
+
+      <GuidesControl />
     </div>
   );
 }

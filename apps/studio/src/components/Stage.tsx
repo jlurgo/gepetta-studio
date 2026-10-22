@@ -1,4 +1,4 @@
-import { type FilmState, type Frame, type ImageLayer, frameIndexAtTick, timeline } from "@gepetta/core";
+import { type FilmState, type Frame, type ImageLayer, frameIndexAtTick, moveVanishingPoint, timeline, vanishingPoints } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { proxyCache } from "../media/cache";
 import type { LiveFrame } from "../capture/types";
@@ -6,6 +6,8 @@ import { type Size, containScale, drawContained, drawFrame } from "../render/fra
 import { useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
 import { useEditor } from "../state/editor";
+import { useGuides } from "../state/guides";
+import { drawGuides, hitVanishingPoint } from "../render/guides";
 import { magnifyControl } from "./MagnifyPanel";
 import { capturePointer } from "./pointer";
 
@@ -171,10 +173,64 @@ function useLivePointer(liveRect: React.RefObject<Rect | null>) {
   return { marker, handlers: { onPointerDown, onPointerMove: (e: React.PointerEvent) => onPointerMove(e), onPointerUp } };
 }
 
+/** Where the film sits in the stage, in CSS pixels (s: CSS pixels per film pixel). */
+interface FilmRect {
+  x: number;
+  y: number;
+  s: number;
+}
+
+/** Dragging vanishing points while the guides panel is open. */
+function useGuideDrag(filmRect: React.RefObject<FilmRect | null>) {
+  const drag = useRef<number | null>(null);
+
+  const filmPoint = (e: React.PointerEvent) => {
+    const r = filmRect.current!;
+    const box = e.currentTarget.getBoundingClientRect();
+    return { x: (e.clientX - box.left - r.x) / r.s, y: (e.clientY - box.top - r.y) / r.s };
+  };
+
+  /** Returns true when the event was a guide drag (and must not reach the camera tools). */
+  const onPointerDown = (e: React.PointerEvent): boolean => {
+    const { film, filmId } = useEditor.getState();
+    const guides = useGuides.getState();
+    if (!film || !filmId || !guides.editing || !filmRect.current) return false;
+    const g = guides.get(filmId);
+    if (!g.visible) return false;
+    const hit = hitVanishingPoint(g, film.settings, filmPoint(e), 1 / filmRect.current.s);
+    if (hit === null) return false;
+    capturePointer(e);
+    drag.current = hit;
+    return true;
+  };
+
+  const onPointerMove = (e: React.PointerEvent): boolean => {
+    const { film, filmId } = useEditor.getState();
+    if (drag.current === null || !film || !filmId) return false;
+    const { width, height } = film.settings;
+    const p = filmPoint(e);
+    const guides = useGuides.getState();
+    const perspective = moveVanishingPoint(guides.get(filmId).perspective, drag.current, { x: p.x / width, y: p.y / height });
+    guides.update(filmId, { perspective });
+    return true;
+  };
+
+  const onPointerUp = (): boolean => {
+    if (drag.current === null) return false;
+    drag.current = null;
+    return true;
+  };
+
+  return { onPointerDown, onPointerMove, onPointerUp, dragging: () => drag.current !== null };
+}
+
 export function Stage() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRect = useRef<Rect | null>(null);
   const { marker, handlers } = useLivePointer(liveRect);
+  const filmRect = useRef<FilmRect | null>(null);
+  const guideDrag = useGuideDrag(filmRect);
+  const guideEditing = useGuides((s) => s.editing);
   const pointerTool = useCamera((s) => s.pointerTool);
   const magnified = useCamera((s) => (magnifyControl(s.controls)?.value ?? "1") !== "1");
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -188,6 +244,7 @@ export function Stage() {
     const wrap = wrapRef.current!;
     const ctx = canvas.getContext("2d")!;
     let raf = 0;
+    let placingArea: { x: number; y: number; width: number; height: number } | null = null;
 
     const loop = () => {
       raf = requestAnimationFrame(loop);
@@ -204,10 +261,29 @@ export function Stage() {
       ctx.clearRect(0, 0, cw, ch);
       if (!film || !filmId) return;
 
-      // Film area: letterboxed in the stage, in film pixel coordinates.
+      // Film area: letterboxed in the stage, in film pixel coordinates. While
+      // vanishing points are being placed it shrinks, so points beside it show.
       const size = film.settings;
-      const s = containScale(size, { width: cw, height: ch }) * 0.98;
-      ctx.setTransform(s, 0, 0, s, (cw - size.width * s) / 2, (ch - size.height * s) / 2);
+      const guidesState = useGuides.getState();
+      const guides = guidesState.get(filmId);
+      const placing = guidesState.editing && guides.visible && guides.perspective.points > 0 && !state.playback;
+      // Shown area, in film units: the film, plus the vanishing points while placing them.
+      let area = { x: 0, y: 0, width: size.width, height: size.height };
+      // Frozen while a point is dragged, so the view does not rescale under the pointer.
+      if (placing && placingArea && guideDrag.dragging()) area = placingArea;
+      else if (placing) {
+        const xs = [0, 1, ...vanishingPoints(guides.perspective).map((p) => p.x)];
+        const ys = [0, 1, ...vanishingPoints(guides.perspective).map((p) => p.y)];
+        const x0 = Math.min(...xs) * size.width;
+        const y0 = Math.min(...ys) * size.height;
+        area = { x: x0, y: y0, width: Math.max(...xs) * size.width - x0, height: Math.max(...ys) * size.height - y0 };
+        placingArea = area;
+      }
+      const s = containScale(area, { width: cw, height: ch }) * (placing ? 0.9 : 0.98);
+      const ox = (cw - area.width * s) / 2 - area.x * s;
+      const oy = (ch - area.height * s) / 2 - area.y * s;
+      ctx.setTransform(s, 0, 0, s, ox, oy);
+      filmRect.current = { x: ox / dpr, y: oy / dpr, s: s / dpr };
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, size.width, size.height);
       ctx.imageSmoothingQuality = "high";
@@ -233,6 +309,7 @@ export function Stage() {
       const selIndex = selected ? film.frameOrder.indexOf(selected) : -1;
       let onionAnchor: number;
       let probesToDraw: LiveFrame | null = null;
+      let showGuides = guides.visible;
       liveRect.current = null;
       if (view === "live") {
         const live = useCamera.getState().live();
@@ -240,14 +317,15 @@ export function Stage() {
           drawContained(ctx, live.image, live, size);
           // Where the picture landed, in CSS pixels of the stage, for pointer interactions.
           const c = containScale(live, size);
-          const ox = (cw - size.width * s) / 2 + ((size.width - live.width * c) / 2) * s;
-          const oy = (ch - size.height * s) / 2 + ((size.height - live.height * c) / 2) * s;
-          liveRect.current = { x: ox / dpr, y: oy / dpr, w: (live.width * c * s) / dpr, h: (live.height * c * s) / dpr };
+          const lx = ox + ((size.width - live.width * c) / 2) * s;
+          const ly = oy + ((size.height - live.height * c) / 2) * s;
+          liveRect.current = { x: lx / dpr, y: ly / dpr, w: (live.width * c * s) / dpr, h: (live.height * c * s) / dpr };
         }
         // A magnified view does not line up with earlier frames, nor with the measuring spots.
         const magnify = magnifyControl(useCamera.getState().controls);
         const magnified = magnify !== undefined && magnify.value !== "1";
         onionAnchor = magnified ? -1 : selIndex;
+        if (magnified) showGuides = false;
         if (live && !magnified) {
           measureProbes(live);
           probesToDraw = live;
@@ -265,6 +343,7 @@ export function Stage() {
           drawProxyFrame(ctx, filmId, film, frame, onion.opacity * (1 - distance / (onion.count + 1)));
         });
       }
+      if (showGuides) drawGuides(ctx, guides, size, dpr / s, placing);
       if (probesToDraw) drawProbes(ctx, probesToDraw, size, s);
     };
     raf = requestAnimationFrame(loop);
@@ -273,9 +352,20 @@ export function Stage() {
 
   return (
     <div
-      className={`stage${view === "live" && pointerTool !== "none" ? " tool-focus" : ""}${view === "live" && magnified ? " magnified" : ""}`}
+      className={`stage${guideEditing ? " guides-editing" : ""}${view === "live" && pointerTool !== "none" ? " tool-focus" : ""}${view === "live" && magnified ? " magnified" : ""}`}
       ref={wrapRef}
-      {...(view === "live" && !playing ? handlers : {})}
+      onPointerDown={(e) => {
+        if (playing || guideDrag.onPointerDown(e)) return;
+        if (view === "live") handlers.onPointerDown(e);
+      }}
+      onPointerMove={(e) => {
+        if (playing || guideDrag.onPointerMove(e)) return;
+        if (view === "live") handlers.onPointerMove(e);
+      }}
+      onPointerUp={(e) => {
+        if (playing || guideDrag.onPointerUp()) return;
+        if (view === "live") handlers.onPointerUp(e);
+      }}
     >
       <canvas ref={canvasRef} />
       {marker && <div className="focus-marker" style={{ left: marker.x, top: marker.y }} />}
