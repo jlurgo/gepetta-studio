@@ -50,8 +50,9 @@ function useShortcuts() {
       else if (mod && key === "y") s.redo();
       else if (mod) return;
       else if (e.key === " ") void capture();
-      else if (e.key === "Enter") (s.playback ? s.stop() : s.play());
+      else if (e.key === "Enter") (s.playback ? s.pause() : s.play());
       else if (key === "p") (s.playback ? s.stop() : s.play(true));
+      else if (e.key === "Escape" && s.playback) s.stop();
       else if (e.key === "ArrowLeft") (e.altKey ? nudgeSelected(-1) : selectRelative(-1));
       else if (e.key === "ArrowRight") (e.altKey ? nudgeSelected(1) : selectRelative(1));
       else if (e.key === "Delete" || e.key === "Backspace") deleteSelected();
@@ -177,7 +178,7 @@ function Transport() {
   const tailSeconds = useEditor((s) => s.tailSeconds);
   const captureStep = useEditor((s) => s.captureStep);
   const hasSource = useCamera((s) => s.source !== null);
-  const { play, stop, setOnion, set, setView } = useEditor.getState();
+  const { play, pause, stop, setOnion, set, setView } = useEditor.getState();
   const atCursor = clipAt(film, cursor.track, cursor.cell);
   const target = selection.length ? film.clips[selection[0]!] : atCursor;
   const trackName = film.tracks.find((t) => t.id === cursor.track)?.name ?? "";
@@ -245,11 +246,14 @@ function Transport() {
       <div className="group">
         <button
           className={`icon-btn${playing ? " active" : ""}`}
-          onClick={() => (playing ? stop() : play())}
-          title="Reproducir todo (Enter)"
+          onClick={() => (playing ? pause() : play())}
+          title={playing ? "Pausa: queda en la celda que se ve (Enter)" : "Reproducir desde la celda elegida (Enter)"}
           disabled={film.length === 0}
         >
-          <Icon name={playing ? "stop" : "play"} />
+          <Icon name={playing ? "pause" : "play"} />
+        </button>
+        <button className="icon-btn" onClick={stop} disabled={!playing} title="Stop: vuelve a la celda elegida (Esc)">
+          <Icon name="stop" />
         </button>
         <button className="icon-btn" onClick={() => play(true)} title="Reproducir los últimos segundos (P)" disabled={film.length === 0}>
           <Icon name="tail" />

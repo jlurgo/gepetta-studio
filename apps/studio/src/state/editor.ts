@@ -32,6 +32,8 @@ export interface OnionSettings {
 
 export interface Playback {
   startCell: number;
+  /** Where a loop starts over: the film's start, or the start of the last seconds. */
+  loopFrom: number;
   loop: boolean;
   /** performance.now() when playback (or the current loop) began. */
   startedAt: number;
@@ -41,6 +43,11 @@ export interface Playback {
 export interface GridCursor {
   track: TrackId;
   cell: number;
+}
+
+/** The cell being shown now during playback. */
+export function playbackCell(playback: Playback, fps: number, now = performance.now()): number {
+  return playback.startCell + Math.floor(((now - playback.startedAt) * fps) / 1000);
 }
 
 export type SaveStatus = "saved" | "pending" | "error";
@@ -86,7 +93,11 @@ interface EditorState {
   setView(view: "live" | "frame"): void;
   setOnion(patch: Partial<OnionSettings>): void;
   set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep">>): void;
+  /** Plays from the cursor (from the start if the cursor is past the end), or the last seconds. */
   play(tail?: boolean): void;
+  /** Stops where it is: the cursor moves to the cell being shown. */
+  pause(): void;
+  /** Stops and goes back to the cursor (the selected cell). */
   stop(): void;
 }
 
@@ -255,15 +266,17 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     play(tail = false) {
-      const { film, tailSeconds, loop } = get();
+      const { film, tailSeconds, loop, cursor } = get();
       if (!film || film.length === 0) return;
-      set({
-        playback: {
-          startCell: tail ? tailStartCell(film, tailSeconds) : 0,
-          loop,
-          startedAt: performance.now(),
-        },
-      });
+      const tailStart = tailStartCell(film, tailSeconds);
+      const from = tail ? tailStart : cursor.cell < film.length - 1 ? cursor.cell : 0;
+      set({ playback: { startCell: from, loopFrom: tail ? tailStart : 0, loop, startedAt: performance.now() } });
+    },
+    pause() {
+      const { playback, film, cursor } = get();
+      if (!playback || !film) return;
+      const cell = Math.min(film.length - 1, playbackCell(playback, film.settings.fps));
+      set({ playback: null, cursor: { ...cursor, cell }, view: "frame" });
     },
     stop() {
       set({ playback: null });

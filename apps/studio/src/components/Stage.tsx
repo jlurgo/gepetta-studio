@@ -21,7 +21,7 @@ import { drawHandles, dragTransform, hitHandle, type HandleKind } from "../rende
 import { selectedTrack, updateTrack, useLayers } from "../state/layers";
 import { useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
-import { useEditor } from "../state/editor";
+import { playbackCell, useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
 import { drawGuides, hitVanishingPoint } from "../render/guides";
 import { magnifyControl } from "./MagnifyPanel";
@@ -386,9 +386,9 @@ export function Stage() {
       }
       const { playback, onion, cursor, view } = state;
       if (playback) {
-        const cell = playback.startCell + Math.floor(((performance.now() - playback.startedAt) * size.fps) / 1000);
+        const cell = playbackCell(playback, size.fps);
         if (cell >= film.length) {
-          if (playback.loop) useEditor.setState({ playback: { ...playback, startedAt: performance.now() } });
+          if (playback.loop) useEditor.setState({ playback: { ...playback, startCell: playback.loopFrom, startedAt: performance.now() } });
           else state.stop();
           ctx.restore();
           return;

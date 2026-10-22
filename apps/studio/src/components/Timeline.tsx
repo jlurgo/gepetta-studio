@@ -3,7 +3,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "rea
 import { thumbUrl } from "../media/cache";
 import { drawStack } from "../render/frame";
 import { addImageTrack, addTrack, extendFilm, importImages, moveClips, setCellImage } from "../state/actions";
-import { useEditor } from "../state/editor";
+import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
 import { Icon } from "./Icon";
 import { capturePointer } from "./pointer";
@@ -223,7 +223,7 @@ export function Timeline() {
       const line = playRef.current;
       const el = scroller.current;
       if (!playback || !f || !line || !el) return;
-      const cell = Math.min(f.length - 1, playback.startCell + Math.floor(((performance.now() - playback.startedAt) * f.settings.fps) / 1000));
+      const cell = Math.max(0, Math.min(f.length - 1, playbackCell(playback, f.settings.fps)));
       const x = cell * cw;
       line.style.transform = `translateX(${x}px)`;
       line.style.width = `${cw}px`;
@@ -288,7 +288,7 @@ export function Timeline() {
     const p = at(e);
     if (p.y < rowsTop) {
       // Ruler and results: pick the moment (on the results, also show the film there).
-      useEditor.getState().moveTo(p.cell, undefined, p.y < RULER_H ? undefined : "frame");
+      useEditor.getState().moveTo(p.cell, undefined, "frame");
       return;
     }
     if (!p.track) return;
@@ -307,7 +307,7 @@ export function Timeline() {
       if (add) ids = selected.has(id) ? selection.filter((s) => s !== id) : [...selection, id];
       else if (!selected.has(id)) ids = [id];
       setSelection(ids);
-      useEditor.getState().moveTo(Math.max(clip.start, Math.min(p.cell, clipEnd(clip) - 1)), clip.track);
+      useEditor.getState().moveTo(Math.max(clip.start, Math.min(p.cell, clipEnd(clip) - 1)), clip.track, "frame");
       if (ids.includes(id)) setGesture({ kind: "move", x0: p.x, y0: p.y, id, ids, moved: false, dx: 0, dy: 0 });
       return;
     }
@@ -363,7 +363,7 @@ export function Timeline() {
     } else if (g.kind === "band" && Math.abs(p.x - g.x0) + Math.abs(p.y - g.y0) <= 4 && p.track) {
       // A click on an empty cell: that is where the next picture goes.
       if (!g.add) useEditor.getState().setSelection([]);
-      useEditor.getState().moveTo(p.cell, p.track.id);
+      useEditor.getState().moveTo(p.cell, p.track.id, "frame");
     }
   }
 
@@ -471,11 +471,9 @@ export function Timeline() {
             }),
           )}
 
-          {playing ? (
-            <div className="tl-play" ref={playRef} style={{ height }} />
-          ) : (
-            <div className="tl-playhead" style={{ left: cursor.cell * cw + cw / 2, height }} />
-          )}
+          {/* The selected cell, across every row; it stays marked while playing. */}
+          <div className={`tl-selected${playing ? " playing" : ""}`} style={{ left: cursor.cell * cw, width: cw, height }} />
+          {playing && <div className="tl-play" ref={playRef} style={{ height }} />}
 
           {gesture?.kind === "band" && (
             <div
