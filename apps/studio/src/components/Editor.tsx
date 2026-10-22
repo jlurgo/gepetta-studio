@@ -66,7 +66,10 @@ function useShortcuts() {
         guides.update(s.filmId, { visible: !guides.get(s.filmId).visible });
       }
       else if (key === "c") s.setView("live");
-      else if (e.key === "Escape" && s.selection.length) s.setSelection([]);
+      else if (e.key === "Escape" && (s.selection.length || s.columns)) {
+        s.setSelection([]);
+        s.setColumns(null);
+      }
       else return;
       e.preventDefault();
     };
@@ -171,6 +174,7 @@ function Transport() {
   const film = useEditor((s) => s.film)!;
   const cursor = useEditor((s) => s.cursor);
   const selection = useEditor((s) => s.selection);
+  const columns = useEditor((s) => s.columns);
   const view = useEditor((s) => s.view);
   const playing = useEditor((s) => s.playback !== null);
   const onion = useEditor((s) => s.onion);
@@ -211,7 +215,22 @@ function Transport() {
       </div>
 
       <div className="group">
-        {target ? (
+        {columns ? (
+          <>
+            <span className="hint">
+              {columns.end - columns.start === 1 ? `Columna ${columns.start + 1}` : `Columnas ${columns.start + 1}–${columns.end}`}
+            </span>
+            <button className="icon-btn" onClick={() => nudgeSelected(-1)} title="Mover la columna una celda a la izquierda (⌥←)">
+              <Icon name="left" />
+            </button>
+            <button className="icon-btn" onClick={() => nudgeSelected(1)} title="Mover la columna una celda a la derecha (⌥→)">
+              <Icon name="right" />
+            </button>
+            <button className="icon-btn danger" onClick={deleteSelected} title="Vaciar estas celdas en todos los tracks (Supr)">
+              <Icon name="trash" />
+            </button>
+          </>
+        ) : target ? (
           <>
             <button className="icon-btn" onClick={() => nudgeSelected(-1)} title="Mover una celda a la izquierda (⌥←)">
               <Icon name="left" />

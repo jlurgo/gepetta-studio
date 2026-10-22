@@ -2,7 +2,7 @@ import { type CellIndex, type Clip, type ClipId, type FilmState, type Track, cel
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { thumbUrl } from "../media/cache";
 import { drawStack } from "../render/frame";
-import { addImageTrack, addTrack, extendFilm, importImages, moveClips, setCellImage } from "../state/actions";
+import { addImageTrack, addTrack, extendFilm, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
 import { Icon } from "./Icon";
@@ -159,7 +159,8 @@ function AddTrackMenu({ onVideo }: { onVideo(): void }) {
 type Gesture =
   | { kind: "move"; x0: number; y0: number; id: ClipId; ids: ClipId[]; moved: boolean; dx: number; dy: number }
   | { kind: "resize"; x0: number; id: ClipId; length0: number; dx: number }
-  | { kind: "band"; x0: number; y0: number; x1: number; y1: number; add: boolean; base: ClipId[] };
+  | { kind: "band"; x0: number; y0: number; x1: number; y1: number; add: boolean; base: ClipId[] }
+  | { kind: "columns"; x0: number; dx: number; moved: boolean };
 
 function loadZoom(): number {
   try {
@@ -175,6 +176,7 @@ export function Timeline() {
   const filmId = useEditor((s) => s.filmId);
   const cursor = useEditor((s) => s.cursor);
   const selection = useEditor((s) => s.selection);
+  const columns = useEditor((s) => s.columns);
   const view = useEditor((s) => s.view);
   const [cw, setCw] = useState(loadZoom);
   const scroller = useRef<HTMLDivElement>(null);
@@ -265,7 +267,7 @@ export function Timeline() {
     return { x, y, cell, row, track: y >= rowsTop && row < tracks.length ? tracks[row]! : null };
   };
 
-  // Results row: one box per run of cells that look the same.
+  // Results row: one box per run of cells that look the same (empty cells get none).
   const runs: { start: number; end: number }[] = [];
   {
     let prev = "";
@@ -273,8 +275,8 @@ export function Timeline() {
       const key = stackAt(film, c, { index })
         .map((s) => s.clipId)
         .join("|");
-      if (runs.length && key === prev && runs[runs.length - 1]!.end === c) runs[runs.length - 1]!.end = c + 1;
-      else runs.push({ start: c, end: c + 1 });
+      if (key && runs.length && key === prev && runs[runs.length - 1]!.end === c) runs[runs.length - 1]!.end = c + 1;
+      else if (key) runs.push({ start: c, end: c + 1 });
       prev = key;
     }
   }
@@ -286,9 +288,21 @@ export function Timeline() {
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
     const p = at(e);
-    if (p.y < rowsTop) {
-      // Ruler and results: pick the moment (on the results, also show the film there).
+    if (p.y < RULER_H) {
+      // Ruler: pick the moment and show the film there.
       useEditor.getState().moveTo(p.cell, undefined, "frame");
+      return;
+    }
+    if (p.y < rowsTop) {
+      // Results: select the column (the film as it comes out there); drag it to move it.
+      const { setColumns, moveTo } = useEditor.getState();
+      const run = runs.find((r) => p.cell >= r.start && p.cell < r.end);
+      moveTo(p.cell, undefined, "frame");
+      if (!run) return setColumns(null);
+      if (e.shiftKey && columns) setColumns({ start: Math.min(columns.start, run.start), end: Math.max(columns.end, run.end) });
+      else if (!(columns && p.cell >= columns.start && p.cell < columns.end)) setColumns(run);
+      capturePointer(e);
+      setGesture({ kind: "columns", x0: p.x, dx: 0, moved: false });
       return;
     }
     if (!p.track) return;
@@ -326,6 +340,10 @@ export function Timeline() {
     } else if (gesture.kind === "resize") {
       const dx = Math.round((p.x - gesture.x0) / cw);
       if (dx !== gesture.dx) setGesture({ ...gesture, dx });
+    } else if (gesture.kind === "columns") {
+      const dx = Math.round((p.x - gesture.x0) / cw);
+      const moved = gesture.moved || Math.abs(p.x - gesture.x0) > 4;
+      if (dx !== gesture.dx || moved !== gesture.moved) setGesture({ ...gesture, dx, moved });
     } else {
       setGesture({ ...gesture, x1: p.x, y1: p.y });
       const [x0, x1] = [Math.min(gesture.x0, p.x), Math.max(gesture.x0, p.x)];
@@ -357,12 +375,15 @@ export function Timeline() {
     } else if (g.kind === "move" && !g.moved && !(e.shiftKey || e.metaKey || e.ctrlKey)) {
       // A plain click on a picture of a group picks just that one.
       useEditor.getState().setSelection([g.id]);
+    } else if (g.kind === "columns") {
+      if (g.moved && g.dx) moveColumns(g.dx);
     } else if (g.kind === "resize" && g.dx) {
       const length = Math.max(1, g.length0 + g.dx);
       useEditor.getState().commit([{ type: "clip.update", id: g.id, patch: { length } }]);
     } else if (g.kind === "band" && Math.abs(p.x - g.x0) + Math.abs(p.y - g.y0) <= 4 && p.track) {
       // A click on an empty cell: that is where the next picture goes.
       if (!g.add) useEditor.getState().setSelection([]);
+      useEditor.getState().setColumns(null);
       useEditor.getState().moveTo(p.cell, p.track.id, "frame");
     }
   }
@@ -469,6 +490,21 @@ export function Timeline() {
                 </div>
               );
             }),
+          )}
+
+          {columns && (
+            <>
+              <div
+                className={`tl-colsel${gesture?.kind === "columns" && gesture.moved ? " from" : ""}`}
+                style={{ left: columns.start * cw, width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
+              />
+              {gesture?.kind === "columns" && gesture.moved && (
+                <div
+                  className="tl-colsel ghost"
+                  style={{ left: Math.max(0, columns.start + gesture.dx) * cw, width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
+                />
+              )}
+            </>
           )}
 
           {/* The selected cell, across every row; it stays marked while playing. */}

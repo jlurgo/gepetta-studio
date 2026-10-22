@@ -64,6 +64,11 @@ interface EditorState {
   cursor: GridCursor;
   /** Pictures selected in the timeline (to move, delete, lengthen…). */
   selection: ClipId[];
+  /**
+   * Columns selected in the results row: cells [start, end) of every track,
+   * the film as it comes out there (moved as a whole; effects will go here).
+   */
+  columns: { start: number; end: number } | null;
   /** "live": the camera at the cursor. "frame": the film as it is at the cursor. */
   view: "live" | "frame";
   onion: OnionSettings;
@@ -90,6 +95,7 @@ interface EditorState {
   /** Moves the grid cursor; keeps the track when not given. */
   moveTo(cell: number, track?: TrackId, view?: "live" | "frame"): void;
   setSelection(ids: ClipId[]): void;
+  setColumns(columns: { start: number; end: number } | null): void;
   setView(view: "live" | "frame"): void;
   setOnion(patch: Partial<OnionSettings>): void;
   set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep">>): void;
@@ -177,6 +183,7 @@ export const useEditor = create<EditorState>((set, get) => {
     errors: {},
     cursor: { track: PHOTO_TRACK, cell: 0 },
     selection: [],
+    columns: null,
     view: "live",
     onion: { enabled: true, count: 1, opacity: 0.4 },
     loop: true,
@@ -202,6 +209,7 @@ export const useEditor = create<EditorState>((set, get) => {
         errors,
         cursor: { track: PHOTO_TRACK, cell: nextPhotoCell(film) },
         selection: [],
+        columns: null,
         view: "live",
         playback: null,
         saveStatus: converted ? "pending" : "saved",
@@ -253,7 +261,11 @@ export const useEditor = create<EditorState>((set, get) => {
       set({ cursor, playback: null, ...(view && { view }) });
     },
     setSelection(ids) {
-      set({ selection: ids });
+      // Pictures or columns: one kind of selection at a time.
+      set({ selection: ids, ...(ids.length && { columns: null }) });
+    },
+    setColumns(columns) {
+      set({ columns, ...(columns && { selection: [] }) });
     },
     setView(view) {
       set({ view, playback: null });

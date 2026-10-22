@@ -20,6 +20,14 @@ export type Op =
   /** Moves clips to new cells and tracks, together. */
   | { type: "clip.move"; moves: { id: ClipId; track: TrackId; start: number }[] }
   | { type: "clip.update"; id: ClipId; patch: ClipPatch }
+  /**
+   * Moves a column of cells [start, start + length) of every track (or of
+   * `tracks`) to start at `to`. Pictures that reach outside the column are
+   * cut: only the part inside moves. The cells left behind are empty.
+   */
+  | { type: "cells.move"; start: number; length: number; to: number; tracks?: TrackId[] }
+  /** Empties a column of cells in every track (or in `tracks`). */
+  | { type: "cells.clear"; start: number; length: number; tracks?: TrackId[] }
   | { type: "track.add"; track: Track }
   | { type: "track.remove"; trackId: TrackId }
   | { type: "track.update"; trackId: TrackId; patch: TrackPatch }
@@ -95,6 +103,27 @@ function place(film: FilmState, placed: Clip[]): FilmState {
   return { ...film, clips, length };
 }
 
+/**
+ * Lifts the cells [start, end) out of the given tracks: returns the film
+ * without them and the pieces that were there (whole pictures keep their id,
+ * cut ones get one derived from the cut).
+ */
+function lift(film: FilmState, start: number, end: number, tracks?: TrackId[]): { film: FilmState; pieces: Clip[] } {
+  if (!Number.isInteger(start) || start < 0 || !Number.isInteger(end) || end <= start) throw new OpError("Celdas inválidas");
+  const inTracks = (id: TrackId) => !tracks || tracks.includes(id);
+  const pieces: Clip[] = [];
+  for (const c of Object.values(film.clips)) {
+    if (!inTracks(c.track) || clipEnd(c) <= start || c.start >= end) continue;
+    const s = Math.max(start, c.start);
+    const e = Math.min(end, clipEnd(c));
+    const whole = s === c.start && e === clipEnd(c);
+    pieces.push({ ...c, id: whole ? c.id : `${c.id}~${s}`, start: s, length: e - s });
+  }
+  let clips = film.clips;
+  for (const t of film.tracks) if (inTracks(t.id)) clips = carve(clips, t.id, start, end, new Set());
+  return { film: { ...film, clips }, pieces };
+}
+
 /** Pure: returns a new state, or throws OpError when the op no longer applies. */
 export function applyOp(film: FilmState, op: Op): FilmState {
   switch (op.type) {
@@ -125,6 +154,13 @@ export function applyOp(film: FilmState, op: Op): FilmState {
       // A longer clip overwrites the cells it grows into.
       return op.patch.length !== undefined ? place(film, [clip]) : { ...film, clips: { ...film.clips, [clip.id]: clip } };
     }
+    case "cells.move": {
+      if (!Number.isInteger(op.to) || op.to < 0) throw new OpError("Posición inválida");
+      const lifted = lift(film, op.start, op.start + op.length, op.tracks);
+      return place(lifted.film, lifted.pieces.map((p) => ({ ...p, start: p.start + op.to - op.start })));
+    }
+    case "cells.clear":
+      return lift(film, op.start, op.start + op.length, op.tracks).film;
     case "track.add":
       if (film.tracks.some((t) => t.id === op.track.id)) throw new OpError("El track ya existe");
       return { ...film, tracks: [...film.tracks, op.track] };
@@ -187,6 +223,10 @@ export function describeOp(op: Op): string {
       return op.moves.length === 1 ? "Mover imagen" : `Mover ${op.moves.length} imágenes`;
     case "clip.update":
       return describePatch(op.patch, "la imagen");
+    case "cells.move":
+      return op.length === 1 ? "Mover columna" : `Mover ${op.length} columnas`;
+    case "cells.clear":
+      return op.length === 1 ? "Vaciar columna" : `Vaciar ${op.length} columnas`;
     case "track.add":
       return `Agregar track "${op.track.name}"`;
     case "track.remove":
@@ -207,6 +247,10 @@ export function cellOfOp(op: Op): number | null {
       return op.clips.length ? Math.min(...op.clips.map((c) => c.start)) : null;
     case "clip.move":
       return op.moves.length ? Math.min(...op.moves.map((m) => m.start)) : null;
+    case "cells.move":
+      return op.to;
+    case "cells.clear":
+      return op.start;
     default:
       return null;
   }

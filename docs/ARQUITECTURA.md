@@ -57,7 +57,10 @@ docs/             Este documento, roadmap y decisiones.
   lugar del track del cursor (`splitAtTrack`). El papel de cebolla muestra las
   imágenes anteriores de ese track. La línea de tiempo muestra la regla, el
   resultado combinado y una fila por track; se seleccionan varias imágenes (clic con
-  ⇧/⌘ o rectángulo) y se arrastran entre celdas y tracks.
+  ⇧/⌘ o rectángulo) y se arrastran entre celdas y tracks. Tocar el resultado
+  selecciona **columnas** (las celdas de todos los tracks ahí): se arrastran enteras
+  (`cells.move` corta las imágenes que salen de la columna) o se vacían
+  (`cells.clear`); ahí se aplicarán los efectos generales.
 - **Películas de antes de la grilla** (cuadros en fila con `hold`): al abrirlas se
   reproduce su historial viejo (`legacy/`), se convierte a clips y queda como `base`
   del historial nuevo; el historial viejo se guarda intacto en el archivo (`legacy`).

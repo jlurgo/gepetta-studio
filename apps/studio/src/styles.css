@@ -1541,3 +1541,23 @@ input[type="range"] {
   border-left: 2px solid var(--danger);
   border-right: 1px solid color-mix(in srgb, var(--danger) 50%, transparent);
 }
+
+/* Columns selected in the results row: every track's cells there. */
+.tl-colsel {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.tl-colsel.from {
+  border-style: dashed;
+  background: transparent;
+}
+
+.tl-colsel.ghost {
+  z-index: 5;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}

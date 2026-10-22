@@ -126,6 +126,32 @@ describe("grid", () => {
   });
 });
 
+describe("columns", () => {
+  const capa = { id: "t2", name: "Capa", visible: true, opacity: 1, transform: IDENTITY_TRANSFORM, exported: true };
+  const byTrack = (h: ReturnType<typeof createHistory>) =>
+    Object.values(replay(h).film.clips)
+      .map((c) => `${c.track === PHOTO_TRACK ? "F" : c.track}:${c.id}@${c.start}+${c.length}`)
+      .sort();
+
+  it("move every track's cells together, cutting pictures that reach outside", () => {
+    let h = createHistory(SETTINGS);
+    h = pushEntry(h, makeEntry([{ type: "track.add", track: capa }]));
+    h = pushEntry(h, makeEntry([place(clip("a", 0), clip("b", 1), clip("c", 2), clip("bg", 0, 4, "t2"))]));
+    // Column 1 goes to cell 6: "b" moves whole; the background's cell 1 is cut out and goes along.
+    h = pushEntry(h, makeEntry([{ type: "cells.move", start: 1, length: 1, to: 6 }]));
+    expect(byTrack(h)).toEqual(["F:a@0+1", "F:b@6+1", "F:c@2+1", "t2:bg@0+1", "t2:bg@2@2+2", "t2:bg~1@6+1"]);
+  });
+
+  it("overwrite where they land and can be emptied", () => {
+    let h = createHistory(SETTINGS);
+    h = pushEntry(h, makeEntry([place(clip("a", 0), clip("b", 1), clip("c", 2))]));
+    h = pushEntry(h, makeEntry([{ type: "cells.move", start: 0, length: 1, to: 2 }]));
+    expect(byTrack(h)).toEqual(["F:a@2+1", "F:b@1+1"]);
+    h = pushEntry(h, makeEntry([{ type: "cells.clear", start: 1, length: 2 }]));
+    expect(byTrack(h)).toEqual([]);
+  });
+});
+
 describe("films made before the grid", () => {
   const entry = (ops: unknown[]) => ({ id: Math.random().toString(36), label: "", ops, enabled: true, createdAt: 0 }) as never;
   const legacyMedia = (id: string) => media(id);

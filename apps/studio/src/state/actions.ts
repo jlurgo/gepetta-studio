@@ -202,7 +202,23 @@ function targets(): Clip[] {
   return at ? [at] : [];
 }
 
+/** Moves the selected columns `by` cells (every track's cells there, as a whole). */
+export function moveColumns(by: number) {
+  const { columns, commit, cursor } = useEditor.getState();
+  if (!columns || by === 0 || columns.start + by < 0) return;
+  const length = columns.end - columns.start;
+  commit([{ type: "cells.move", start: columns.start, length, to: columns.start + by }], undefined, {
+    cursor: { ...cursor, cell: columns.start + by },
+  });
+  useEditor.getState().setColumns({ start: columns.start + by, end: columns.end + by });
+}
+
 export function deleteSelected() {
+  const { columns, commit } = useEditor.getState();
+  if (columns) {
+    commit([{ type: "cells.clear", start: columns.start, length: columns.end - columns.start }]);
+    return;
+  }
   const clips = targets();
   if (clips.length) useEditor.getState().commit([{ type: "clip.remove", ids: clips.map((c) => c.id) }], undefined, { selection: [] });
 }
@@ -239,6 +255,7 @@ export function moveClips(moves: { id: ClipId; track: TrackId; start: number }[]
 
 /** Moves the selected pictures one cell left (-1) or right (+1). */
 export function nudgeSelected(dir: -1 | 1) {
+  if (useEditor.getState().columns) return moveColumns(dir);
   const clips = targets();
   moveClips(clips.map((c) => ({ id: c.id, track: c.track, start: c.start + dir })));
   const { cursor, moveTo } = useEditor.getState();
