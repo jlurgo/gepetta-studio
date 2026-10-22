@@ -1,7 +1,6 @@
-import { type CellIndex, type Clip, type ClipId, type FilmState, type Track, cellIndex, clipEnd, stackAt } from "@gepetta/core";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { thumbUrl } from "../media/cache";
-import { drawStack } from "../render/frame";
+import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, stackAt } from "@gepetta/core";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addImageTrack, addTrack, extendFilm, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
@@ -13,8 +12,9 @@ import { OpacitySlider } from "./TrackPanel";
 import { VideoImportDialog } from "./VideoImportDialog";
 
 const RULER_H = 22;
-const RESULT_H = 64;
-const TRACK_H = 44;
+/** Every row (results and tracks) has the same height: a uniform grid. */
+const RESULT_H = 54;
+const TRACK_H = RESULT_H;
 const ROW_GAP = 4;
 /** Cell width in pixels: the timeline's zoom. */
 const MIN_CW = 4;
@@ -22,71 +22,6 @@ const MAX_CW = 240;
 const ZOOM_KEY = "gepetta.timelineZoom";
 /** Empty cells shown past the end, to place pictures there. */
 const TAIL_SECONDS = 2;
-
-/** Decoded thumbnails, shared by every place that shows them. */
-const thumbImages = new Map<string, Promise<HTMLImageElement>>();
-function thumbImage(filmId: string, assetId: string): Promise<HTMLImageElement> {
-  const key = `${filmId}/${assetId}`;
-  let p = thumbImages.get(key);
-  if (!p) {
-    p = thumbUrl(filmId, assetId).then(
-      (url) =>
-        new Promise<HTMLImageElement>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(img);
-          img.onerror = () => reject(new Error("thumb"));
-          img.src = url;
-        }),
-    );
-    p.catch(() => thumbImages.delete(key));
-    thumbImages.set(key, p);
-  }
-  return p;
-}
-
-const Thumb = memo(function Thumb({ filmId, asset }: { filmId: string; asset: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let alive = true;
-    thumbUrl(filmId, asset).then((u) => alive && setUrl(u), () => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [filmId, asset]);
-  return url ? <img src={url} alt="" draggable={false} /> : null;
-});
-
-/** The film as it comes out at `cell`: every visible track combined, drawn from thumbnails. */
-const CompositeThumb = memo(function CompositeThumb({ filmId, film, cell, index }: { filmId: string; film: FilmState; cell: number; index: CellIndex }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const stack = stackAt(film, cell, { index });
-  // Redraw only when what is drawn changes, not on every edit of the film.
-  const key = JSON.stringify(stack.map((s) => [s.media.thumb, s.opacity, s.transform]));
-  const { width, height } = film.settings;
-  useEffect(() => {
-    let alive = true;
-    Promise.all(stack.map((s) => thumbImage(filmId, s.media.thumb).catch(() => undefined))).then((images) => {
-      const canvas = ref.current;
-      if (!alive || !canvas) return;
-      const h = 120;
-      const w = Math.round((h * width) / height);
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d")!;
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, w, h);
-      ctx.setTransform(w / width, 0, 0, h / height, 0, 0);
-      const byThumb = new Map(stack.map((s, i) => [s.media.thumb, images[i]]));
-      drawStack(ctx, stack, film.settings, (m) => byThumb.get(m.thumb));
-    });
-    return () => {
-      alive = false;
-    };
-    // `stack` is captured through `key`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filmId, key, width, height]);
-  return <canvas ref={ref} />;
-});
 
 function TrackHead({ track, current }: { track: Track; current: boolean }) {
   const selected = useLayers((s) => s.trackId === track.id);
@@ -324,6 +259,49 @@ export function Timeline() {
     }
   }
 
+  /** A camera's live picture as a cell item, drawn as its track draws pictures. */
+  const liveItem = (rigId: string, track: Track): CellItem => ({
+    kind: "live",
+    frame: () => {
+      const camera = useCamera.getState();
+      const rig = camera.rigs.find((r) => r.id === rigId);
+      return rig ? camera.liveOf(rig) : null;
+    },
+    opacity: track.opacity,
+    transform: track.transform,
+  });
+  const clipItem = (track: Track, c: Clip): CellItem => ({
+    kind: "picture",
+    media: c.media,
+    opacity: c.opacity,
+    transform: composeTransforms(track.transform, c.transform),
+  });
+  /** Cells of a clip that are on screen. */
+  const cellsOf = (c: Clip, length: number): number[] => {
+    const out: number[] = [];
+    for (let cell = Math.max(c.start, firstCell); cell < Math.min(c.start + length, lastCell); cell++) out.push(cell);
+    return out;
+  };
+  // Results row: the film at each cell on screen, with every camera live where it aims.
+  const liveTargets = rigs.filter((r) => r.source).map((r) => ({ id: r.id, target: r.id === activeRig ? cursor : r.target }));
+  const resultCells: { cell: number; items: CellItem[] }[] = [];
+  for (let c = firstCell; c < lastCell; c++) {
+    const stack = c < film.length ? stackAt(film, c, { index }) : [];
+    const lives = liveTargets.filter((l) => l.target.cell === c);
+    if (!stack.length && !lives.length) continue;
+    const items: CellItem[] = [];
+    for (const t of film.tracks) {
+      if (!t.visible) continue;
+      const live = lives.find((l) => l.target.track === t.id);
+      if (live) items.push(liveItem(live.id, t));
+      else {
+        const it = stack.find((i) => i.trackId === t.id);
+        if (it) items.push({ kind: "picture", media: it.media, opacity: it.opacity, transform: it.transform });
+      }
+    }
+    resultCells.push({ cell: c, items });
+  }
+
   const visibleClips = (track: Track): Clip[] => (index.get(track.id) ?? []).filter((c) => clipEnd(c) > firstCell && c.start < lastCell);
 
   // -- pointer gestures ------------------------------------------------------
@@ -500,9 +478,9 @@ export function Timeline() {
             ))}
           </div>
 
-          {runs.map((r) => (
-            <div key={r.start} className="tl-result" style={{ left: r.start * cw + 1, width: (r.end - r.start) * cw - 2, top: RULER_H + ROW_GAP, height: RESULT_H }}>
-              <CompositeThumb filmId={filmId} film={film} cell={r.start} index={index} />
+          {resultCells.map(({ cell, items }) => (
+            <div key={cell} className="tl-result" style={{ left: cell * cw + 1, width: cw - 2, top: RULER_H + ROW_GAP, height: RESULT_H }}>
+              <CellCanvas filmId={filmId} film={film.settings} items={items} />
             </div>
           ))}
 
@@ -529,7 +507,11 @@ export function Timeline() {
                   style={{ left: (moving?.left ?? c.start * cw) + 1, top: moving?.top ?? rowTop(row), width: length * cw - 2, height: TRACK_H }}
                   title={`${c.name} · celdas ${c.start + 1}–${c.start + c.length}`}
                 >
-                  {length * cw >= 20 && <Thumb filmId={filmId} asset={c.media.thumb} />}
+                  {cellsOf(c, length).map((cell) => (
+                    <div key={cell} className="tl-clip-cell" style={{ left: (cell - c.start) * cw, width: cw - (cell === c.start + length - 1 ? 2 : 0) }}>
+                      <CellCanvas filmId={filmId} film={film.settings} items={[clipItem(t, c)]} />
+                    </div>
+                  ))}
                   {length > 1 && cw * length >= 40 && <span className="tl-len">×{length}</span>}
                   <span className="tl-edge" data-edge="1" />
                 </div>
@@ -551,6 +533,20 @@ export function Timeline() {
               )}
             </>
           )}
+
+          {/* Each camera live in the cell it aims at. */}
+          {rigs.map((r) => {
+            if (!r.source) return null;
+            const target = r.id === activeRig ? cursor : r.target;
+            const row = tracks.findIndex((t) => t.id === target.track);
+            if (row < 0 || target.cell < firstCell || target.cell > lastCell) return null;
+            const track = tracks[row]!;
+            return (
+              <div key={`live-${r.id}`} className="tl-livecell" style={{ left: target.cell * cw + 1, width: cw - 2, top: rowTop(row), height: TRACK_H }}>
+                <CellCanvas filmId={filmId} film={film.settings} items={[liveItem(r.id, { ...track, opacity: 1 })]} />
+              </div>
+            );
+          })}
 
           {/* Where each of the other cameras puts its photos. */}
           {rigs.map((r, i) => {
