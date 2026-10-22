@@ -1,117 +1,151 @@
-import { useEffect, useState } from "react";
-import { type CameraControl, MODE_VALUE_LABELS, RESOLUTIONS } from "../capture/webcam";
+import { useEffect, useMemo, useState } from "react";
+import { useRemote } from "../capture/remote";
+import { RESOLUTIONS, webcamSettings } from "../capture/webcam";
+import type { DslrStatus } from "../native";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
+import { CameraControls } from "./CameraControls";
+import { PhoneConnect } from "./PhoneConnect";
 
-function formatValue(c: Extract<CameraControl, { kind: "range" }>, v: number) {
-  return c.step >= 1 ? String(Math.round(v)) : v.toFixed(2);
-}
-
-function RangeControl({ control }: { control: Extract<CameraControl, { kind: "range" }> }) {
-  const setControl = useCamera((s) => s.setControl);
-  const [value, setValue] = useState(control.value);
-  useEffect(() => setValue(control.value), [control.value]);
-  return (
-    <label className="control">
-      <span>
-        {control.label} <small>{formatValue(control, value)}</small>
-      </span>
-      <input
-        type="range"
-        min={control.min}
-        max={control.max}
-        step={control.step}
-        value={value}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          setValue(v);
-          void setControl(control, v);
-        }}
-      />
-    </label>
-  );
+function useDslrStatus(): DslrStatus | null {
+  const [status, setStatus] = useState<DslrStatus | null>(null);
+  useEffect(() => {
+    window.gepetta?.dslr.status().then(setStatus, () => setStatus(null));
+  }, []);
+  return status;
 }
 
 export function CameraPanel() {
-  const { devices, deviceId, resolutionId, controls, stream, error } = useCamera();
-  const { selectDevice, selectResolution, setControl, start } = useCamera.getState();
+  const { webcams, dslrs, selectedId, resolutionId, source, controls, error, opening } = useCamera();
+  const { select, selectResolution, setControl, start, refreshDevices } = useCamera.getState();
+  const devices = useRemote((s) => s.devices);
+  const phones = useMemo(() => devices.filter((d) => d.mode === "live"), [devices]);
   const captureAverage = useEditor((s) => s.captureAverage);
+  const dslrStatus = useDslrStatus();
   const [advanced, setAdvanced] = useState(false);
-  const settings = stream?.getVideoTracks()[0]?.getSettings();
+  const [phonesOpen, setPhonesOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const current = source?.id ?? selectedId ?? "";
+  const size = webcamSettings(source);
+  const kind = source?.kind ?? (selectedId?.split(":")[0] as string | undefined) ?? "webcam";
+
+  async function search() {
+    setSearching(true);
+    await refreshDevices();
+    setSearching(false);
+  }
 
   return (
     <aside className="side-panel">
       <h3>Cámara</h3>
       <label className="control">
-        <span>Dispositivo</span>
-        <select value={deviceId ?? ""} onChange={(e) => void selectDevice(e.target.value)}>
-          {devices.length === 0 && <option value="">(ninguna)</option>}
-          {devices.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.label}
-            </option>
-          ))}
+        <span>Fuente {opening && <small>abriendo…</small>}</span>
+        <select value={current} onChange={(e) => void select(e.target.value)}>
+          {!webcams.some((w) => w.id === current) &&
+            !dslrs.some((d) => d.id === current) &&
+            !phones.some((p) => `phone:${p.sessionId}` === current) && <option value={current}>(elegí una cámara)</option>}
+          {webcams.length > 0 && (
+            <optgroup label="Webcams">
+              {webcams.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.label}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {dslrs.length > 0 && (
+            <optgroup label="Cámaras réflex">
+              {dslrs.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {phones.length > 0 && (
+            <optgroup label="Celulares">
+              {phones.map((p) => (
+                <option key={p.sessionId} value={`phone:${p.sessionId}`}>
+                  {p.device}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </label>
-      <label className="control">
-        <span>
-          Resolución {settings?.width ? <small>{settings.width}×{settings.height}</small> : null}
-        </span>
-        <select value={resolutionId} onChange={(e) => void selectResolution(e.target.value)}>
-          {RESOLUTIONS.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <button className="btn small ghost" onClick={() => void search()} disabled={searching}>
+        {searching ? "Buscando…" : "Buscar cámaras conectadas"}
+      </button>
+      {dslrStatus && !dslrStatus.available && dslrStatus.hint && <p className="hint">{dslrStatus.hint}</p>}
+
+      {kind === "webcam" && (
+        <label className="control">
+          <span>
+            Resolución {size.width ? <small>{size.width}×{size.height}</small> : null}
+          </span>
+          <select value={resolutionId} onChange={(e) => void selectResolution(e.target.value)}>
+            {RESOLUTIONS.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
       {error && (
         <div className="panel-error">
-          {error}{" "}
-          <button className="btn small" onClick={() => void start()}>
-            Reintentar
-          </button>
+          {error.message}
+          <div className="action-row">
+            {error.code === "busy" && (
+              <button
+                className="btn small"
+                onClick={async () => {
+                  await window.gepetta?.dslr.releaseUsb();
+                  await start();
+                }}
+              >
+                Liberar cámara
+              </button>
+            )}
+            <button className="btn small" onClick={() => void start()}>
+              Reintentar
+            </button>
+          </div>
         </div>
       )}
 
       <button className="disclosure" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>
-        {advanced ? "▾" : "▸"} Ajustes avanzados
+        {advanced ? "▾" : "▸"} Ajustes de la cámara
       </button>
       {advanced && (
         <div className="advanced">
-          {controls.length === 0 && (
+          {source && controls.length === 0 && (
             <p className="hint">
-              Esta cámara no permite ajustes desde acá. (En Mac las webcams exponen pocos controles; el control
-              completo llegará con el módulo nativo.)
+              {source.kind === "webcam"
+                ? "Esta webcam no permite ajustes desde acá. (En Mac las webcams exponen pocos controles.)"
+                : "Esta cámara no informó ajustes."}
             </p>
           )}
-          {controls.map((c) =>
-            c.kind === "mode" ? (
-              <label key={c.key} className="control">
-                <span>{c.label}</span>
-                <select value={c.value} onChange={(e) => void setControl(c, e.target.value)}>
-                  {c.options.map((o) => (
-                    <option key={o} value={o}>
-                      {MODE_VALUE_LABELS[o] ?? o}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <RangeControl key={c.key} control={c} />
-            ),
+          <CameraControls controls={controls} slow={source?.kind === "dslr"} onChange={(c, v) => void setControl(c, v)} />
+          {source?.kind === "webcam" && (
+            <label className="control">
+              <span>Promediar fotos (menos ruido)</span>
+              <select value={captureAverage} onChange={(e) => useEditor.getState().set({ captureAverage: Number(e.target.value) })}>
+                <option value={1}>No</option>
+                <option value={2}>2 fotos</option>
+                <option value={4}>4 fotos</option>
+                <option value={8}>8 fotos</option>
+              </select>
+            </label>
           )}
-          <label className="control">
-            <span>Promediar fotos (menos ruido)</span>
-            <select value={captureAverage} onChange={(e) => useEditor.getState().set({ captureAverage: Number(e.target.value) })}>
-              <option value={1}>No</option>
-              <option value={2}>2 fotos</option>
-              <option value={4}>4 fotos</option>
-              <option value={8}>8 fotos</option>
-            </select>
-          </label>
         </div>
       )}
+
+      <button className="disclosure" onClick={() => setPhonesOpen(!phonesOpen)} aria-expanded={phonesOpen}>
+        {phonesOpen ? "▾" : "▸"} Conectar celular
+      </button>
+      {phonesOpen && <PhoneConnect />}
     </aside>
   );
 }

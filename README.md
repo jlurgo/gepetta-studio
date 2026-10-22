@@ -16,6 +16,16 @@ pnpm typecheck
 pnpm dist       # instalador (.dmg en Mac, .exe en Windows) en apps/desktop/release
 ```
 
+### Cámaras
+- **Webcams:** se detectan solas.
+- **Réflex (Mac):** instalá gphoto2 una vez con `brew install gphoto2`, conectá la
+  cámara por USB y tocá "Buscar cámaras conectadas". Si dice que la cámara está
+  tomada, usá "Liberar cámara".
+- **Celular:** panel de cámara → "Conectar celular" → escaneá el QR (misma WiFi).
+  *Foto simple* funciona en cualquier teléfono. *En vivo* en Android pide
+  "Avanzado → Continuar" la primera vez; en iPhone hay que instalar el certificado
+  (la página del celular explica los pasos).
+
 En escritorio las películas se guardan en `Documentos/Gepetta Studio/`; en el
 navegador, en IndexedDB.
 

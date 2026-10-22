@@ -10,6 +10,8 @@ export interface MediaRef {
   proxy: AssetId;
   /** Small copy used in the timeline. */
   thumb: AssetId;
+  /** Camera RAW file (CR2, CR3, NEF…) kept alongside, when the camera produced one. */
+  raw?: AssetId;
   width: number;
   height: number;
 }

@@ -15,10 +15,15 @@
 - [ ] Probar la app de escritorio (Electron) en Mac y Windows
 - [ ] Probar con el taller y ajustar la UI
 
-## Fase 2 — Cámaras pro y celular
-- Canon EOS (EDSDK): live view, foco, balance de blancos, ISO, obturador, RAW
-- PWA para celular (QR + WebRTC)
-- Controles UVC nativos para webcams en Mac/Windows
+## Fase 2 — Cámaras pro y celular  ← en curso
+- [x] Fuentes de cámara intercambiables (webcam / celular / réflex) con ajustes genéricos
+- [x] Réflex vía gphoto2 (Mac): vista en vivo, ISO, diafragma, velocidad, balance de blancos, formato, foco manual/automático, disparo JPEG + RAW. Probado con Canon EOS 500D / Rebel T1i
+- [x] Celular: página web por QR, modo en vivo (HTTPS con certificado local) y modo foto simple; vista previa, disparo remoto o desde el teléfono, ajustes, papel de cebolla en el teléfono. Probado con celular simulado
+- [ ] Probar con celulares reales (iPhone con certificado instalado, Android)
+- [ ] Canon EDSDK (registro de desarrollador gratuito): ajustes sin cortar la vista en vivo y soporte en Windows
+- [ ] Empaquetar gphoto2 dentro de la app de Mac (hoy hace falta `brew install gphoto2`)
+- [ ] Controles UVC nativos para webcams en Mac
+- [ ] App nativa de celular (mismo protocolo) para foco/ISO manual en iPhone
 
 ## Fase 3 — Editor de cuadros
 - Capas por cuadro y capas de película (rangos)

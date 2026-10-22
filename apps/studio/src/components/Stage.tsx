@@ -2,7 +2,7 @@ import { type FilmState, type Frame, type ImageLayer, frameIndexAtTick, timeline
 import { useEffect, useRef } from "react";
 import { proxyCache } from "../media/cache";
 import { containScale, drawContained, drawFrame } from "../render/frame";
-import { liveVideo, useCamera } from "../state/camera";
+import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 
 const PREFETCH = 12;
@@ -35,8 +35,8 @@ function onionFrames(film: FilmState, anchorIndex: number, count: number): Frame
 export function Stage() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const hasStream = useCamera((s) => s.stream !== null);
-  const cameraError = useCamera((s) => s.error);
+  const hasSource = useCamera((s) => s.source !== null);
+  const cameraError = useCamera((s) => s.error?.message ?? null);
   const view = useEditor((s) => s.view);
   const playing = useEditor((s) => s.playback !== null);
 
@@ -90,9 +90,8 @@ export function Stage() {
       const selIndex = selected ? film.frameOrder.indexOf(selected) : -1;
       let onionAnchor: number;
       if (view === "live") {
-        if (liveVideo.readyState >= 2 && liveVideo.videoWidth) {
-          drawContained(ctx, liveVideo, { width: liveVideo.videoWidth, height: liveVideo.videoHeight }, size);
-        }
+        const live = useCamera.getState().source?.live();
+        if (live) drawContained(ctx, live.image, live, size);
         onionAnchor = selIndex;
       } else {
         if (selected) drawProxyFrame(ctx, filmId, film, film.frames[selected]!);
@@ -115,11 +114,11 @@ export function Stage() {
   return (
     <div className="stage" ref={wrapRef}>
       <canvas ref={canvasRef} />
-      {view === "live" && !playing && !hasStream && (
+      {view === "live" && !playing && !hasSource && (
         <div className="stage-note">{cameraError ?? "Conectando la cámara…"}</div>
       )}
       {playing && <div className="stage-badge">▶ Reproduciendo</div>}
-      {!playing && view === "live" && hasStream && <div className="stage-badge live">● En vivo</div>}
+      {!playing && view === "live" && hasSource && <div className="stage-badge live">● En vivo</div>}
     </div>
   );
 }

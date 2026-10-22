@@ -12,6 +12,7 @@ import {
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { CameraPanel } from "./CameraPanel";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { ExportDialog } from "./ExportDialog";
 import { HistoryPanel } from "./HistoryPanel";
 import { Icon } from "./Icon";
@@ -148,7 +149,7 @@ function Transport() {
   const onion = useEditor((s) => s.onion);
   const loop = useEditor((s) => s.loop);
   const tailSeconds = useEditor((s) => s.tailSeconds);
-  const hasStream = useCamera((s) => s.stream !== null);
+  const hasSource = useCamera((s) => s.source !== null);
   const { play, stop, setOnion, set, setView } = useEditor.getState();
   const frame = selected ? film.frames[selected] : undefined;
   const frameTools = view === "frame" && frame;
@@ -156,7 +157,7 @@ function Transport() {
   return (
     <div className="transport">
       <div className="group">
-        <button className="capture-btn" onClick={() => void capture()} disabled={!hasStream} title="Sacar foto (barra espaciadora)">
+        <button className="capture-btn" onClick={() => void capture()} disabled={!hasSource} title="Sacar foto (barra espaciadora)">
           <Icon name="camera" size={28} />
         </button>
         {view === "frame" && (
@@ -266,9 +267,15 @@ export function Editor() {
     <div className="editor">
       <TopBar onExport={() => setExporting(true)} onToggleHistory={() => setHistoryOpen(!historyOpen)} historyOpen={historyOpen} />
       <div className="workspace">
-        {historyOpen && <HistoryPanel />}
+        {historyOpen && (
+          <ErrorBoundary label="el historial">
+            <HistoryPanel />
+          </ErrorBoundary>
+        )}
         <Stage />
-        <CameraPanel />
+        <ErrorBoundary label="el panel de cámara">
+          <CameraPanel />
+        </ErrorBoundary>
       </div>
       <Transport />
       <Timeline />

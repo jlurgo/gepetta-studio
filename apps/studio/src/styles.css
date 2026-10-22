@@ -380,7 +380,7 @@ input[type="range"] {
   flex-shrink: 0;
   background: var(--panel);
   border-left: 1px solid var(--line);
-  padding: 14px;
+  padding: 14px 14px 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -739,4 +739,82 @@ input[type="range"] {
 
 .toast progress {
   accent-color: var(--accent);
+}
+
+/* Camera sources & phones */
+
+.control.toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.phone-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.phone-connect .qr {
+  width: 100%;
+  max-width: 220px;
+  align-self: center;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+}
+
+.phone-connect details summary {
+  cursor: pointer;
+}
+
+.selectable {
+  user-select: all;
+  word-break: break-all;
+  color: var(--text);
+}
+
+.devices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.devices li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.devices small {
+  color: var(--muted);
+}
+
+.devices .in-use {
+  color: var(--teal);
+}
+
+.crash {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--danger);
 }

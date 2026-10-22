@@ -7,3 +7,4 @@ release/
 .vite/
 coverage/
 renderer/
+apps/desktop/phone/

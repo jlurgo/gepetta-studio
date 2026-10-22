@@ -1,135 +1,164 @@
+import type { CameraControl, ControlValue } from "@gepetta/protocol";
 import { create } from "zustand";
-import {
-  type CameraControl,
-  type CameraDevice,
-  RESOLUTIONS,
-  applyControl,
-  listCameras,
-  openCamera,
-  readControls,
-  stopStream,
-} from "../capture/webcam";
-
-/** The single <video> the live view is drawn from and captures are taken from. */
-export const liveVideo = Object.assign(document.createElement("video"), {
-  muted: true,
-  playsInline: true,
-  autoplay: true,
-});
+import { dslrAvailable, listDslrs, openDslr } from "../capture/dslr";
+import { openPhone } from "../capture/phone";
+import { useRemote } from "../capture/remote";
+import type { CameraSource, SourceOption } from "../capture/types";
+import { RESOLUTIONS, describeMediaError, listWebcams, openWebcam } from "../capture/webcam";
+import type { DslrErrorCode } from "../native";
+import { useBusy } from "./busy";
 
 interface CameraState {
-  devices: CameraDevice[];
-  deviceId: string | null;
+  /** Webcams and DSLRs found; phones come from useRemote. */
+  webcams: SourceOption[];
+  dslrs: SourceOption[];
+  /** The chosen camera, e.g. "webcam:abc"; null = default webcam. */
+  selectedId: string | null;
   resolutionId: string;
-  stream: MediaStream | null;
+  source: CameraSource | null;
   controls: CameraControl[];
-  error: string | null;
+  opening: boolean;
+  error: { message: string; code?: DslrErrorCode } | null;
   start(): Promise<void>;
   stop(): void;
-  selectDevice(id: string): Promise<void>;
+  select(id: string): Promise<void>;
   selectResolution(id: string): Promise<void>;
-  setControl(control: CameraControl, value: number | string): Promise<void>;
+  setControl(control: CameraControl, value: ControlValue): Promise<void>;
   refreshDevices(): Promise<void>;
 }
 
 const PREFS_KEY = "gepetta.camera";
 
-/** Bumped by every start/stop so a slow, superseded getUserMedia does not win. */
-let generation = 0;
-
-function loadPrefs(): { deviceId: string | null; resolutionId: string } {
+function loadPrefs(): { selectedId: string | null; resolutionId: string } {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
-    return { deviceId: p.deviceId ?? null, resolutionId: p.resolutionId ?? "1080" };
+    // Phones get a new session id on every connection, so they are never restored.
+    const selectedId = typeof p.selectedId === "string" && !p.selectedId.startsWith("phone:") ? p.selectedId : null;
+    return { selectedId, resolutionId: p.resolutionId ?? "1080" };
   } catch {
-    return { deviceId: null, resolutionId: "1080" };
+    return { selectedId: null, resolutionId: "1080" };
   }
 }
 
-function savePrefs(deviceId: string | null, resolutionId: string) {
+function savePrefs(selectedId: string | null, resolutionId: string) {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ deviceId, resolutionId }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ selectedId, resolutionId }));
   } catch {
     // Preferences are a convenience only.
   }
 }
 
-function describeError(e: unknown): string {
-  const name = e instanceof DOMException ? e.name : "";
-  if (name === "NotAllowedError") return "No hay permiso para usar la cámara.";
-  if (name === "NotFoundError" || name === "OverconstrainedError") return "No se encontró la cámara.";
-  if (name === "NotReadableError") return "La cámara está siendo usada por otra aplicación.";
-  return "No se pudo abrir la cámara.";
+function errorMessage(e: unknown): string {
+  if (e instanceof DOMException) return describeMediaError(e);
+  // Electron prefixes errors thrown in the main process.
+  return e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(e);
 }
 
-export const useCamera = create<CameraState>((set, get) => ({
-  devices: [],
-  ...loadPrefs(),
-  stream: null,
-  controls: [],
-  error: null,
+/** Bumped by every start/stop so a slow, superseded open does not win. */
+let generation = 0;
+let offChange: (() => void) | null = null;
 
-  async start() {
-    const gen = ++generation;
-    const { deviceId, resolutionId, stream: old } = get();
-    stopStream(old);
-    const res = RESOLUTIONS.find((r) => r.id === resolutionId) ?? RESOLUTIONS[1]!;
+export const useCamera = create<CameraState>((set, get) => {
+  function attach(source: CameraSource | null) {
+    offChange?.();
+    offChange = null;
+    get().source?.close();
+    set({ source, controls: source?.controls() ?? [] });
+    if (source) offChange = source.onChange(() => set({ controls: source.controls() }));
+  }
+
+  async function open(id: string | null): Promise<CameraSource> {
+    const [kind, ...rest] = (id ?? "webcam:").split(":");
+    const ref = rest.join(":");
+    if (kind === "phone") return openPhone(ref);
+    if (kind === "dslr") {
+      return openDslr(ref, (message, code) => {
+        if (get().source?.id === `dslr:${ref}`) set({ error: { message, code } });
+      });
+    }
+    const res = RESOLUTIONS.find((r) => r.id === get().resolutionId) ?? RESOLUTIONS[1]!;
     try {
-      let stream: MediaStream;
+      return await openWebcam(ref || null, res);
+    } catch (e) {
+      // The remembered webcam may be unplugged: fall back to the default one.
+      if (!ref) throw e;
+      return openWebcam(null, res);
+    }
+  }
+
+  return {
+    webcams: [],
+    dslrs: [],
+    ...loadPrefs(),
+    source: null,
+    controls: [],
+    opening: false,
+    error: null,
+
+    async start() {
+      const gen = ++generation;
+      attach(null);
+      set({ opening: true, error: null });
       try {
-        stream = await openCamera(deviceId, res);
+        const source = await open(get().selectedId);
+        if (gen !== generation) return source.close();
+        attach(source);
       } catch (e) {
-        // The remembered camera may be unplugged: fall back to the default one.
-        if (!deviceId) throw e;
-        stream = await openCamera(null, res);
+        if (gen !== generation) return;
+        console.error("[gepetta] camera", e);
+        set({ error: { message: errorMessage(e) } });
+      } finally {
+        if (gen === generation) set({ opening: false });
       }
-      if (gen !== generation) return stopStream(stream);
-      const track = stream.getVideoTracks()[0]!;
-      liveVideo.srcObject = stream;
-      await liveVideo.play().catch(() => undefined);
-      const actualId = track.getSettings().deviceId ?? deviceId;
-      set({ stream, deviceId: actualId, controls: readControls(track), error: null });
-      await get().refreshDevices();
-    } catch (e) {
-      if (gen !== generation) return;
-      console.error("[gepetta] camera", e);
-      set({ stream: null, controls: [], error: describeError(e) });
-    }
-  },
+      void get().refreshDevices();
+    },
 
-  stop() {
-    generation++;
-    stopStream(get().stream);
-    liveVideo.srcObject = null;
-    set({ stream: null, controls: [] });
-  },
+    stop() {
+      generation++;
+      attach(null);
+      set({ opening: false });
+    },
 
-  async selectDevice(id) {
-    set({ deviceId: id });
-    savePrefs(id, get().resolutionId);
-    await get().start();
-  },
+    async select(id) {
+      set({ selectedId: id });
+      savePrefs(id, get().resolutionId);
+      await get().start();
+    },
 
-  async selectResolution(id) {
-    set({ resolutionId: id });
-    savePrefs(get().deviceId, id);
-    await get().start();
-  },
+    async selectResolution(id) {
+      set({ resolutionId: id });
+      savePrefs(get().selectedId, id);
+      if (get().source?.kind === "webcam") await get().start();
+    },
 
-  async setControl(control, value) {
-    const track = get().stream?.getVideoTracks()[0];
-    if (!track) return;
-    try {
-      await applyControl(track, control, value);
-    } catch (e) {
-      console.warn("[gepetta] control not applied", control.key, e);
-    }
-    set({ controls: readControls(track) });
-  },
+    async setControl(control, value) {
+      try {
+        await get().source?.setControl(control, value);
+      } catch (e) {
+        set({ error: { message: errorMessage(e) } });
+      }
+    },
 
-  async refreshDevices() {
-    set({ devices: await listCameras() });
-  },
-}));
+    async refreshDevices() {
+      const [webcams, dslrs] = await Promise.all([
+        listWebcams().catch(() => []),
+        dslrAvailable ? listDslrs().catch(() => []) : Promise.resolve([]),
+      ]);
+      set({ webcams, dslrs });
+    },
+  };
+});
+
+/** When the selected phone disconnects, fall back to the default webcam. */
+useRemote.subscribe((state, prev) => {
+  if (state.devices === prev.devices) return;
+  const { source } = useCamera.getState();
+  if (source?.kind !== "phone") return;
+  const sessionId = source.id.slice("phone:".length);
+  if (!state.devices.some((d) => d.sessionId === sessionId)) {
+    useBusy.getState().notify("Se desconectó el celular. Volvemos a la webcam.");
+    void useCamera.getState().select("webcam:");
+  }
+});
 
 navigator.mediaDevices?.addEventListener("devicechange", () => void useCamera.getState().refreshDevices());

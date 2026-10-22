@@ -2,9 +2,14 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { BrowserWindow, app, dialog, ipcMain, session, shell, systemPreferences } from "electron";
 import { type FilmMeta, FilmLibrary } from "./films";
+import { registerDslrIpc } from "./dslr/ipc";
+import { registerRemoteIpc } from "./remote/ipc";
 
 const DEV_URL = process.env.GEPETTA_DEV_URL;
 const library = new FilmLibrary(path.join(app.getPath("documents"), "Gepetta Studio"));
+let mainWindow: BrowserWindow | null = null;
+const getWindow = () => mainWindow;
+const disposers: (() => unknown)[] = [];
 
 function registerIpc() {
   ipcMain.handle("films:list", () => library.list());
@@ -26,10 +31,11 @@ function registerIpc() {
     await writeFile(result.filePath, Buffer.from(data));
     return result.filePath;
   });
+  disposers.push(registerRemoteIpc(getWindow).dispose, registerDslrIpc(getWindow).dispose);
 }
 
 function createWindow() {
-  const win = new BrowserWindow({
+  const win = (mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 960,
@@ -41,6 +47,9 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
     },
+  }));
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
   });
   // Links open in the system browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -65,6 +74,8 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+app.on("will-quit", () => disposers.forEach((d) => d()));
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

@@ -1,5 +1,10 @@
-// Copies the built studio web app next to the Electron bundle for packaging.
+// Copies the built studio app and phone page next to the Electron bundle for packaging.
 import { cpSync, rmSync } from "node:fs";
 
-rmSync("renderer", { recursive: true, force: true });
-cpSync("../studio/dist", "renderer", { recursive: true });
+for (const [from, to] of [
+  ["../studio/dist", "renderer"],
+  ["../phone/dist", "phone"],
+]) {
+  rmSync(to, { recursive: true, force: true });
+  cpSync(from, to, { recursive: true });
+}

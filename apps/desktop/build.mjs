@@ -9,7 +9,8 @@ await build({
   platform: "node",
   format: "cjs",
   target: "node22",
-  external: ["electron"],
+  // ws optionally requires these native speedups; it works without them.
+  external: ["electron", "bufferutil", "utf-8-validate"],
   sourcemap: true,
   logLevel: "warning",
 });

@@ -1,13 +1,7 @@
-/**
- * Webcams through getUserMedia. Which controls exist depends on the browser,
- * OS and driver: Chrome on Windows exposes most UVC controls, macOS very few.
- * Native UVC control (and DSLRs) will plug in later behind the same shape.
- */
+import { type CameraControl, type ControlValue, applyTrackControl, readTrackControls } from "@gepetta/protocol";
+import { type CameraSource, type CapturedStill, Listeners, type SourceOption } from "./types";
 
-export interface CameraDevice {
-  id: string;
-  label: string;
-}
+/** Webcams through getUserMedia. Controls depend on what the browser/driver exposes. */
 
 export interface ResolutionPreset {
   id: string;
@@ -23,87 +17,19 @@ export const RESOLUTIONS: ResolutionPreset[] = [
   { id: "480", label: "VGA (640×480)", width: 640, height: 480 },
 ];
 
-export type CameraControl =
-  | { kind: "range"; key: string; label: string; min: number; max: number; step: number; value: number; manualMode?: string }
-  | { kind: "mode"; key: string; label: string; options: string[]; value: string };
-
-const RANGE_LABELS: Record<string, { label: string; manualMode?: string }> = {
-  zoom: { label: "Zoom" },
-  focusDistance: { label: "Foco", manualMode: "focusMode" },
-  colorTemperature: { label: "Balance de blancos (K)", manualMode: "whiteBalanceMode" },
-  exposureTime: { label: "Tiempo de exposición", manualMode: "exposureMode" },
-  exposureCompensation: { label: "Compensación de exposición" },
-  iso: { label: "ISO", manualMode: "exposureMode" },
-  brightness: { label: "Brillo" },
-  contrast: { label: "Contraste" },
-  saturation: { label: "Saturación" },
-  sharpness: { label: "Nitidez" },
-  pan: { label: "Paneo" },
-  tilt: { label: "Inclinación" },
-};
-
-const MODE_LABELS: Record<string, string> = {
-  focusMode: "Modo de foco",
-  whiteBalanceMode: "Modo de balance de blancos",
-  exposureMode: "Modo de exposición",
-};
-
-export const MODE_VALUE_LABELS: Record<string, string> = {
-  continuous: "Automático",
-  "single-shot": "Una vez",
-  manual: "Manual",
-  none: "Ninguno",
-};
-
-export async function listCameras(): Promise<CameraDevice[]> {
+export async function listWebcams(): Promise<SourceOption[]> {
   const devices = await navigator.mediaDevices.enumerateDevices();
   return devices
     .filter((d) => d.kind === "videoinput")
-    .map((d, i) => ({ id: d.deviceId, label: d.label || `Cámara ${i + 1}` }));
+    .map((d, i) => ({ id: `webcam:${d.deviceId}`, kind: "webcam" as const, label: d.label || `Cámara ${i + 1}` }));
 }
 
-export async function openCamera(deviceId: string | null, res: ResolutionPreset): Promise<MediaStream> {
-  return navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      deviceId: deviceId ? { exact: deviceId } : undefined,
-      width: { ideal: res.width },
-      height: { ideal: res.height },
-    },
-  });
-}
-
-export function stopStream(stream: MediaStream | null) {
-  stream?.getTracks().forEach((t) => t.stop());
-}
-
-type Caps = Record<string, unknown>;
-
-export function readControls(track: MediaStreamTrack): CameraControl[] {
-  const caps = (track.getCapabilities?.() ?? {}) as Caps;
-  const settings = track.getSettings() as Caps;
-  const controls: CameraControl[] = [];
-  for (const [key, label] of Object.entries(MODE_LABELS)) {
-    const options = caps[key];
-    if (Array.isArray(options) && options.length > 1) {
-      controls.push({ kind: "mode", key, label, options, value: String(settings[key] ?? options[0]) });
-    }
-  }
-  for (const [key, meta] of Object.entries(RANGE_LABELS)) {
-    const range = caps[key] as { min?: number; max?: number; step?: number } | undefined;
-    if (!range || typeof range.min !== "number" || typeof range.max !== "number" || range.min === range.max) continue;
-    const step = range.step && range.step > 0 ? range.step : (range.max - range.min) / 100;
-    const value = typeof settings[key] === "number" ? (settings[key] as number) : range.min;
-    controls.push({ kind: "range", key, label: meta.label, min: range.min, max: range.max, step, value, manualMode: meta.manualMode });
-  }
-  return controls;
-}
-
-export async function applyControl(track: MediaStreamTrack, control: CameraControl, value: number | string) {
-  const constraint: Caps = { [control.key]: value };
-  // A manual value only sticks if its mode is manual (e.g. focus distance needs focusMode=manual).
-  if (control.kind === "range" && control.manualMode) constraint[control.manualMode] = "manual";
-  await track.applyConstraints({ advanced: [constraint as MediaTrackConstraintSet] });
+export function describeMediaError(e: unknown): string {
+  const name = e instanceof DOMException ? e.name : "";
+  if (name === "NotAllowedError") return "No hay permiso para usar la cámara.";
+  if (name === "NotFoundError" || name === "OverconstrainedError") return "No se encontró la cámara.";
+  if (name === "NotReadableError") return "La cámara está siendo usada por otra aplicación.";
+  return "No se pudo abrir la cámara.";
 }
 
 function nextVideoFrame(video: HTMLVideoElement): Promise<void> {
@@ -117,7 +43,7 @@ function nextVideoFrame(video: HTMLVideoElement): Promise<void> {
  * Grabs the current video frame at full sensor resolution. With `average` > 1 it
  * averages that many consecutive frames, which cleans up sensor noise in dim light.
  */
-export async function captureStill(video: HTMLVideoElement, average = 1): Promise<Blob> {
+async function captureStill(video: HTMLVideoElement, average: number): Promise<Blob> {
   const w = video.videoWidth;
   const h = video.videoHeight;
   if (!w || !h) throw new Error("La cámara todavía no está lista");
@@ -139,4 +65,53 @@ export async function captureStill(video: HTMLVideoElement, average = 1): Promis
     ctx.putImageData(out, 0, 0);
   }
   return canvas.convertToBlob({ type: "image/jpeg", quality: 0.95 });
+}
+
+/** Opens a webcam. `deviceId` null = the system default. */
+export async function openWebcam(deviceId: string | null, res: ResolutionPreset): Promise<CameraSource> {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      width: { ideal: res.width },
+      height: { ideal: res.height },
+    },
+  });
+  const track = stream.getVideoTracks()[0]!;
+  const video = Object.assign(document.createElement("video"), { muted: true, playsInline: true });
+  video.srcObject = stream;
+  await video.play().catch(() => undefined);
+  const listeners = new Listeners();
+  let controls = readTrackControls(track);
+
+  return {
+    id: `webcam:${track.getSettings().deviceId ?? deviceId ?? "default"}`,
+    kind: "webcam",
+    live: () =>
+      video.readyState >= 2 && video.videoWidth ? { image: video, width: video.videoWidth, height: video.videoHeight } : null,
+    controls: () => controls,
+    async setControl(control: CameraControl, value: ControlValue) {
+      try {
+        await applyTrackControl(track, control, value);
+      } catch (e) {
+        console.warn("[gepetta] control not applied", control.key, e);
+      }
+      controls = readTrackControls(track);
+      listeners.emit();
+    },
+    async capture(average: number): Promise<CapturedStill> {
+      return { image: await captureStill(video, average), raw: null };
+    },
+    onChange: (cb) => listeners.add(cb),
+    close() {
+      stream.getTracks().forEach((t) => t.stop());
+      video.srcObject = null;
+    },
+  };
+}
+
+export function webcamSettings(source: CameraSource | null): { width?: number; height?: number } {
+  if (source?.kind !== "webcam") return {};
+  const frame = source.live();
+  return frame ? { width: frame.width, height: frame.height } : {};
 }

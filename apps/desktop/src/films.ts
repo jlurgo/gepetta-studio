@@ -23,6 +23,15 @@ const EXT_BY_MIME: Record<string, string> = {
   "image/bmp": "bmp",
   "image/tiff": "tif",
   "image/svg+xml": "svg",
+  "image/x-canon-cr2": "cr2",
+  "image/x-canon-cr3": "cr3",
+  "image/x-nikon-nef": "nef",
+  "image/x-sony-arw": "arw",
+  "image/x-adobe-dng": "dng",
+  "image/x-fuji-raf": "raf",
+  "image/x-olympus-orf": "orf",
+  "image/x-panasonic-rw2": "rw2",
+  "image/x-raw": "raw",
 };
 
 const SAFE_ID = /^[A-Za-z0-9-]+$/;

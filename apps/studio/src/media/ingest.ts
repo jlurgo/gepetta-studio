@@ -26,16 +26,22 @@ async function downscale(bitmap: ImageBitmap, max: number, quality: number): Pro
   return canvas.convertToBlob({ type: "image/jpeg", quality });
 }
 
-/** Stores an image untouched plus its proxy and thumbnail, all content-addressed. */
-export async function ingestImage(filmId: string, blob: Blob): Promise<MediaRef> {
+/**
+ * Stores an image untouched plus its proxy and thumbnail, all content-addressed.
+ * A camera RAW file, when given, is stored alongside untouched.
+ */
+export async function ingestImage(filmId: string, blob: Blob, raw?: Blob | null): Promise<MediaRef> {
   const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
   try {
-    const [original, proxy, thumb] = await Promise.all([
+    const [original, proxy, thumb, rawId] = await Promise.all([
       storeBlob(filmId, blob),
       downscale(bitmap, PROXY_MAX, 0.9).then((b) => storeBlob(filmId, b)),
       downscale(bitmap, THUMB_MAX, 0.8).then((b) => storeBlob(filmId, b)),
+      raw ? storeBlob(filmId, raw) : undefined,
     ]);
-    return { original, proxy, thumb, width: bitmap.width, height: bitmap.height };
+    const media: MediaRef = { original, proxy, thumb, width: bitmap.width, height: bitmap.height };
+    if (rawId) media.raw = rawId;
+    return media;
   } finally {
     bitmap.close();
   }

@@ -85,17 +85,45 @@ Interfaz `StorageBackend` con dos implementaciones:
 
 ## Captura
 
-Interfaz `CameraSource` (`listControls`, `setControl`, vista en vivo, `capture`):
+Toda cámara es una `CameraSource` (`apps/studio/src/capture/types.ts`): vista en
+vivo, ajustes (`CameraControl` de `packages/protocol`, igual para todas) y
+`capture()`. El editor no sabe de qué tipo de cámara se trata.
 
-| Fuente | Cómo | Estado |
+| Fuente | Cómo | Dónde |
 |---|---|---|
-| Webcams | `getUserMedia` + `MediaStreamTrack.getCapabilities()` (foco, balance de blancos, exposición, zoom… lo que exponga el driver) | MVP |
-| Canon EOS / réflex | Canon EDSDK (gratis con registro de desarrollador) vía módulo nativo en Electron; alternativa gphoto2 (Mac). Live view + disparo + RAW | Fase 2 |
-| Celulares | PWA abierta por QR, video/foto vía WebRTC; luego app nativa con el mismo protocolo | Fase 2 |
-| Escáner | ImageCaptureCore (Mac) / WIA-TWAIN (Windows) | Más adelante |
+| Webcams | `getUserMedia` + `getCapabilities()` (foco, balance de blancos, exposición, zoom… lo que exponga el driver). Opción de promediar N cuadros | `capture/webcam.ts` |
+| Celulares | Servidor LAN en Electron + página web del celular (`apps/phone`) | `capture/phone.ts`, `apps/desktop/src/remote/` |
+| Réflex / mirrorless | gphoto2 en el proceso main (Mac). Driver intercambiable: el SDK de Canon (EDSDK) se suma como otro `DslrDriver` y trae Windows | `capture/dslr.ts`, `apps/desktop/src/dslr/` |
+| Escáner | ImageCaptureCore (Mac) / WIA-TWAIN (Windows) | más adelante |
 
-Opciones de captura: promediar N fotos (menos ruido), papel de cebolla sobre la
-vista en vivo.
+### Celular
+
+El escritorio levanta, solo cuando se pide ("Conectar celular"), un servidor en la
+red local con dos puertos:
+
+- **HTTP :8790** — la página a la que apunta el QR. Ofrece el modo **Foto simple**
+  (usa la app de cámara del teléfono con todos sus controles manuales; funciona sin
+  configurar nada) y ayuda para el modo en vivo. Sirve también `/ca.crt`.
+- **HTTPS :8791** — modo **En vivo**: el navegador solo da acceso a la cámara en
+  páginas seguras, así que el escritorio crea una autoridad certificante local
+  ("Gepetta Studio Local CA", guardada en la carpeta de datos de la app) y emite un
+  certificado para sus IPs de la red. En Android alcanza con "Avanzado → Continuar";
+  en iPhone hay que instalar el certificado una vez.
+
+Todas las conexiones llevan el token del QR. Los mensajes van por WebSocket en
+binario (`packages/protocol/src/remote.ts`): cabecera JSON + JPEG sin base64.
+El celular manda vista previa (640 px, ~10 cps, con control de congestión),
+ajustes y fotos en resolución completa (`ImageCapture.takePhoto` en Android); el
+escritorio pide fotos, cambia ajustes y manda el cuadro anterior para el papel de
+cebolla en la pantalla del celular. Una app nativa futura habla el mismo protocolo.
+
+### Réflex (gphoto2)
+
+Una sola cosa por vez: la vista en vivo (`--capture-movie`, MJPEG por stdout) se
+pausa para disparar o cambiar ajustes y se retoma sola. El disparo baja JPEG y
+RAW; el RAW se guarda intacto junto a la foto (`MediaRef.raw`) y, si la cámara
+solo hace RAW, se usa la vista previa JPEG que trae adentro. En Mac el sistema
+puede tomar la cámara por USB: el botón "Liberar cámara" lo resuelve.
 
 ## Reproducción y exportación
 
