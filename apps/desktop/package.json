@@ -3,7 +3,7 @@
   "productName": "Gepetta Studio",
   "version": "0.1.0",
   "private": true,
-  "description": "Estudio de animación stop-motion y cuadro a cuadro",
+  "description": "Estudio de animaci\u00f3n stop-motion y cuadro a cuadro",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "build:main": "node build.mjs",
@@ -16,6 +16,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@gepetta/core": "workspace:*",
     "@gepetta/protocol": "workspace:*",
     "@types/node": "22.20.5",
     "@types/node-forge": "1.3.14",
@@ -52,8 +53,8 @@
         "dmg"
       ],
       "extendInfo": {
-        "NSCameraUsageDescription": "Gepetta Studio usa la cámara para sacar las fotos de tu animación.",
-        "NSMicrophoneUsageDescription": "Gepetta Studio puede grabar sonido para tu animación."
+        "NSCameraUsageDescription": "Gepetta Studio usa la c\u00e1mara para sacar las fotos de tu animaci\u00f3n.",
+        "NSMicrophoneUsageDescription": "Gepetta Studio puede grabar sonido para tu animaci\u00f3n."
       }
     },
     "win": {

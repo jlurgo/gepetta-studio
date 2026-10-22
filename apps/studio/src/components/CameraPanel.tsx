@@ -5,6 +5,7 @@ import type { DslrStatus } from "../native";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { CameraControls } from "./CameraControls";
+import { FocusMeterPanel } from "./FocusMeterPanel";
 import { FOCUS_KEYS, FocusPanel } from "./FocusPanel";
 import { FrameInfo } from "./FrameInfo";
 import { MagnifyPanel, ZOOM_KEYS } from "./MagnifyPanel";
@@ -123,6 +124,7 @@ export function CameraPanel() {
         </div>
       )}
 
+      <FocusMeterPanel />
       <FocusPanel />
       <MagnifyPanel />
 

@@ -1,8 +1,10 @@
 import { type FilmState, type Frame, type ImageLayer, frameIndexAtTick, timeline } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { proxyCache } from "../media/cache";
-import { containScale, drawContained, drawFrame } from "../render/frame";
+import type { LiveFrame } from "../capture/types";
+import { type Size, containScale, drawContained, drawFrame } from "../render/frame";
 import { useCamera } from "../state/camera";
+import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
 import { useEditor } from "../state/editor";
 import { magnifyControl } from "./MagnifyPanel";
 import { capturePointer } from "./pointer";
@@ -32,6 +34,63 @@ function onionFrames(film: FilmState, anchorIndex: number, count: number): Frame
   const out: Frame[] = [];
   for (let i = anchorIndex; i >= 0 && out.length < count; i--) out.push(film.frames[film.frameOrder[i]!]!);
   return out;
+}
+
+/** Measuring spots over the live view: box, name, % of peak, bar and recent history. */
+function drawProbes(ctx: CanvasRenderingContext2D, live: LiveFrame, film: Size, scale: number) {
+  const { probes } = useFocusProbes.getState();
+  if (probes.length === 0) return;
+  const c = containScale(live, film);
+  const ox = (film.width - live.width * c) / 2;
+  const oy = (film.height - live.height * c) / 2;
+  const px = 1 / scale; // one screen pixel, in film units
+  const box = probeSize(live) * c;
+  ctx.save();
+  ctx.font = `bold ${16 * px}px system-ui, sans-serif`;
+  for (const p of probes) {
+    const r = readings.get(p.id);
+    const q = r && r.peak > 0 ? r.value / r.peak : 0;
+    const color = probeColor(q);
+    const x = ox + p.x * live.width * c - box / 2;
+    const y = oy + p.y * live.height * c - box / 2;
+    ctx.lineWidth = 2 * px;
+    ctx.strokeStyle = color;
+    ctx.strokeRect(x, y, box, box);
+    const label = `${p.name} ${r ? Math.round(q * 100) : "…"}%`;
+    const w = ctx.measureText(label).width + 12 * px;
+    ctx.fillStyle = "rgb(0 0 0 / 0.8)";
+    ctx.fillRect(x, y - 24 * px, Math.max(w, box), 22 * px);
+    ctx.fillStyle = color;
+    ctx.fillText(label, x + 6 * px, y - 7 * px);
+    // History under the box, scaled to the peak.
+    if (r && r.history.length > 1) {
+      const hw = Math.max(box, 120 * px);
+      const hh = 36 * px;
+      const hy = y + box + 4 * px;
+      ctx.fillStyle = "rgb(0 0 0 / 0.8)";
+      ctx.fillRect(x, hy, hw, hh);
+      // Dotted line at the peak: the target to reach.
+      ctx.setLineDash([3 * px, 3 * px]);
+      ctx.lineWidth = 1 * px;
+      ctx.strokeStyle = "rgb(255 255 255 / 0.5)";
+      ctx.beginPath();
+      ctx.moveTo(x, hy + 2 * px);
+      ctx.lineTo(x + hw, hy + 2 * px);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      r.history.forEach((v, i) => {
+        const hx = x + (i / (r.history.length - 1)) * hw;
+        const vy = hy + hh - (v / r.peak) * (hh - 4 * px);
+        if (i === 0) ctx.moveTo(hx, vy);
+        else ctx.lineTo(hx, vy);
+      });
+      ctx.lineWidth = 2 * px;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 interface Rect {
@@ -87,6 +146,12 @@ function useLivePointer(liveRect: React.RefObject<Rect | null>) {
     drag.current = null;
     if (d?.moved) return;
     const { pointerTool, controls, setControl } = useCamera.getState();
+    if (pointerTool === "probe") {
+      const p = pointAt(e);
+      const magnify = magnifyControl(controls);
+      if (p && (!magnify || magnify.value === "1")) useFocusProbes.getState().toggleAt(p[0], p[1]);
+      return;
+    }
     if (pointerTool !== "focus") return;
     const focus = controls.find((c) => c.kind === "focus");
     const p = pointAt(e);
@@ -167,6 +232,7 @@ export function Stage() {
 
       const selIndex = selected ? film.frameOrder.indexOf(selected) : -1;
       let onionAnchor: number;
+      let probesToDraw: LiveFrame | null = null;
       liveRect.current = null;
       if (view === "live") {
         const live = useCamera.getState().source?.live();
@@ -178,9 +244,14 @@ export function Stage() {
           const oy = (ch - size.height * s) / 2 + ((size.height - live.height * c) / 2) * s;
           liveRect.current = { x: ox / dpr, y: oy / dpr, w: (live.width * c * s) / dpr, h: (live.height * c * s) / dpr };
         }
-        // A magnified view does not line up with earlier frames.
+        // A magnified view does not line up with earlier frames, nor with the measuring spots.
         const magnify = magnifyControl(useCamera.getState().controls);
-        onionAnchor = magnify && magnify.value !== "1" ? -1 : selIndex;
+        const magnified = magnify !== undefined && magnify.value !== "1";
+        onionAnchor = magnified ? -1 : selIndex;
+        if (live && !magnified) {
+          measureProbes(live);
+          probesToDraw = live;
+        }
       } else {
         if (selected) drawProxyFrame(ctx, filmId, film, film.frames[selected]!);
         onionAnchor = selIndex - 1;
@@ -194,6 +265,7 @@ export function Stage() {
           drawProxyFrame(ctx, filmId, film, frame, onion.opacity * (1 - distance / (onion.count + 1)));
         });
       }
+      if (probesToDraw) drawProbes(ctx, probesToDraw, size, s);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
@@ -201,7 +273,7 @@ export function Stage() {
 
   return (
     <div
-      className={`stage${view === "live" && pointerTool === "focus" ? " tool-focus" : ""}${view === "live" && magnified ? " magnified" : ""}`}
+      className={`stage${view === "live" && pointerTool !== "none" ? " tool-focus" : ""}${view === "live" && magnified ? " magnified" : ""}`}
       ref={wrapRef}
       {...(view === "live" && !playing ? handlers : {})}
     >

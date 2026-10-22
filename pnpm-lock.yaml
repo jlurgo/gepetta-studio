@@ -10,6 +10,9 @@ importers:
 
   apps/desktop:
     devDependencies:
+      '@gepetta/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@gepetta/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

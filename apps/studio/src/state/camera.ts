@@ -7,6 +7,7 @@ import type { CameraSource, SourceOption } from "../capture/types";
 import { RESOLUTIONS, describeMediaError, listWebcams, openWebcam } from "../capture/webcam";
 import type { DslrErrorCode } from "../native";
 import { useBusy } from "./busy";
+import { useFocusProbes } from "./focusProbes";
 
 interface CameraState {
   /** Webcams and DSLRs found; phones come from useRemote. */
@@ -20,10 +21,10 @@ interface CameraState {
   opening: boolean;
   error: { message: string; code?: DslrErrorCode } | null;
   /** What a click on the live view does. */
-  pointerTool: "none" | "focus";
+  pointerTool: "none" | "focus" | "probe";
   /** A 1× snapshot of the live view, taken when the magnifier turns on, to steer it. */
   overview: string | null;
-  setPointerTool(tool: "none" | "focus"): void;
+  setPointerTool(tool: "none" | "focus" | "probe"): void;
   /** The current camera's name as listed. */
   sourceLabel(): string | null;
   start(): Promise<void>;
@@ -89,6 +90,8 @@ function stopReconnecting() {
 export const useCamera = create<CameraState>((set, get) => {
   function attach(source: CameraSource | null) {
     set({ overview: null, pointerTool: "none" });
+    // A different camera frames differently: old measuring spots no longer apply.
+    useFocusProbes.getState().clear();
     offChange?.();
     offChange = null;
     get().source?.close();
