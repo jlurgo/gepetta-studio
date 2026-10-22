@@ -94,6 +94,13 @@ export interface GepettaNative {
     onFrame(cb: (id: string, jpeg: Uint8Array) => void): () => void; // event dslr:frame
     onError(cb: (id: string, message: string, code: DslrErrorCode) => void): () => void; // event dslr:error
   };
+  updates: {
+    /** Version already downloaded and waiting to install, if any. */
+    pending(): Promise<string | null>; // update:pending
+    /** Closes the app, installs the downloaded version and opens it again. */
+    install(): Promise<void>; // update:install
+    onReady(cb: (version: string) => void): () => void; // event update:ready
+  };
 }
 
 declare global {

@@ -3,7 +3,7 @@
   "productName": "Gepetta Studio",
   "version": "0.1.0",
   "private": true,
-  "description": "Estudio de animaci\u00f3n stop-motion y cuadro a cuadro",
+  "description": "Estudio de animación stop-motion y cuadro a cuadro",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "build:main": "node build.mjs",
@@ -14,7 +14,8 @@
     "dist": "pnpm build && electron-builder",
     "dist:dir": "pnpm build && electron-builder --dir",
     "test": "vitest run",
-    "dist:win": "pnpm build && electron-builder --win nsis --x64 --publish never"
+    "dist:win": "pnpm build && electron-builder --win nsis --x64 --publish never",
+    "release:win": "pnpm build && electron-builder --win nsis --x64 --publish always"
   },
   "devDependencies": {
     "@gepetta/core": "workspace:*",
@@ -27,6 +28,7 @@
     "cross-env": "10.1.0",
     "electron": "38.8.6",
     "electron-builder": "26.0.12",
+    "electron-updater": "6.8.10",
     "esbuild": "0.25.12",
     "jpeg-js": "0.4.4",
     "node-forge": "1.4.0",
@@ -54,8 +56,8 @@
         "dmg"
       ],
       "extendInfo": {
-        "NSCameraUsageDescription": "Gepetta Studio usa la c\u00e1mara para sacar las fotos de tu animaci\u00f3n.",
-        "NSMicrophoneUsageDescription": "Gepetta Studio puede grabar sonido para tu animaci\u00f3n."
+        "NSCameraUsageDescription": "Gepetta Studio usa la cámara para sacar las fotos de tu animación.",
+        "NSMicrophoneUsageDescription": "Gepetta Studio puede grabar sonido para tu animación."
       }
     },
     "win": {
@@ -66,6 +68,14 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "jlurgo",
+        "repo": "gepetta-studio",
+        "releaseType": "release"
+      }
+    ]
   }
 }

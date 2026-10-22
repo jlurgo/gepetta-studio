@@ -733,6 +733,11 @@ input[type="range"] {
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.4);
 }
 
+.toast.update {
+  pointer-events: auto;
+  border-color: var(--teal);
+}
+
 .toast.error {
   border-color: var(--danger);
   color: var(--danger);

@@ -43,4 +43,9 @@ contextBridge.exposeInMainWorld("gepetta", {
     onFrame: (cb: (id: string, jpeg: Uint8Array) => void) => subscribe("dslr:frame", cb),
     onError: (cb: (id: string, message: string, code: string) => void) => subscribe("dslr:error", cb),
   },
+  updates: {
+    pending: () => ipcRenderer.invoke("update:pending"),
+    install: () => ipcRenderer.invoke("update:install"),
+    onReady: (cb: (version: string) => void) => subscribe("update:ready", cb),
+  },
 });

@@ -4,6 +4,7 @@ import { BrowserWindow, app, dialog, ipcMain, session, shell, systemPreferences 
 import { type FilmMeta, FilmLibrary } from "./films";
 import { registerDslrIpc } from "./dslr/ipc";
 import { registerRemoteIpc } from "./remote/ipc";
+import { registerUpdates } from "./updates";
 
 const DEV_URL = process.env.GEPETTA_DEV_URL;
 const library = new FilmLibrary(path.join(app.getPath("documents"), "Gepetta Studio"));
@@ -74,6 +75,7 @@ app.whenReady().then(async () => {
     await systemPreferences.askForMediaAccess("camera").catch(() => false);
   }
   registerIpc();
+  disposers.push(registerUpdates(getWindow));
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

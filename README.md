@@ -31,6 +31,12 @@ pnpm dist       # instalador (.dmg en Mac, .exe en Windows) en apps/desktop/rele
   (se puede generar desde la Mac) → `apps/desktop/release/Gepetta Studio Setup <versión>.exe`.
   No está firmado: Windows muestra "Windows protegió su PC" → "Más información" →
   "Ejecutar de todas formas".
+- **Actualizaciones automáticas:** la app instalada busca versiones nuevas en los
+  [releases de GitHub](https://github.com/jlurgo/gepetta-studio/releases) al abrirse
+  (y cada 4 horas), las baja sola y las instala al cerrarse (o con "Actualizar ahora").
+  Para publicar una versión: subir `version` en `apps/desktop/package.json` y correr
+  `GH_TOKEN=$(gh auth token) pnpm --filter @gepetta/desktop release:win`.
+  En Mac no hay actualización automática hasta que la app esté firmada.
 - **Desarrollo en Windows:** instalar Node 22+, Git y pnpm (`corepack enable`), clonar el
   repo y correr `pnpm install` y `pnpm dev`, igual que en Mac.
 - La primera vez que se conecta un celular, el Firewall de Windows pregunta si permitir
