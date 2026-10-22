@@ -14,6 +14,7 @@ import { useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
 import { CameraPanel } from "./CameraPanel";
 import { GuidesControl } from "./GuidesControl";
+import { LayersPanel } from "./LayersPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ExportDialog } from "./ExportDialog";
 import { HistoryPanel } from "./HistoryPanel";
@@ -268,6 +269,49 @@ function Transport() {
   );
 }
 
+type SideTab = "camera" | "layers";
+
+/** Right column: camera settings or layers. Both stay mounted so switching keeps their state. */
+function SidePanel() {
+  const [tab, setTab] = useState<SideTab>(() => {
+    try {
+      return localStorage.getItem("gepetta.sideTab") === "layers" ? "layers" : "camera";
+    } catch {
+      return "camera";
+    }
+  });
+  const choose = (t: SideTab) => {
+    setTab(t);
+    try {
+      localStorage.setItem("gepetta.sideTab", t);
+    } catch {
+      // Not remembered.
+    }
+  };
+  return (
+    <aside className="side-panel">
+      <div className="side-tabs" role="tablist">
+        <button role="tab" aria-selected={tab === "camera"} className={tab === "camera" ? "active" : ""} onClick={() => choose("camera")}>
+          <Icon name="camera" size={16} /> Cámara
+        </button>
+        <button role="tab" aria-selected={tab === "layers"} className={tab === "layers" ? "active" : ""} onClick={() => choose("layers")}>
+          <Icon name="layers" size={16} /> Capas
+        </button>
+      </div>
+      <div className="side-body" hidden={tab !== "camera"}>
+        <ErrorBoundary label="el panel de cámara">
+          <CameraPanel />
+        </ErrorBoundary>
+      </div>
+      <div className="side-body" hidden={tab !== "layers"}>
+        <ErrorBoundary label="el panel de capas">
+          <LayersPanel />
+        </ErrorBoundary>
+      </div>
+    </aside>
+  );
+}
+
 export function Editor() {
   const [exporting, setExporting] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -288,9 +332,7 @@ export function Editor() {
           </ErrorBoundary>
         )}
         <Stage />
-        <ErrorBoundary label="el panel de cámara">
-          <CameraPanel />
-        </ErrorBoundary>
+        <SidePanel />
       </div>
       <Transport />
       <Timeline />

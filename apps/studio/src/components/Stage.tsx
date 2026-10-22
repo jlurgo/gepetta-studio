@@ -1,8 +1,27 @@
-import { type FilmState, type Frame, type ImageLayer, frameIndexAtTick, moveVanishingPoint, timeline, vanishingPoints } from "@gepetta/core";
+import {
+  type Channel,
+  type FilmState,
+  type Frame,
+  type ImageLayer,
+  type MediaRef,
+  type Point,
+  type Transform2D,
+  type FrameSpans,
+  type TimedFrame,
+  channelMediaAt,
+  frameIndexAtTick,
+  frameSpans,
+  frameStack,
+  moveVanishingPoint,
+  timeline,
+  vanishingPoints,
+} from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { proxyCache } from "../media/cache";
 import type { LiveFrame } from "../capture/types";
-import { type Size, containScale, drawContained, drawFrame } from "../render/frame";
+import { type Drawable, type Size, containScale, drawContained, drawStack, ownLayers } from "../render/frame";
+import { drawHandles, dragTransform, hitHandle, type HandleKind } from "../render/handles";
+import { commitTransform, resolveTarget, useLayers } from "../state/layers";
 import { useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
 import { useEditor } from "../state/editor";
@@ -13,22 +32,43 @@ import { capturePointer } from "./pointer";
 
 const PREFETCH = 12;
 
-/** Draws a frame's proxies, requesting the ones not decoded yet. Returns false if something was missing. */
-function drawProxyFrame(ctx: CanvasRenderingContext2D, filmId: string, film: FilmState, frame: Frame, alpha = 1): boolean {
+/** Draws pictures from their proxies, requesting the ones not decoded yet. Returns false if something was missing. */
+function drawProxies(ctx: CanvasRenderingContext2D, filmId: string, film: FilmState, items: readonly Drawable[], alpha = 1): boolean {
   let complete = true;
-  drawFrame(ctx, frame, film.settings, (layer: ImageLayer) => {
-    const bmp = proxyCache.peek(filmId, layer.media.proxy);
-    if (!bmp) {
-      complete = false;
-      void proxyCache.load(filmId, layer.media.proxy);
-    }
-    return bmp;
-  }, alpha);
+  drawStack(
+    ctx,
+    items,
+    film.settings,
+    (media) => {
+      const bmp = proxyCache.peek(filmId, media.proxy);
+      if (!bmp) {
+        complete = false;
+        void proxyCache.load(filmId, media.proxy);
+      }
+      return bmp;
+    },
+    alpha,
+  );
   return complete;
 }
 
-function prefetch(filmId: string, frames: Frame[]) {
-  for (const f of frames) for (const l of f.layers) void proxyCache.load(filmId, l.media.proxy);
+/** Loads the proxies the next ticks will show. */
+function prefetch(filmId: string, film: FilmState, frames: TimedFrame[], index: number, tick: number, spans: FrameSpans) {
+  for (const f of frames.slice(index + 1, index + 1 + PREFETCH)) for (const l of f.frame.layers) void proxyCache.load(filmId, l.media.proxy);
+  for (const c of film.channels) {
+    if (!c.visible || c.source.kind !== "sequence") continue;
+    for (let t = tick + 1; t <= tick + PREFETCH; t++) {
+      const m = channelMediaAt(film, c, t, spans);
+      if (m) void proxyCache.load(filmId, m.proxy);
+    }
+  }
+}
+
+/** Applies the transform being dragged, so the picture follows the pointer before the change is committed. */
+function withPreview<T extends Drawable & { layerId?: string; channelId?: string }>(items: T[]): T[] {
+  const preview = useLayers.getState().preview;
+  if (!preview) return items;
+  return items.map((i) => (i.layerId === preview.id || i.channelId === preview.id ? { ...i, transform: preview.transform } : i));
 }
 
 /** Previous frames (nearest first) for onion skinning, ending at `anchorIndex`. */
@@ -224,12 +264,80 @@ function useGuideDrag(filmRect: React.RefObject<FilmRect | null>) {
   return { onPointerDown, onPointerMove, onPointerUp, dragging: () => drag.current !== null };
 }
 
+/** The selected layer or channel as it shows on the stage now, or null when it is not on screen. */
+function targetOnStage(): { media: MediaRef; transform: Transform2D } | null {
+  const { film, selected, view, playback } = useEditor.getState();
+  const { target, preview } = useLayers.getState();
+  const item = resolveTarget(target);
+  if (!film || playback || !target || !item || !item.visible) return null;
+  let media: MediaRef | null;
+  if (target.kind === "layer") {
+    if (view !== "frame" || target.frameId !== selected) return null;
+    media = (item as ImageLayer).media;
+  } else {
+    const channel = item as Channel;
+    const spans = frameSpans(film);
+    const span = selected ? spans.get(selected) : undefined;
+    const tick = view === "live" ? (span?.end ?? 0) : (span?.start ?? 0);
+    media =
+      channelMediaAt(film, channel, tick, spans) ??
+      (channel.source.kind === "image" ? channel.source.media : (channel.source.media[0] ?? null));
+  }
+  if (!media) return null;
+  return { media, transform: preview?.id === item.id ? preview.transform : item.transform };
+}
+
+/** Moving, scaling and rotating the selected layer with its handles. */
+function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
+  const drag = useRef<{ kind: HandleKind; start: Point; t0: Transform2D } | null>(null);
+
+  const filmPoint = (e: React.PointerEvent): Point => {
+    const r = filmRect.current!;
+    const box = e.currentTarget.getBoundingClientRect();
+    return { x: (e.clientX - box.left - r.x) / r.s, y: (e.clientY - box.top - r.y) / r.s };
+  };
+
+  const onPointerDown = (e: React.PointerEvent): boolean => {
+    const film = useEditor.getState().film;
+    const shown = targetOnStage();
+    if (!film || !shown || !filmRect.current) return false;
+    const p = filmPoint(e);
+    const kind = hitHandle(shown.media, shown.transform, film.settings, p, 1 / filmRect.current.s);
+    if (!kind) return false;
+    capturePointer(e);
+    drag.current = { kind, start: p, t0: shown.transform };
+    return true;
+  };
+
+  const onPointerMove = (e: React.PointerEvent): boolean => {
+    const d = drag.current;
+    const { film } = useEditor.getState();
+    const { target, setPreview } = useLayers.getState();
+    if (!d || !film || !target) return false;
+    setPreview({ id: target.id, transform: dragTransform(d.kind, d.t0, film.settings, d.start, filmPoint(e), e.shiftKey) });
+    return true;
+  };
+
+  const onPointerUp = (): boolean => {
+    if (!drag.current) return false;
+    drag.current = null;
+    const { target, preview, setPreview } = useLayers.getState();
+    if (target && preview) commitTransform(target, preview.transform);
+    setPreview(null);
+    return true;
+  };
+
+  return { onPointerDown, onPointerMove, onPointerUp };
+}
+
 export function Stage() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRect = useRef<Rect | null>(null);
   const { marker, handlers } = useLivePointer(liveRect);
   const filmRect = useRef<FilmRect | null>(null);
   const guideDrag = useGuideDrag(filmRect);
+  const layerDrag = useLayerDrag(filmRect);
+  const layerHandles = useRef(targetOnStage);
   const guideEditing = useGuides((s) => s.editing);
   const pointerTool = useCamera((s) => s.pointerTool);
   const magnified = useCamera((s) => (magnifyControl(s.controls)?.value ?? "1") !== "1");
@@ -245,6 +353,8 @@ export function Stage() {
     const ctx = canvas.getContext("2d")!;
     let raf = 0;
     let placingArea: { x: number; y: number; width: number; height: number } | null = null;
+    let spansOf: FilmState | null = null;
+    let spans: FrameSpans = new Map();
 
     const loop = () => {
       raf = requestAnimationFrame(loop);
@@ -287,7 +397,16 @@ export function Stage() {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, size.width, size.height);
       ctx.imageSmoothingQuality = "high";
+      // Pictures stay inside the film; guides and handles may go beyond it.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, size.width, size.height);
+      ctx.clip();
 
+      if (spansOf !== film) {
+        spans = frameSpans(film);
+        spansOf = film;
+      }
       const { playback, onion, selected, view } = state;
       if (playback) {
         const { frames, totalTicks } = timeline(film);
@@ -295,14 +414,16 @@ export function Stage() {
         if (tick >= totalTicks) {
           if (playback.loop) useEditor.setState({ playback: { ...playback, startedAt: performance.now() } });
           else state.stop();
+          ctx.restore();
           return;
         }
         const index = frameIndexAtTick(frames, tick);
         const current = frames[index];
         if (current) {
-          drawProxyFrame(ctx, filmId, film, current.frame);
-          prefetch(filmId, frames.slice(index + 1, index + 1 + PREFETCH).map((f) => f.frame));
+          drawProxies(ctx, filmId, film, frameStack(film, current.frame, tick, { spans }));
+          prefetch(filmId, film, frames, index, tick, spans);
         }
+        ctx.restore();
         return;
       }
 
@@ -313,6 +434,10 @@ export function Stage() {
       liveRect.current = null;
       if (view === "live") {
         const live = useCamera.getState().live();
+        // Channels as they will be on the next picture, which goes after the selected frame.
+        const nextTick = selected ? (spans.get(selected)?.end ?? 0) : 0;
+        const channels = withPreview(frameStack(film, null, nextTick, { spans }));
+        drawProxies(ctx, filmId, film, channels.filter((c) => film.channels.find((ch) => ch.id === c.channelId)?.placement === "below"));
         if (live) {
           drawContained(ctx, live.image, live, size);
           // Where the picture landed, in CSS pixels of the stage, for pointer interactions.
@@ -321,6 +446,7 @@ export function Stage() {
           const ly = oy + ((size.height - live.height * c) / 2) * s;
           liveRect.current = { x: lx / dpr, y: ly / dpr, w: (live.width * c * s) / dpr, h: (live.height * c * s) / dpr };
         }
+        drawProxies(ctx, filmId, film, channels.filter((c) => film.channels.find((ch) => ch.id === c.channelId)?.placement === "above"));
         // A magnified view does not line up with earlier frames, nor with the measuring spots.
         const magnify = magnifyControl(useCamera.getState().controls);
         const magnified = magnify !== undefined && magnify.value !== "1";
@@ -331,7 +457,8 @@ export function Stage() {
           probesToDraw = live;
         }
       } else {
-        if (selected) drawProxyFrame(ctx, filmId, film, film.frames[selected]!);
+        const frame = selected ? film.frames[selected] : undefined;
+        if (frame) drawProxies(ctx, filmId, film, withPreview(frameStack(film, frame, spans.get(frame.id)?.start ?? 0, { spans })));
         onionAnchor = selIndex - 1;
       }
 
@@ -340,10 +467,13 @@ export function Stage() {
         // Farthest first so the nearest frame ends on top.
         skins.reverse().forEach((frame, i) => {
           const distance = skins.length - i - 1;
-          drawProxyFrame(ctx, filmId, film, frame, onion.opacity * (1 - distance / (onion.count + 1)));
+          drawProxies(ctx, filmId, film, ownLayers(frame), onion.opacity * (1 - distance / (onion.count + 1)));
         });
       }
+      ctx.restore();
       if (showGuides) drawGuides(ctx, guides, size, dpr / s, placing);
+      const handles = layerHandles.current();
+      if (handles && !placing) drawHandles(ctx, handles.media, handles.transform, size, dpr / s);
       if (probesToDraw) drawProbes(ctx, probesToDraw, size, s);
     };
     raf = requestAnimationFrame(loop);
@@ -355,15 +485,15 @@ export function Stage() {
       className={`stage${guideEditing ? " guides-editing" : ""}${view === "live" && pointerTool !== "none" ? " tool-focus" : ""}${view === "live" && magnified ? " magnified" : ""}`}
       ref={wrapRef}
       onPointerDown={(e) => {
-        if (playing || guideDrag.onPointerDown(e)) return;
+        if (playing || guideDrag.onPointerDown(e) || layerDrag.onPointerDown(e)) return;
         if (view === "live") handlers.onPointerDown(e);
       }}
       onPointerMove={(e) => {
-        if (playing || guideDrag.onPointerMove(e)) return;
+        if (playing || guideDrag.onPointerMove(e) || layerDrag.onPointerMove(e)) return;
         if (view === "live") handlers.onPointerMove(e);
       }}
       onPointerUp={(e) => {
-        if (playing || guideDrag.onPointerUp()) return;
+        if (playing || guideDrag.onPointerUp() || layerDrag.onPointerUp()) return;
         if (view === "live") handlers.onPointerUp(e);
       }}
     >

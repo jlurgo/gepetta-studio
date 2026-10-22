@@ -50,6 +50,36 @@ export interface ImageLayer {
 
 export type Layer = ImageLayer;
 
+/** What a channel shows: one picture, or a sequence (e.g. video frames) that advances with the film. */
+export type ChannelSource =
+  | { kind: "image"; media: MediaRef }
+  | {
+      kind: "sequence";
+      media: MediaRef[];
+      /** Pictures per second of the sequence (the video's rate when it was imported). */
+      fps: number;
+    };
+
+/**
+ * A layer that spans frames ("canal"): a background, an overlay, or a video
+ * to rotoscope. It starts at the beginning of frame `from` (null = the film's
+ * start) and ends after frame `to` (null = the film's end, or the sequence's).
+ */
+export interface Channel {
+  id: LayerId;
+  name: string;
+  source: ChannelSource;
+  visible: boolean;
+  opacity: number;
+  transform: Transform2D;
+  /** Under or over the frames' own layers. */
+  placement: "below" | "above";
+  /** false = reference only: seen while animating, left out of exports. */
+  exported: boolean;
+  from: FrameId | null;
+  to: FrameId | null;
+}
+
 export interface Frame {
   id: FrameId;
   /** How many timeline ticks (1/fps) the frame stays on screen. 1 = "on ones". */
@@ -69,12 +99,14 @@ export interface FilmState {
   settings: FilmSettings;
   frameOrder: FrameId[];
   frames: Record<FrameId, Frame>;
+  /** Bottom to top within each placement. */
+  channels: Channel[];
 }
 
 export const DEFAULT_FPS = 12;
 
 export function emptyFilm(settings: FilmSettings): FilmState {
-  return { settings, frameOrder: [], frames: {} };
+  return { settings, frameOrder: [], frames: {}, channels: [] };
 }
 
 export function orderedFrames(film: FilmState): Frame[] {

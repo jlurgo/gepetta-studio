@@ -77,7 +77,7 @@ export function CameraPanel() {
   }
 
   return (
-    <aside className="side-panel">
+    <>
       <FrameInfo />
       <h3>Cámara</h3>
       <label className="control">
@@ -193,6 +193,6 @@ export function CameraPanel() {
         {phonesOpen ? "▾" : "▸"} Conectar celular
       </button>
       {phonesOpen && <PhoneConnect />}
-    </aside>
+    </>
   );
 }

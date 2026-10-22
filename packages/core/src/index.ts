@@ -6,3 +6,4 @@ export { newId } from "./ids";
 export * from "./exif";
 export * from "./sharpness";
 export * from "./guides";
+export * from "./layers";

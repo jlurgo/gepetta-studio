@@ -1,4 +1,4 @@
-import { type CaptureMeta, type FrameId, type MediaRef, type Op, newId } from "@gepetta/core";
+import { type CaptureMeta, type Channel, type FrameId, IDENTITY_TRANSFORM, type MediaRef, type Op, newId } from "@gepetta/core";
 import { onRemoteMessage } from "../capture/remote";
 import { rotateBlob } from "../capture/types";
 import { ingestImage, isImageFile, sortFiles } from "../media/ingest";
@@ -6,6 +6,7 @@ import { grabStill } from "../media/video";
 import { runTask, useBusy } from "./busy";
 import { useCamera } from "./camera";
 import { useEditor } from "./editor";
+import { useLayers } from "./layers";
 
 /** Insert ops that chain each new frame after the previous one. */
 function insertOps(after: FrameId | null, media: MediaRef[], label: string): { ops: Op[]; last: FrameId | null } {
@@ -105,6 +106,69 @@ export async function importVideoStills(video: HTMLVideoElement, times: number[]
   const { ops, last } = insertOps(selected, media, "Cuadro de video");
   useEditor.getState().commit(ops, `Video "${name}" (${media.length} cuadros)`, last);
   useEditor.getState().select(last);
+}
+
+/** Adds a picture as a new layer on top of the selected frame. */
+export async function addLayerImage(file: File) {
+  const { filmId, selected } = useEditor.getState();
+  if (!filmId || !selected) return;
+  const media = await ingestImage(filmId, file, null, { sourceKind: "import" });
+  const state = useEditor.getState();
+  if (state.filmId !== filmId || !state.film?.frames[selected]) return;
+  const layerId = newId();
+  const name = file.name.replace(/\.[^.]+$/, "");
+  state.commit([{ type: "layer.add", frameId: selected, layerId, media, name }]);
+  useLayers.getState().select({ kind: "layer", frameId: selected, id: layerId });
+}
+
+function addChannel(channel: Omit<Channel, "id" | "transform" | "visible">) {
+  const id = newId();
+  useEditor.getState().commit([{ type: "channel.add", channel: { id, transform: IDENTITY_TRANSFORM, visible: true, ...channel } }]);
+  useLayers.getState().select({ kind: "channel", id });
+}
+
+/** A still channel over the whole film (a frame, a background with transparency, a logo…). */
+export async function addImageChannel(file: File) {
+  const { filmId } = useEditor.getState();
+  if (!filmId) return;
+  const media = await ingestImage(filmId, file, null, { sourceKind: "import" });
+  if (useEditor.getState().filmId !== filmId) return;
+  addChannel({
+    name: file.name.replace(/\.[^.]+$/, ""),
+    source: { kind: "image", media },
+    opacity: 1,
+    placement: "above",
+    exported: true,
+    from: null,
+    to: null,
+  });
+}
+
+/**
+ * A video as a channel that advances with the film, from the selected frame
+ * on: a reference to rotoscope, half transparent and left out of exports.
+ */
+export async function importVideoChannel(video: HTMLVideoElement, times: number[], name: string, fps: number) {
+  const { filmId, selected } = useEditor.getState();
+  if (!filmId || times.length === 0) return;
+  const media = await runTask("Importando el video como canal", times.length, async (progress) => {
+    const out: MediaRef[] = [];
+    for (const t of times) {
+      out.push(await ingestImage(filmId, await grabStill(video, t)));
+      progress(out.length);
+    }
+    return out;
+  });
+  if (!media || useEditor.getState().filmId !== filmId) return;
+  addChannel({
+    name: name.replace(/\.[^.]+$/, ""),
+    source: { kind: "sequence", media, fps },
+    opacity: 0.5,
+    placement: "above",
+    exported: false,
+    from: selected,
+    to: null,
+  });
 }
 
 function selectedFrame() {

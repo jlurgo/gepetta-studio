@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { type VideoInfo, loadVideo, sampleTimes } from "../media/video";
-import { importVideoStills } from "../state/actions";
+import { importVideoChannel, importVideoStills } from "../state/actions";
 import { useBusy } from "../state/busy";
 import { useEditor } from "../state/editor";
 import { Dialog } from "./Dialog";
 
-export function VideoImportDialog({ file, onClose }: { file: File; onClose(): void }) {
+/** "frames": the video's pictures become frames. "channel": a channel to rotoscope over. */
+export function VideoImportDialog({ file, mode = "frames", onClose }: { file: File; mode?: "frames" | "channel"; onClose(): void }) {
   const filmFps = useEditor((s) => s.film!.settings.fps);
   const loaded = useRef<Awaited<ReturnType<typeof loadVideo>> | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -50,7 +51,8 @@ export function VideoImportDialog({ file, onClose }: { file: File; onClose(): vo
     v.video.remove();
     onClose();
     try {
-      await importVideoStills(v.video, times, file.name);
+      if (mode === "channel") await importVideoChannel(v.video, times, file.name, fps);
+      else await importVideoStills(v.video, times, file.name);
     } finally {
       v.dispose();
     }
@@ -62,7 +64,7 @@ export function VideoImportDialog({ file, onClose }: { file: File; onClose(): vo
   };
 
   return (
-    <Dialog title={`Importar video: ${file.name}`} onClose={onClose}>
+    <Dialog title={`${mode === "channel" ? "Video como canal" : "Importar video"}: ${file.name}`} onClose={onClose}>
       <div className="video-preview" ref={previewRef} />
       {info && (
         <>
@@ -87,7 +89,16 @@ export function VideoImportDialog({ file, onClose }: { file: File; onClose(): vo
             <input type="number" min={1} max={60} value={fps} onChange={(e) => setFps(Math.max(1, Number(e.target.value)))} />
           </label>
           <p className="hint">
-            Se van a insertar <strong>{times.length}</strong> cuadros después del cuadro seleccionado.
+            {mode === "channel" ? (
+              <>
+                Se va a crear un canal de <strong>{times.length}</strong> imágenes que empieza en el cuadro seleccionado
+                y avanza con la película.
+              </>
+            ) : (
+              <>
+                Se van a insertar <strong>{times.length}</strong> cuadros después del cuadro seleccionado.
+              </>
+            )}
           </p>
         </>
       )}

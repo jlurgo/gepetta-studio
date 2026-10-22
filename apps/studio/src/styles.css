@@ -1211,3 +1211,119 @@ input[type="range"] {
 .guides-panel .segmented {
   align-self: flex-start;
 }
+
+/* Side panel tabs and layers */
+
+.side-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.side-tabs button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.side-tabs button.active {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.side-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.side-body[hidden] {
+  display: none;
+}
+
+.layers-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.layers-panel .action-row {
+  flex-wrap: wrap;
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 2px;
+  min-height: 34px;
+}
+
+.layer-row + .layer-row {
+  border-top: 1px solid var(--line);
+}
+
+.layer-row.selected {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.layer-row.hidden .layer-name {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.layer-row.placeholder {
+  color: var(--muted);
+  font-size: 12px;
+  padding-left: 12px;
+  font-style: italic;
+}
+
+.layer-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 6px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.badge {
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.layer-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}

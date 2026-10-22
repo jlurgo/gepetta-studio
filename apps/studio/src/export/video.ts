@@ -1,4 +1,4 @@
-import { type FilmState, type ImageLayer, orderedFrames } from "@gepetta/core";
+import { type FilmState, frameSpans, frameStack, orderedFrames } from "@gepetta/core";
 import {
   BufferTarget,
   CanvasSource,
@@ -10,7 +10,7 @@ import {
   WebMOutputFormat,
   canEncodeVideo,
 } from "mediabunny";
-import { drawFrame } from "../render/frame";
+import { drawStack } from "../render/frame";
 import { storage } from "../storage";
 
 export type VideoFormat = "mp4" | "webm";
@@ -61,25 +61,38 @@ export async function exportVideo(
   const scale = { x: width / film.settings.width, y: height / film.settings.height };
   let tick = 0;
   try {
+    const spans = frameSpans(film);
     const frames = orderedFrames(film);
+    // Decoded originals, kept while consecutive ticks still show them.
+    let bitmaps = new Map<string, ImageBitmap>();
+    let shown = "";
     for (const [i, frame] of frames.entries()) {
-      const bitmaps = new Map<string, ImageBitmap>();
-      for (const layer of frame.layers) {
-        if (!layer.visible || bitmaps.has(layer.media.original)) continue;
-        bitmaps.set(layer.media.original, await createImageBitmap(await storage.getAsset(filmId, layer.media.original)));
-      }
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, width, height);
-      ctx.setTransform(scale.x, 0, 0, scale.y, 0, 0);
-      drawFrame(ctx, frame, film.settings, (layer: ImageLayer) => bitmaps.get(layer.media.original));
-      bitmaps.forEach((b) => b.close());
       for (let h = 0; h < frame.hold; h++) {
+        const stack = frameStack(film, frame, tick, { exportOnly: true, spans });
+        // A video channel can change during a held frame; otherwise the canvas stays as it is.
+        const key = stack.map((s) => s.key + s.media.original).join("|");
+        if (key !== shown) {
+          const next = new Map<string, ImageBitmap>();
+          for (const item of stack) {
+            const id = item.media.original;
+            if (next.has(id)) continue;
+            next.set(id, bitmaps.get(id) ?? (await createImageBitmap(await storage.getAsset(filmId, id))));
+          }
+          bitmaps.forEach((b, id) => !next.has(id) && b.close());
+          bitmaps = next;
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.fillStyle = "#000";
+          ctx.fillRect(0, 0, width, height);
+          ctx.setTransform(scale.x, 0, 0, scale.y, 0, 0);
+          drawStack(ctx, stack, film.settings, (m) => bitmaps.get(m.original));
+          shown = key;
+        }
         await source.add(tick / fps, 1 / fps);
         tick++;
       }
       progress(i + 1);
     }
+    bitmaps.forEach((b) => b.close());
     await output.finalize();
   } catch (e) {
     await output.cancel();

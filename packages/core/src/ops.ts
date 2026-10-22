@@ -1,4 +1,4 @@
-import type { FilmState, FrameId, LayerId, MediaRef } from "./model";
+import type { Channel, FilmState, Frame, FrameId, ImageLayer, LayerId, MediaRef } from "./model";
 import { IDENTITY_TRANSFORM } from "./model";
 
 /**
@@ -22,7 +22,21 @@ export type Op =
   | { type: "frame.delete"; frameId: FrameId }
   | { type: "frame.duplicate"; sourceFrameId: FrameId; frameId: FrameId; layerIds: LayerId[] }
   | { type: "frame.setHold"; frameId: FrameId; hold: number }
-  | { type: "frame.move"; frameId: FrameId; afterFrameId: FrameId | null };
+  | { type: "frame.move"; frameId: FrameId; afterFrameId: FrameId | null }
+  | { type: "layer.add"; frameId: FrameId; layerId: LayerId; media: MediaRef; name: string }
+  | { type: "layer.remove"; frameId: FrameId; layerId: LayerId }
+  | { type: "layer.update"; frameId: FrameId; layerId: LayerId; patch: LayerPatch }
+  /** Moves a layer to `index` in its frame's stack (0 = bottom). */
+  | { type: "layer.move"; frameId: FrameId; layerId: LayerId; index: number }
+  | { type: "channel.add"; channel: Channel }
+  | { type: "channel.remove"; channelId: LayerId }
+  | { type: "channel.update"; channelId: LayerId; patch: ChannelPatch }
+  | { type: "channel.move"; channelId: LayerId; index: number };
+
+export type LayerPatch = Partial<Pick<ImageLayer, "name" | "visible" | "opacity" | "transform">>;
+export type ChannelPatch = Partial<
+  Pick<Channel, "name" | "visible" | "opacity" | "transform" | "placement" | "exported" | "from" | "to">
+>;
 
 export type OpType = Op["type"];
 
@@ -32,6 +46,40 @@ function requireFrame(film: FilmState, id: FrameId) {
   const frame = film.frames[id];
   if (!frame) throw new OpError("El cuadro ya no existe");
   return frame;
+}
+
+function requireLayer(frame: Frame, id: LayerId) {
+  const i = frame.layers.findIndex((l) => l.id === id);
+  if (i < 0) throw new OpError("La capa ya no existe");
+  return i;
+}
+
+function requireChannel(film: FilmState, id: LayerId) {
+  const i = film.channels.findIndex((c) => c.id === id);
+  if (i < 0) throw new OpError("El canal ya no existe");
+  return i;
+}
+
+function moveItem<T>(items: T[], from: number, to: number): T[] {
+  const out = items.slice();
+  const [item] = out.splice(from, 1);
+  out.splice(Math.max(0, Math.min(out.length, Math.round(to))), 0, item!);
+  return out;
+}
+
+function withFrame(film: FilmState, frame: Frame): FilmState {
+  return { ...film, frames: { ...film.frames, [frame.id]: frame } };
+}
+
+/** Channels that started or ended on a deleted frame move to its neighbors. */
+function channelsWithout(film: FilmState, frameId: FrameId): Channel[] {
+  const i = film.frameOrder.indexOf(frameId);
+  const next = film.frameOrder[i + 1] ?? null;
+  const prev = i > 0 ? film.frameOrder[i - 1]! : null;
+  return film.channels.map((c) => {
+    if (c.from !== frameId && c.to !== frameId) return c;
+    return { ...c, from: c.from === frameId ? next : c.from, to: c.to === frameId ? prev : c.to };
+  });
 }
 
 function insertAfter(order: FrameId[], afterId: FrameId | null, id: FrameId): FrameId[] {
@@ -79,7 +127,12 @@ export function applyOp(film: FilmState, op: Op): FilmState {
     case "frame.delete": {
       requireFrame(film, op.frameId);
       const { [op.frameId]: _removed, ...frames } = film.frames;
-      return { ...film, frameOrder: film.frameOrder.filter((id) => id !== op.frameId), frames };
+      return {
+        ...film,
+        frameOrder: film.frameOrder.filter((id) => id !== op.frameId),
+        frames,
+        channels: channelsWithout(film, op.frameId),
+      };
     }
     case "frame.duplicate": {
       const source = requireFrame(film, op.sourceFrameId);
@@ -105,6 +158,73 @@ export function applyOp(film: FilmState, op: Op): FilmState {
       const without = film.frameOrder.filter((id) => id !== op.frameId);
       return { ...film, frameOrder: insertAfter(without, op.afterFrameId, op.frameId) };
     }
+    case "layer.add": {
+      const frame = requireFrame(film, op.frameId);
+      if (frame.layers.some((l) => l.id === op.layerId)) throw new OpError("La capa ya existe");
+      const layer: ImageLayer = {
+        id: op.layerId,
+        kind: "image",
+        name: op.name,
+        media: op.media,
+        visible: true,
+        opacity: 1,
+        transform: IDENTITY_TRANSFORM,
+      };
+      return withFrame(film, { ...frame, layers: [...frame.layers, layer] });
+    }
+    case "layer.remove": {
+      const frame = requireFrame(film, op.frameId);
+      const i = requireLayer(frame, op.layerId);
+      return withFrame(film, { ...frame, layers: frame.layers.filter((_, j) => j !== i) });
+    }
+    case "layer.update": {
+      const frame = requireFrame(film, op.frameId);
+      const i = requireLayer(frame, op.layerId);
+      const layers = frame.layers.map((l, j) => (j === i ? { ...l, ...op.patch } : l));
+      return withFrame(film, { ...frame, layers });
+    }
+    case "layer.move": {
+      const frame = requireFrame(film, op.frameId);
+      return withFrame(film, { ...frame, layers: moveItem(frame.layers, requireLayer(frame, op.layerId), op.index) });
+    }
+    case "channel.add": {
+      if (film.channels.some((c) => c.id === op.channel.id)) throw new OpError("El canal ya existe");
+      return { ...film, channels: [...film.channels, op.channel] };
+    }
+    case "channel.remove": {
+      const i = requireChannel(film, op.channelId);
+      return { ...film, channels: film.channels.filter((_, j) => j !== i) };
+    }
+    case "channel.update": {
+      const i = requireChannel(film, op.channelId);
+      return { ...film, channels: film.channels.map((c, j) => (j === i ? { ...c, ...op.patch } : c)) };
+    }
+    case "channel.move":
+      return { ...film, channels: moveItem(film.channels, requireChannel(film, op.channelId), op.index) };
+  }
+}
+
+function describePatch(patch: LayerPatch | ChannelPatch, what: string): string {
+  const keys = Object.keys(patch);
+  if (keys.length !== 1) return `Cambiar ${what}`;
+  switch (keys[0]) {
+    case "transform":
+      return `Mover ${what}`;
+    case "opacity":
+      return `Transparencia de ${what}`;
+    case "visible":
+      return patch.visible ? `Mostrar ${what}` : `Ocultar ${what}`;
+    case "name":
+      return `Renombrar ${what}`;
+    case "placement":
+      return (patch as ChannelPatch).placement === "below" ? `Canal debajo de los cuadros` : `Canal encima de los cuadros`;
+    case "exported":
+      return (patch as ChannelPatch).exported ? "Exportar el canal" : "Canal solo de referencia";
+    case "from":
+    case "to":
+      return "Cambiar el tramo del canal";
+    default:
+      return `Cambiar ${what}`;
   }
 }
 
@@ -127,6 +247,22 @@ export function describeOp(op: Op): string {
       return `Duración del cuadro: ×${op.hold}`;
     case "frame.move":
       return "Mover cuadro";
+    case "layer.add":
+      return `Agregar capa "${op.name}"`;
+    case "layer.remove":
+      return "Borrar capa";
+    case "layer.update":
+      return describePatch(op.patch, "capa");
+    case "layer.move":
+      return "Ordenar capas";
+    case "channel.add":
+      return `Agregar canal "${op.channel.name}"`;
+    case "channel.remove":
+      return "Borrar canal";
+    case "channel.update":
+      return describePatch(op.patch, "canal");
+    case "channel.move":
+      return "Ordenar canales";
   }
 }
 
@@ -138,6 +274,10 @@ export function frameOfOp(op: Op): FrameId | null {
     case "frame.duplicate":
     case "frame.setHold":
     case "frame.move":
+    case "layer.add":
+    case "layer.remove":
+    case "layer.update":
+    case "layer.move":
       return op.frameId;
     default:
       return null;

@@ -42,8 +42,13 @@ docs/             Este documento, roadmap y decisiones.
 - **Capa** (`Layer`): por ahora capa de imagen (referencia a `MediaRef`), con
   visibilidad, opacidad y transformación (traslación, rotación, escala; más adelante
   matrices afines/homografía/TPS portadas de `CasitaDesign/src/lib/calibration.ts`).
-- **Capas de película** (futuro): capas que abarcan un rango de cuadros (fondo fijo,
-  "vidrio" de animación), además de las capas propias de cada cuadro.
+- **Canales** (`Channel`, capas de película): abarcan un tramo de cuadros (`from`/`to`
+  por id de cuadro) y van debajo o encima de las capas de cada cuadro. Su fuente es
+  una imagen o una secuencia (cuadros de video con su fps) que avanza con el tiempo
+  de la película, retenciones incluidas: sirven para fondos, marcos y rotoscopia.
+  Los de referencia (`exported: false`) se ven al animar pero no se exportan.
+  `frameStack(film, frame, tick)` arma lo que se dibuja; la vista en vivo usa el tick
+  donde va a caer la próxima foto.
 - **MediaRef**: `{ original, proxy, thumb, width, height }`. Cada importación
   genera un proxy (≤1920 px) para edición/reproducción fluida y una miniatura.
   La exportación usa el original.
