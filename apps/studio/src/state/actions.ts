@@ -205,7 +205,6 @@ export async function importImages(files: File[], at?: GridCursor) {
     cursor: { track: from.track, cell: clipEnd(clips.at(-1)!) },
     selection: clips.map((c) => c.id),
   });
-  useEditor.getState().setView("frame");
 }
 
 /**
@@ -352,7 +351,7 @@ export function nudgeSelected(dir: -1 | 1) {
 /** Moves the cursor one cell, showing the film there. */
 export function selectRelative(dir: -1 | 1) {
   const { cursor, moveTo } = useEditor.getState();
-  moveTo(Math.max(0, cursor.cell + dir), undefined, "frame");
+  moveTo(Math.max(0, cursor.cell + dir));
 }
 
 /** Adds seconds of empty cells at the end. */

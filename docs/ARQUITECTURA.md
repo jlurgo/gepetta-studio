@@ -54,8 +54,9 @@ docs/             Este documento, roadmap y decisiones.
   celda destino (`track` + `cell`); la foto dura `captureStep` celdas ("en unos",
   "en dos"…) y el destino avanza. Puede haber **varias cámaras abiertas a la vez**
   (`Rig` en `state/camera.ts`), cada una con su destino; la "elegida" maneja los
-  paneles y su destino es el cursor. En la celda que se ve, cada cámara que apunta
-  ahí se dibuja en vivo en su track, con la transparencia y posición del track.
+  paneles y su destino es el cursor. La pantalla grande muestra siempre el
+  resultado de la celda del cursor: cada cámara que apunta ahí se dibuja en vivo en
+  su track, con la transparencia y posición del track (no hay modo "cámara" aparte).
   Cada cámara también graba video: una imagen por celda a la velocidad de la
   película, desde su vista en vivo, que se pone de una vez al detenerla.
 - `stackAt(film, cell)` arma lo que se ve en una celda; en vivo, la cámara ocupa el

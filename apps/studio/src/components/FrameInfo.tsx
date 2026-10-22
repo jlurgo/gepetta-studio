@@ -4,8 +4,7 @@ import { useEditor } from "../state/editor";
 /** What is known about how the picture at the cursor was taken. */
 export function FrameInfo() {
   const clip = useEditor((s) => (s.film ? clipAt(s.film, s.cursor.track, s.cursor.cell) : undefined));
-  const view = useEditor((s) => s.view);
-  if (view !== "frame" || !clip) return null;
+  if (!clip) return null;
   const media = clip.media;
   const c = media?.capture;
   const rows: [string, string | undefined][] = c

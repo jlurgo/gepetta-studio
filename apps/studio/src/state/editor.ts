@@ -69,8 +69,6 @@ interface EditorState {
    * the film as it comes out there (moved as a whole; effects will go here).
    */
   columns: { start: number; end: number } | null;
-  /** "live": the camera at the cursor. "frame": the film as it is at the cursor. */
-  view: "live" | "frame";
   onion: OnionSettings;
   loop: boolean;
   tailSeconds: number;
@@ -93,10 +91,9 @@ interface EditorState {
   removeEntry(id: string): void;
   updateEntryOp(id: string, opIndex: number, op: Op): void;
   /** Moves the grid cursor; keeps the track when not given. */
-  moveTo(cell: number, track?: TrackId, view?: "live" | "frame"): void;
+  moveTo(cell: number, track?: TrackId): void;
   setSelection(ids: ClipId[]): void;
   setColumns(columns: { start: number; end: number } | null): void;
-  setView(view: "live" | "frame"): void;
   setOnion(patch: Partial<OnionSettings>): void;
   set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep">>): void;
   /** Plays from the cursor (from the start if the cursor is past the end), or the last seconds. */
@@ -184,7 +181,6 @@ export const useEditor = create<EditorState>((set, get) => {
     cursor: { track: PHOTO_TRACK, cell: 0 },
     selection: [],
     columns: null,
-    view: "live",
     onion: { enabled: true, count: 1, opacity: 0.4 },
     loop: true,
     tailSeconds: 3,
@@ -210,7 +206,6 @@ export const useEditor = create<EditorState>((set, get) => {
         cursor: { track: PHOTO_TRACK, cell: nextPhotoCell(film) },
         selection: [],
         columns: null,
-        view: "live",
         playback: null,
         saveStatus: converted ? "pending" : "saved",
       });
@@ -256,9 +251,9 @@ export const useEditor = create<EditorState>((set, get) => {
       if (history) setHistory(updateEntryOp(history, id, opIndex, op));
     },
 
-    moveTo(cell, track, view) {
+    moveTo(cell, track) {
       const cursor = { track: track ?? get().cursor.track, cell: Math.max(0, cell) };
-      set({ cursor, playback: null, ...(view && { view }) });
+      set({ cursor, playback: null });
     },
     setSelection(ids) {
       // Pictures or columns: one kind of selection at a time.
@@ -266,9 +261,6 @@ export const useEditor = create<EditorState>((set, get) => {
     },
     setColumns(columns) {
       set({ columns, ...(columns && { selection: [] }) });
-    },
-    setView(view) {
-      set({ view, playback: null });
     },
     setOnion(patch) {
       set({ onion: { ...get().onion, ...patch } });
@@ -288,7 +280,7 @@ export const useEditor = create<EditorState>((set, get) => {
       const { playback, film, cursor } = get();
       if (!playback || !film) return;
       const cell = Math.min(film.length - 1, playbackCell(playback, film.settings.fps));
-      set({ playback: null, cursor: { ...cursor, cell }, view: "frame" });
+      set({ playback: null, cursor: { ...cursor, cell } });
     },
     stop() {
       set({ playback: null });

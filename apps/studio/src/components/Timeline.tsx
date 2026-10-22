@@ -181,7 +181,6 @@ export function Timeline() {
   const columns = useEditor((s) => s.columns);
   const rigs = useCamera((s) => s.rigs);
   const activeRig = useCamera((s) => s.activeRig);
-  const view = useEditor((s) => s.view);
   const [cw, setCw] = useState(loadZoom);
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ left: 0, width: 1200 });
@@ -474,7 +473,7 @@ export function Timeline() {
           ))}
 
           {/* The cell where the camera (or the next import) puts its picture. */}
-          <div className={`tl-cursor-cell${view === "live" ? " live" : ""}`} style={{ left: cursor.cell * cw, width: cw, top: rowTop(cursorRow), height: TRACK_H }} />
+          <div className={`tl-cursor-cell${activeRig && rigs.some((r) => r.id === activeRig && r.source) ? " live" : ""}`} style={{ left: cursor.cell * cw, width: cw, top: rowTop(cursorRow), height: TRACK_H }} />
 
           {tracks.map((t, row) =>
             visibleClips(t).map((c) => {

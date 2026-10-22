@@ -64,7 +64,6 @@ function useShortcuts() {
         const guides = useGuides.getState();
         guides.update(s.filmId, { visible: !guides.get(s.filmId).visible });
       }
-      else if (key === "c") s.setView("live");
       else if (e.key === "Escape" && (s.selection.length || s.columns)) {
         s.setSelection([]);
         s.setColumns(null);
@@ -174,14 +173,13 @@ function Transport() {
   const cursor = useEditor((s) => s.cursor);
   const selection = useEditor((s) => s.selection);
   const columns = useEditor((s) => s.columns);
-  const view = useEditor((s) => s.view);
   const playing = useEditor((s) => s.playback !== null);
   const onion = useEditor((s) => s.onion);
   const loop = useEditor((s) => s.loop);
   const tailSeconds = useEditor((s) => s.tailSeconds);
   const captureStep = useEditor((s) => s.captureStep);
   const hasSource = useCamera((s) => s.source !== null);
-  const { play, pause, stop, setOnion, set, setView } = useEditor.getState();
+  const { play, pause, stop, setOnion, set } = useEditor.getState();
   const atCursor = clipAt(film, cursor.track, cursor.cell);
   const target = selection.length ? film.clips[selection[0]!] : atCursor;
   const trackName = film.tracks.find((t) => t.id === cursor.track)?.name ?? "";
@@ -197,14 +195,6 @@ function Transport() {
         >
           <Icon name="camera" size={28} />
         </button>
-        <div className="segmented" title="Qué se ve en el centro">
-          <button className={view === "live" ? "active" : ""} onClick={() => setView("live")} title="La cámara en la celda elegida (C)">
-            Cámara
-          </button>
-          <button className={view === "frame" ? "active" : ""} onClick={() => setView("frame")} title="La película en la celda elegida">
-            Película
-          </button>
-        </div>
         <select value={captureStep} onChange={(e) => set({ captureStep: Number(e.target.value) })} title="Cuántas celdas dura cada foto nueva">
           <option value={1}>en unos</option>
           <option value={2}>en dos</option>

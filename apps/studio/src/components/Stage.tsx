@@ -246,18 +246,28 @@ function useGuideDrag(filmRect: React.RefObject<FilmRect | null>) {
   return { onPointerDown, onPointerMove, onPointerUp, dragging: () => drag.current !== null };
 }
 
+/** The open camera aimed at a track's cell, if any. */
+function liveRigAt(track: string, cell: number) {
+  const camera = useCamera.getState();
+  return camera.rigs.find((r) => {
+    if (!r.source) return false;
+    const t = camera.targetOf(r);
+    return t.track === track && t.cell === cell;
+  });
+}
+
 /**
  * The selected track as it shows on the stage now (its picture, and the
  * transform it is drawn with), or null when nothing of it is on screen.
  * `trackTransform` is what dragging changes.
  */
 function targetOnStage(): { media: MediaRef; transform: Transform2D; trackTransform: Transform2D } | null {
-  const { film, cursor, view, playback } = useEditor.getState();
+  const { film, cursor, playback } = useEditor.getState();
   const { preview } = useLayers.getState();
   const track = selectedTrack();
   if (!film || playback || !track || !track.visible) return null;
-  // In the live view the cursor's track is the camera, which does not move.
-  if (view === "live" && track.id === cursor.track) return null;
+  // A camera live in that track covers the picture there.
+  if (liveRigAt(track.id, cursor.cell)) return null;
   const clip = clipAt(film, track.id, cursor.cell);
   if (!clip) return null;
   const trackTransform = preview?.trackId === track.id ? preview.transform : track.transform;
@@ -320,8 +330,9 @@ export function Stage() {
   const magnified = useCamera((s) => (magnifyControl(s.controls)?.value ?? "1") !== "1");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hasSource = useCamera((s) => s.source !== null);
+  // Whether a camera shows live at the cell on screen (the chosen one always aims at the cursor).
+  const liveHere = useCamera((s) => s.rigs.some((r) => r.source));
   const cameraError = useCamera((s) => s.error?.message ?? null);
-  const view = useEditor((s) => s.view);
   const playing = useEditor((s) => s.playback !== null);
 
   useEffect(() => {
@@ -384,7 +395,7 @@ export function Stage() {
         index = cellIndex(film);
         indexOf = film;
       }
-      const { playback, onion, cursor, view } = state;
+      const { playback, onion, cursor } = state;
       if (playback) {
         const cell = playbackCell(playback, size.fps);
         if (cell >= film.length) {
@@ -404,7 +415,7 @@ export function Stage() {
       let showOnion = onion.enabled;
       liveRect.current = null;
       const shown = withPreview(film);
-      if (view === "live") {
+      {
         const camera = useCamera.getState();
         const active = camera.rigs.find((r) => r.id === camera.activeRig);
         const magnify = magnifyControl(camera.controls);
@@ -447,14 +458,13 @@ export function Stage() {
           measureProbes(activeLive);
           probesToDraw = activeLive;
         }
-      } else {
-        drawProxies(ctx, filmId, film, stackAt(shown, cursor.cell, { index }));
       }
 
       // Onion skin: the previous pictures of the track being worked on. Looking at
       // the film, only over a picture of that track (an empty cell shows just the film).
       const track = shown.tracks.find((t) => t.id === cursor.track);
-      if (view === "frame" && !clipAt(film, cursor.track, cursor.cell)) showOnion = false;
+      // Onion skin over a camera live in that track, or over a picture of it (an empty cell shows just the film).
+      if (!liveRigAt(cursor.track, cursor.cell) && !clipAt(film, cursor.track, cursor.cell)) showOnion = false;
       if (showOnion && track) {
         const skins = previousClips(film, cursor.track, cursor.cell, onion.count, index);
         // Farthest first so the nearest one ends on top.
@@ -476,29 +486,29 @@ export function Stage() {
 
   return (
     <div
-      className={`stage${guideEditing ? " guides-editing" : ""}${view === "live" && pointerTool !== "none" ? " tool-focus" : ""}${view === "live" && magnified ? " magnified" : ""}`}
+      className={`stage${guideEditing ? " guides-editing" : ""}${hasSource && pointerTool !== "none" ? " tool-focus" : ""}${hasSource && magnified ? " magnified" : ""}`}
       ref={wrapRef}
       onPointerDown={(e) => {
         if (playing || guideDrag.onPointerDown(e) || layerDrag.onPointerDown(e)) return;
-        if (view === "live") handlers.onPointerDown(e);
+        if (hasSource) handlers.onPointerDown(e);
       }}
       onPointerMove={(e) => {
         if (playing || guideDrag.onPointerMove(e) || layerDrag.onPointerMove(e)) return;
-        if (view === "live") handlers.onPointerMove(e);
+        if (hasSource) handlers.onPointerMove(e);
       }}
       onPointerUp={(e) => {
         if (playing || guideDrag.onPointerUp() || layerDrag.onPointerUp()) return;
-        if (view === "live") handlers.onPointerUp(e);
+        if (hasSource) handlers.onPointerUp(e);
       }}
     >
       <canvas ref={canvasRef} />
       {marker && <div className="focus-marker" style={{ left: marker.x, top: marker.y }} />}
-      {view === "live" && !playing && magnified && <div className="stage-badge zoom">🔍 Lupa · arrastrá para mover</div>}
-      {view === "live" && !playing && !hasSource && (
+      {!playing && magnified && <div className="stage-badge zoom">🔍 Lupa · arrastrá para mover</div>}
+      {!playing && !hasSource && (
         <div className="stage-note">{cameraError ?? "Conectando la cámara…"}</div>
       )}
       {playing && <div className="stage-badge">▶ Reproduciendo</div>}
-      {!playing && view === "live" && hasSource && <div className="stage-badge live">● En vivo</div>}
+      {!playing && liveHere && <div className="stage-badge live">● En vivo</div>}
     </div>
   );
 }

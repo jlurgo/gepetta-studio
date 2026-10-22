@@ -53,7 +53,7 @@ function EntryRow({ entry, index, active, error }: { entry: HistoryEntry; index:
           onClick={() => {
             setCursor(index + 1);
             const cell = op ? cellOfOp(op) : null;
-            if (cell !== null) moveTo(cell, undefined, "frame");
+            if (cell !== null) moveTo(cell);
           }}
         >
           <span>{entry.label}</span>
