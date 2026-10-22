@@ -1,10 +1,7 @@
-import { clipAt, formatDistance, formatExposure } from "@gepetta/core";
-import { useEditor } from "../state/editor";
+import { type Clip, formatDistance, formatExposure } from "@gepetta/core";
 
-/** What is known about how the picture at the cursor was taken. */
-export function FrameInfo() {
-  const clip = useEditor((s) => (s.film ? clipAt(s.film, s.cursor.track, s.cursor.cell) : undefined));
-  if (!clip) return null;
+/** What is known about how a picture was taken. */
+export function FrameInfo({ clip }: { clip: Clip }) {
   const media = clip.media;
   const c = media?.capture;
   const rows: [string, string | undefined][] = c

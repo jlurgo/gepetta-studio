@@ -518,9 +518,8 @@ input[type="range"] {
   flex-shrink: 0;
 }
 
-.tl-head.ruler select {
-  font-size: 11px;
-  padding: 0 4px;
+.tl-head.ruler .icon-btn.small {
+  width: 22px;
   height: 20px;
 }
 
@@ -668,7 +667,8 @@ input[type="range"] {
 .tl-result canvas {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: left center;
   display: block;
 }
 
@@ -726,7 +726,8 @@ input[type="range"] {
 .tl-clip img {
   height: 100%;
   width: 100%;
-  object-fit: cover;
+  /* Whole pictures, never cropped. */
+  object-fit: contain;
   object-position: left center;
   display: block;
   pointer-events: none;
@@ -1663,4 +1664,30 @@ input[type="range"] {
   line-height: 14px;
   text-align: center;
   color: var(--accent-text);
+}
+
+/* Viewing opacity of the selected picture, under the big picture. */
+.focus-opacity {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.65);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.focus-opacity input {
+  width: 140px;
+}
+
+.go-track {
+  align-self: flex-start;
+  gap: 4px;
 }

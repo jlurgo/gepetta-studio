@@ -114,3 +114,7 @@ export function ratio(r: { value: number; peak: number }): number {
 export function probeColor(q: number): string {
   return q >= 0.95 ? "#5cc8b5" : q >= 0.8 ? "#f2c94c" : "#f3ede4";
 }
+
+// App state lives here (open cameras, the film being edited): a hot update would
+// start an empty copy beside the old one, so a change here reloads the app instead.
+import.meta.hot?.accept(() => location.reload());

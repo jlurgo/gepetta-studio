@@ -74,6 +74,11 @@ interface EditorState {
   tailSeconds: number;
   /** How many photos to average per capture (1 = off). */
   captureAverage: number;
+  /**
+   * How opaque the selected picture shows on top of everything, to see what is
+   * under it. Only for looking: it changes nothing in the film.
+   */
+  focusOpacity: number;
   /** Cells each new photo lasts, and the cursor then moves: 1 = "on ones", 2 = "on twos". */
   captureStep: number;
   playback: Playback | null;
@@ -81,8 +86,13 @@ interface EditorState {
 
   open(id: string): Promise<void>;
   close(): Promise<void>;
-  /** Records a step; `after` moves the cursor or changes the selection in the same go. */
-  commit(ops: Op[], label?: string, after?: { cursor?: GridCursor; selection?: ClipId[] }): void;
+  /**
+   * Records a step; `after` moves the cursor or changes the selection in the
+   * same go. With `amend` (the id this returned before), the ops join that step
+   * if it is still the last one done, e.g. pictures of a video being recorded.
+   * Returns the step's id.
+   */
+  commit(ops: Op[], label?: string, after?: { cursor?: GridCursor; selection?: ClipId[]; amend?: string }): string | null;
   undo(): void;
   redo(): void;
   /** History cursor (undo position), not the grid cursor. */
@@ -95,7 +105,7 @@ interface EditorState {
   setSelection(ids: ClipId[]): void;
   setColumns(columns: { start: number; end: number } | null): void;
   setOnion(patch: Partial<OnionSettings>): void;
-  set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep">>): void;
+  set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep" | "focusOpacity">>): void;
   /** Plays from the cursor (from the start if the cursor is past the end), or the last seconds. */
   play(tail?: boolean): void;
   /** Stops where it is: the cursor moves to the cell being shown. */
@@ -186,6 +196,7 @@ export const useEditor = create<EditorState>((set, get) => {
     tailSeconds: 3,
     captureAverage: 1,
     captureStep: 1,
+    focusOpacity: 1,
     playback: null,
     saveStatus: "saved",
 
@@ -222,8 +233,16 @@ export const useEditor = create<EditorState>((set, get) => {
 
     commit(ops, label, after) {
       const { history } = get();
-      if (!history || ops.length === 0) return;
-      setHistory(pushEntry(history, makeEntry(ops, label)), after);
+      if (!history || ops.length === 0) return null;
+      const last = history.entries[history.cursor - 1];
+      if (after?.amend && last?.id === after.amend) {
+        const entry = { ...last, ops: [...last.ops, ...ops], ...(label && { label }) };
+        setHistory({ ...history, entries: history.entries.map((e) => (e.id === last.id ? entry : e)) }, after);
+        return last.id;
+      }
+      const entry = makeEntry(ops, label);
+      setHistory(pushEntry(history, entry), after);
+      return entry.id;
     },
 
     undo() {
@@ -289,3 +308,7 @@ export const useEditor = create<EditorState>((set, get) => {
 });
 
 window.addEventListener("beforeunload", () => void flushSave());
+
+// App state lives here (open cameras, the film being edited): a hot update would
+// start an empty copy beside the old one, so a change here reloads the app instead.
+import.meta.hot?.accept(() => location.reload());

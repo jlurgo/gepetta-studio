@@ -25,6 +25,34 @@ export function composeTransforms(outer: Transform2D, inner: Transform2D): Trans
   };
 }
 
+/** The inner transform that, composed with `outer`, gives `composite` (inverse of composeTransforms). */
+export function relativeTransform(outer: Transform2D, composite: Transform2D): Transform2D {
+  const cos = Math.cos(-outer.rotation) / outer.scale;
+  const sin = Math.sin(-outer.rotation) / outer.scale;
+  const dx = composite.x - outer.x;
+  const dy = composite.y - outer.y;
+  return {
+    x: dx * cos - dy * sin,
+    y: dx * sin + dy * cos,
+    rotation: composite.rotation - outer.rotation,
+    scale: composite.scale / outer.scale,
+  };
+}
+
+/** The outer transform that, composed over `inner`, gives `composite` (a track's, from how one of its pictures looks). */
+export function outerTransform(inner: Transform2D, composite: Transform2D): Transform2D {
+  const rotation = composite.rotation - inner.rotation;
+  const scale = composite.scale / inner.scale;
+  const cos = Math.cos(rotation) * scale;
+  const sin = Math.sin(rotation) * scale;
+  return {
+    x: composite.x - (inner.x * cos - inner.y * sin),
+    y: composite.y - (inner.x * sin + inner.y * cos),
+    rotation,
+    scale,
+  };
+}
+
 /** For each track, its clips in time order: lookups by cell without scanning every clip. */
 export type CellIndex = Map<TrackId, Clip[]>;
 

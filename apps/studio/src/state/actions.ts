@@ -109,17 +109,23 @@ onRemoteMessage((sessionId, header, payload) => {
 
 interface Recorder {
   timer: ReturnType<typeof setInterval>;
-  start: GridCursor;
-  /** Each picture as it is stored, in order. */
-  pictures: Promise<MediaRef>[];
+  /** Next cell to fill. */
+  next: GridCursor;
+  /** Pictures stored and placed one after another, in order. */
+  chain: Promise<unknown>;
+  /** The history step the pictures join, once the first is placed. */
+  step: string | null;
+  cells: number;
   meta: CaptureMeta;
 }
 const recorders = new Map<string, Recorder>();
 
 /**
  * Records video with a camera: one picture per cell, at the film's speed,
- * from the camera's live view (on a DSLR that is its live-view size). They
- * go to the camera's target when the recording stops, as one step.
+ * from the camera's live view (on a DSLR that is its live-view size). Each
+ * picture goes into the next cell as soon as it is stored, and the camera's
+ * target moves along, so the timeline fills while recording. The whole
+ * recording is one history step.
  */
 export function startRecording(rigId?: string) {
   const { filmId, film } = useEditor.getState();
@@ -129,53 +135,51 @@ export function startRecording(rigId?: string) {
   const camera = useCamera.getState();
   const rec: Recorder = {
     timer: 0 as unknown as ReturnType<typeof setInterval>,
-    start: camera.targetOf(rig),
-    pictures: [],
+    next: camera.targetOf(rig),
+    chain: Promise.resolve(),
+    step: null,
+    cells: 0,
     meta: { source: camera.labelOf(rig.source.id) ?? undefined, sourceKind: rig.source.kind },
   };
-  let chain: Promise<unknown> = Promise.resolve();
+  const name = `Video de ${rec.meta.source ?? "la cámara"}`;
   const grab = () => {
     const current = rigFor(id);
     const live = current ? useCamera.getState().liveOf(current) : null;
     if (!live) return;
     const canvas = new OffscreenCanvas(live.width, live.height);
     canvas.getContext("2d")!.drawImage(live.image, 0, 0, live.width, live.height);
-    // Stored one after another, so the pictures keep their order.
-    const picture = chain.then(async () => ingestImage(filmId, await canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 }), null, rec.meta));
-    chain = picture.catch(() => undefined);
-    rec.pictures.push(picture);
-    useCamera.getState().setRecording(id, { cells: rec.pictures.length });
+    const encoded = canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 });
+    rec.chain = rec.chain
+      .then(async () => {
+        const media = await ingestImage(filmId, await encoded, null, rec.meta);
+        const state = useEditor.getState();
+        if (state.filmId !== filmId) return;
+        const [clip] = clipsFrom(rec.next, [media], 1, name);
+        rec.step = state.commit([{ type: "clip.place", clips: [clip!], label: "Video grabado" }], `Video grabado (${rec.cells + 1} imágenes)`, {
+          amend: rec.step ?? undefined,
+        });
+        rec.cells++;
+        rec.next = { track: rec.next.track, cell: clipEnd(clip!) };
+        useCamera.getState().setTarget(id, rec.next);
+        useCamera.getState().setRecording(id, { cells: rec.cells });
+      })
+      .catch((e) => console.warn("[gepetta] recording", e));
   };
   rec.timer = setInterval(grab, 1000 / film.settings.fps);
   recorders.set(id, rec);
+  useCamera.getState().setRecording(id, { cells: 0 });
   grab();
 }
 
-/** Stops a recording and puts its pictures in the film. */
+/** Stops a recording; the pictures still being stored go in too. */
 export async function stopRecording(rigId?: string) {
   const rig = rigFor(rigId);
   const rec = rig && recorders.get(rig.id);
   if (!rig || !rec) return;
   clearInterval(rec.timer);
   recorders.delete(rig.id);
+  await rec.chain;
   useCamera.getState().setRecording(rig.id, null);
-  const results = await runTask("Guardando el video", rec.pictures.length, async (progress) => {
-    const out: MediaRef[] = [];
-    for (const p of rec.pictures) {
-      try {
-        out.push(await p);
-      } catch {
-        // A picture that could not be stored is skipped.
-      }
-      progress(out.length);
-    }
-    return out;
-  });
-  const state = useEditor.getState();
-  if (!results?.length || !state.film) return;
-  const clips = clipsFrom(rec.start, results, 1, `Video de ${rec.meta.source ?? "la cámara"}`);
-  state.commit([{ type: "clip.place", clips, label: "Video grabado" }], `Video grabado (${clips.length} imágenes)`, { selection: [] });
-  useCamera.getState().setTarget(rig.id, { track: rec.start.track, cell: clipEnd(clips.at(-1)!) });
 }
 
 /** Stops every recording (e.g. when leaving the film). */
@@ -358,3 +362,7 @@ export function selectRelative(dir: -1 | 1) {
 export function extendFilm(film: FilmState, seconds: number) {
   useEditor.getState().commit([{ type: "film.setLength", length: film.length + Math.round(seconds * film.settings.fps) }]);
 }
+
+// App state lives here (open cameras, the film being edited): a hot update would
+// start an empty copy beside the old one, so a change here reloads the app instead.
+import.meta.hot?.accept(() => location.reload());

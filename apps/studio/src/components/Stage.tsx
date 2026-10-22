@@ -9,6 +9,8 @@ import {
   IDENTITY_TRANSFORM,
   composeTransforms,
   moveVanishingPoint,
+  outerTransform,
+  relativeTransform,
   previousClips,
   stackAt,
   vanishingPoints,
@@ -18,7 +20,7 @@ import { proxyCache } from "../media/cache";
 import type { LiveFrame } from "../capture/types";
 import { type Drawable, type Size, containScale, drawContained, drawStack } from "../render/frame";
 import { drawHandles, dragTransform, hitHandle, type HandleKind } from "../render/handles";
-import { selectedTrack, updateTrack, useLayers } from "../state/layers";
+import { type HandleTarget, commitTransform, selectedClipId, useLayers } from "../state/layers";
 import { useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
 import { playbackCell, useEditor } from "../state/editor";
@@ -58,7 +60,23 @@ function prefetch(filmId: string, film: FilmState, cell: number, index: CellInde
 function withPreview(film: FilmState): FilmState {
   const preview = useLayers.getState().preview;
   if (!preview) return film;
-  return { ...film, tracks: film.tracks.map((t) => (t.id === preview.trackId ? { ...t, transform: preview.transform } : t)) };
+  const { target, transform } = preview;
+  if (target.kind === "track") return { ...film, tracks: film.tracks.map((t) => (t.id === target.id ? { ...t, transform } : t)) };
+  const clip = film.clips[target.id];
+  return clip ? { ...film, clips: { ...film.clips, [clip.id]: { ...clip, transform } } } : film;
+}
+
+/**
+ * The picture selected in the timeline, when the cursor is on it: it shows on
+ * top of everything (at the viewing opacity), to work on it.
+ */
+function focusedClip(film: FilmState) {
+  const id = selectedClipId();
+  const clip = id ? film.clips[id] : undefined;
+  const { cursor } = useEditor.getState();
+  if (!clip || cursor.cell < clip.start || cursor.cell >= clip.start + clip.length) return null;
+  const track = film.tracks.find((t) => t.id === clip.track);
+  return track ? { clip, track } : null;
 }
 
 function drawProbes(ctx: CanvasRenderingContext2D, live: LiveFrame, film: Size, scale: number) {
@@ -261,22 +279,38 @@ function liveRigAt(track: string, cell: number) {
  * transform it is drawn with), or null when nothing of it is on screen.
  * `trackTransform` is what dragging changes.
  */
-function targetOnStage(): { media: MediaRef; transform: Transform2D; trackTransform: Transform2D } | null {
-  const { film, cursor, playback } = useEditor.getState();
-  const { preview } = useLayers.getState();
-  const track = selectedTrack();
-  if (!film || playback || !track || !track.visible) return null;
-  // A camera live in that track covers the picture there.
-  if (liveRigAt(track.id, cursor.cell)) return null;
+function targetOnStage(): { media: MediaRef; transform: Transform2D; target: HandleTarget; stored(composite: Transform2D): Transform2D } | null {
+  const { film: raw, cursor, playback } = useEditor.getState();
+  if (!raw || playback) return null;
+  const film = withPreview(raw);
+  // The selected picture: its handles move just that picture.
+  const focus = useLayers.getState().detail === "clip" ? focusedClip(film) : null;
+  if (focus) {
+    const { clip, track } = focus;
+    return {
+      media: clip.media,
+      transform: composeTransforms(track.transform, clip.transform),
+      target: { kind: "clip", id: clip.id },
+      stored: (composite) => relativeTransform(track.transform, composite),
+    };
+  }
+  // Otherwise the selected track, through its picture at the cursor.
+  const track = film.tracks.find((t) => t.id === useLayers.getState().trackId);
+  if (!track || !track.visible || liveRigAt(track.id, cursor.cell)) return null;
   const clip = clipAt(film, track.id, cursor.cell);
   if (!clip) return null;
-  const trackTransform = preview?.trackId === track.id ? preview.transform : track.transform;
-  return { media: clip.media, transform: composeTransforms(trackTransform, clip.transform), trackTransform };
+  return {
+    media: clip.media,
+    transform: composeTransforms(track.transform, clip.transform),
+    target: { kind: "track", id: track.id },
+    // Moving the track moves its pictures: the track's transform is what changes.
+    stored: (composite) => outerTransform(clip.transform, composite),
+  };
 }
 
 /** Moving, scaling and rotating the selected layer with its handles. */
 function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
-  const drag = useRef<{ kind: HandleKind; start: Point; t0: Transform2D } | null>(null);
+  const drag = useRef<{ kind: HandleKind; start: Point; t0: Transform2D; target: HandleTarget; stored(c: Transform2D): Transform2D } | null>(null);
 
   const filmPoint = (e: React.PointerEvent): Point => {
     const r = filmRect.current!;
@@ -292,16 +326,16 @@ function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
     const kind = hitHandle(shown.media, shown.transform, film.settings, p, 1 / filmRect.current.s);
     if (!kind) return false;
     capturePointer(e);
-    drag.current = { kind, start: p, t0: shown.trackTransform };
+    drag.current = { kind, start: p, t0: shown.transform, target: shown.target, stored: shown.stored };
     return true;
   };
 
   const onPointerMove = (e: React.PointerEvent): boolean => {
     const d = drag.current;
     const { film } = useEditor.getState();
-    const { trackId, setPreview } = useLayers.getState();
-    if (!d || !film || !trackId) return false;
-    setPreview({ trackId, transform: dragTransform(d.kind, d.t0, film.settings, d.start, filmPoint(e), e.shiftKey) });
+    if (!d || !film) return false;
+    const composite = dragTransform(d.kind, d.t0, film.settings, d.start, filmPoint(e), e.shiftKey);
+    useLayers.getState().setPreview({ target: d.target, transform: d.stored(composite) });
     return true;
   };
 
@@ -309,7 +343,7 @@ function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
     if (!drag.current) return false;
     drag.current = null;
     const { preview, setPreview } = useLayers.getState();
-    if (preview) updateTrack(preview.trackId, { transform: preview.transform });
+    if (preview) commitTransform(preview.target, preview.transform);
     setPreview(null);
     return true;
   };
@@ -330,6 +364,12 @@ export function Stage() {
   const magnified = useCamera((s) => (magnifyControl(s.controls)?.value ?? "1") !== "1");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hasSource = useCamera((s) => s.source !== null);
+  const focusOpacity = useEditor((s) => s.focusOpacity);
+  const focused = useEditor((s) => {
+    const id = s.selection.length === 1 ? s.selection[0]! : null;
+    const c = id ? s.film?.clips[id] : undefined;
+    return !!c && s.cursor.cell >= c.start && s.cursor.cell < c.start + c.length;
+  });
   // Whether a camera shows live at the cell on screen (the chosen one always aims at the cursor).
   const liveHere = useCamera((s) => s.rigs.some((r) => r.source));
   const cameraError = useCamera((s) => s.error?.message ?? null);
@@ -460,6 +500,13 @@ export function Stage() {
         }
       }
 
+      // The selected picture on top, whole, to work on it (its viewing opacity changes nothing).
+      const focus = focusedClip(shown);
+      if (focus) {
+        const transform = composeTransforms(focus.track.transform, focus.clip.transform);
+        drawProxies(ctx, filmId, film, [{ media: focus.clip.media, opacity: state.focusOpacity, transform }]);
+      }
+
       // Onion skin: the previous pictures of the track being worked on. Looking at
       // the film, only over a picture of that track (an empty cell shows just the film).
       const track = shown.tracks.find((t) => t.id === cursor.track);
@@ -509,6 +556,20 @@ export function Stage() {
       )}
       {playing && <div className="stage-badge">▶ Reproduciendo</div>}
       {!playing && liveHere && <div className="stage-badge live">● En vivo</div>}
+      {!playing && focused && (
+        <label className="focus-opacity" onPointerDown={(e) => e.stopPropagation()} title="Solo para ver lo que hay debajo: no cambia la película">
+          <span>Imagen elegida</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={focusOpacity}
+            onChange={(e) => useEditor.getState().set({ focusOpacity: Number(e.target.value) })}
+          />
+          <span>{Math.round(focusOpacity * 100)} %</span>
+        </label>
+      )}
     </div>
   );
 }

@@ -65,3 +65,7 @@ window.gepetta?.remote.onEvent((e) => {
   if (e.header.t === "controls") lastControls.set(e.sessionId, e.header.controls);
   handlers.forEach((h) => h(e.sessionId, e.header, e.payload));
 });
+
+// App state lives here (open cameras, the film being edited): a hot update would
+// start an empty copy beside the old one, so a change here reloads the app instead.
+import.meta.hot?.accept(() => location.reload());

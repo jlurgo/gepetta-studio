@@ -8,7 +8,6 @@ import { useEditor } from "../state/editor";
 import { CameraControls } from "./CameraControls";
 import { FocusMeterPanel } from "./FocusMeterPanel";
 import { FOCUS_KEYS, FocusPanel } from "./FocusPanel";
-import { FrameInfo } from "./FrameInfo";
 import { MagnifyPanel, ZOOM_KEYS } from "./MagnifyPanel";
 import { PhoneConnect } from "./PhoneConnect";
 
@@ -79,7 +78,6 @@ export function CameraPanel() {
 
   return (
     <>
-      <FrameInfo />
       <CamerasList />
       <h3>Cámara elegida</h3>
       <label className="control">

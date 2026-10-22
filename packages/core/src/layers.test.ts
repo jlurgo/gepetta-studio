@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { type Clip, type FilmState, IDENTITY_TRANSFORM, type MediaRef, PHOTO_TRACK, type Track, emptyFilm } from "./model";
 import { applyOp } from "./ops";
-import { composeTransforms, previousClips, splitAtTrack, stackAt } from "./layers";
+import { composeTransforms, outerTransform, previousClips, relativeTransform, splitAtTrack, stackAt } from "./layers";
 
 const media = (id: string): MediaRef => ({ original: id, proxy: id, thumb: id, width: 100, height: 100 });
 const clip = (id: string, start: number, length = 1, track = PHOTO_TRACK, patch: Partial<Clip> = {}): Clip => ({
@@ -67,6 +67,26 @@ describe("stackAt", () => {
     expect(previousClips(f, PHOTO_TRACK, 3, 2).map((c) => c.id)).toEqual(["p1", "p0"]);
     // Inside a picture, onion skin shows the ones before it.
     expect(previousClips(f, PHOTO_TRACK, 2, 2).map((c) => c.id)).toEqual(["p0"]);
+  });
+
+  it("finds the inner transform back from a composite", () => {
+    const outer = { x: 10, y: -5, rotation: 0.7, scale: 1.5 };
+    const inner = { x: 3, y: 4, rotation: -0.2, scale: 0.5 };
+    const back = relativeTransform(outer, composeTransforms(outer, inner));
+    expect(back.x).toBeCloseTo(3);
+    expect(back.y).toBeCloseTo(4);
+    expect(back.rotation).toBeCloseTo(-0.2);
+    expect(back.scale).toBeCloseTo(0.5);
+  });
+
+  it("finds the outer transform back from a composite", () => {
+    const outer = { x: 10, y: -5, rotation: 0.7, scale: 1.5 };
+    const inner = { x: 3, y: 4, rotation: -0.2, scale: 0.5 };
+    const back = outerTransform(inner, composeTransforms(outer, inner));
+    expect(back.x).toBeCloseTo(10);
+    expect(back.y).toBeCloseTo(-5);
+    expect(back.rotation).toBeCloseTo(0.7);
+    expect(back.scale).toBeCloseTo(1.5);
   });
 
   it("composes transforms like nested drawing", () => {

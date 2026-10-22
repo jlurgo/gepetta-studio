@@ -16,7 +16,9 @@ const RULER_H = 22;
 const RESULT_H = 64;
 const TRACK_H = 44;
 const ROW_GAP = 4;
-const ZOOMS = [12, 20, 32, 48, 72, 108];
+/** Cell width in pixels: the timeline's zoom. */
+const MIN_CW = 4;
+const MAX_CW = 240;
 const ZOOM_KEY = "gepetta.timelineZoom";
 /** Empty cells shown past the end, to place pictures there. */
 const TAIL_SECONDS = 2;
@@ -167,9 +169,17 @@ type Gesture =
 function loadZoom(): number {
   try {
     const z = Number(localStorage.getItem(ZOOM_KEY));
-    return ZOOMS.includes(z) ? z : 32;
+    return z >= MIN_CW && z <= MAX_CW ? z : 32;
   } catch {
     return 32;
+  }
+}
+
+function saveZoom(z: number) {
+  try {
+    localStorage.setItem(ZOOM_KEY, String(Math.round(z)));
+  } catch {
+    // Not remembered.
   }
 }
 
@@ -206,6 +216,36 @@ export function Timeline() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Zoom with ⌘/Ctrl + wheel, or pinching on a trackpad (which arrives as a wheel with Ctrl),
+  // keeping the cell under the pointer where it is.
+  const zoomAnchor = useRef<{ cell: number; x: number } | null>(null);
+  const cwRef = useRef(cw);
+  cwRef.current = cw;
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const x = e.clientX - el.getBoundingClientRect().left;
+      const current = cwRef.current;
+      const next = Math.max(MIN_CW, Math.min(MAX_CW, current * Math.exp(-e.deltaY * 0.01)));
+      if (next === current) return;
+      zoomAnchor.current = { cell: (el.scrollLeft + x) / current, x };
+      setCw(next);
+      saveZoom(next);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const a = zoomAnchor.current;
+    if (!el || !a) return;
+    zoomAnchor.current = null;
+    el.scrollLeft = Math.max(0, a.cell * cw - a.x);
+  }, [cw]);
 
   // Keep the cursor in view when it moves (by keys, captures…).
   useEffect(() => {
@@ -251,13 +291,13 @@ export function Timeline() {
   const selected = new Set(selection);
   const aspect = film.settings.width / film.settings.height;
 
-  const setZoom = (z: number) => {
-    setCw(z);
-    try {
-      localStorage.setItem(ZOOM_KEY, String(z));
-    } catch {
-      // Not remembered.
-    }
+  /** Zoom buttons: around the cursor. */
+  const zoomBy = (factor: number) => {
+    const el = scroller.current;
+    const next = Math.max(MIN_CW, Math.min(MAX_CW, cw * factor));
+    if (el) zoomAnchor.current = { cell: cursor.cell + 0.5, x: (cursor.cell + 0.5) * cw - el.scrollLeft };
+    setCw(next);
+    saveZoom(next);
   };
 
   /** Cell and track row under a pointer event, in the canvas. */
@@ -325,6 +365,7 @@ export function Timeline() {
       else if (!selected.has(id)) ids = [id];
       setSelection(ids);
       useEditor.getState().moveTo(Math.max(clip.start, Math.min(p.cell, clipEnd(clip) - 1)), clip.track);
+      if (ids.length === 1) useLayers.getState().showClip(clip.track);
       if (ids.includes(id)) setGesture({ kind: "move", x0: p.x, y0: p.y, id, ids, moved: false, dx: 0, dy: 0 });
       return;
     }
@@ -378,6 +419,7 @@ export function Timeline() {
     } else if (g.kind === "move" && !g.moved && !(e.shiftKey || e.metaKey || e.ctrlKey)) {
       // A plain click on a picture of a group picks just that one.
       useEditor.getState().setSelection([g.id]);
+      useLayers.getState().showClip(film!.clips[g.id]!.track);
     } else if (g.kind === "columns") {
       if (g.moved && g.dx) moveColumns(g.dx);
     } else if (g.kind === "resize" && g.dx) {
@@ -414,7 +456,8 @@ export function Timeline() {
   };
 
   const ticks: number[] = [];
-  const every = cw >= 32 ? 1 : cw >= 20 ? 2 : 6;
+  // Labels at least ~28 px apart: every cell, or every 2, 3, 6 or 12…
+  const every = [1, 2, 3, 6, 12, 24, 48, 96].find((n) => n * cw >= 28) ?? 96;
   for (let c = firstCell - (firstCell % every); c < lastCell; c += every) ticks.push(c);
   const cursorRow = Math.max(0, tracks.findIndex((t) => t.id === cursor.track));
 
@@ -422,13 +465,12 @@ export function Timeline() {
     <div className="timeline" style={{ ["--thumb-aspect" as string]: aspect }}>
       <div className="tl-heads" style={{ minHeight: height + 40 }}>
         <div className="tl-head ruler" style={{ height: RULER_H }}>
-          <select value={cw} onChange={(e) => setZoom(Number(e.target.value))} title="Ancho de las celdas">
-            {ZOOMS.map((z, i) => (
-              <option key={z} value={z}>
-                zoom {i + 1}
-              </option>
-            ))}
-          </select>
+          <button className="icon-btn small" onClick={() => zoomBy(1 / 1.5)} title="Alejar (⌘ + rueda, o pellizcar en el pad)">
+            <Icon name="minus" size={14} />
+          </button>
+          <button className="icon-btn small" onClick={() => zoomBy(1.5)} title="Acercar (⌘ + rueda, o pellizcar en el pad)">
+            <Icon name="plus" size={14} />
+          </button>
         </div>
         <div className="tl-head main" style={{ height: RESULT_H }}>
           Resultado

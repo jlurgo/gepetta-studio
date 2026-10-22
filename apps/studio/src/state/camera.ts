@@ -489,3 +489,7 @@ useRemote.subscribe((state, prev) => {
 });
 
 navigator.mediaDevices?.addEventListener("devicechange", () => void useCamera.getState().refreshDevices());
+
+// App state lives here (open cameras, the film being edited): a hot update would
+// start an empty copy beside the old one, so a change here reloads the app instead.
+import.meta.hot?.accept(() => location.reload());

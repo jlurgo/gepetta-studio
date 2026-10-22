@@ -1,7 +1,8 @@
-import { IDENTITY_TRANSFORM, PHOTO_TRACK, type Track } from "@gepetta/core";
+import { type Clip, type ClipPatch, IDENTITY_TRANSFORM, PHOTO_TRACK, type Track } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
+import { FrameInfo } from "./FrameInfo";
 import { Icon } from "./Icon";
 
 /** Slider that shows changes live and records one history step when released. */
@@ -112,25 +113,118 @@ function Details({ track }: { track: Track }) {
   );
 }
 
-/** Settings of the track selected in the timeline. */
-export function TrackPanel() {
+/** Settings of the one selected picture, with a way to its track. */
+function ClipDetails({ clip }: { clip: Clip }) {
+  const track = useEditor((s) => s.film?.tracks.find((t) => t.id === clip.track));
+  const fps = useEditor((s) => s.film?.settings.fps ?? 12);
+  const [name, setName] = useState(clip.name);
+  useEffect(() => setName(clip.name), [clip.name]);
+  const commit = useEditor.getState().commit;
+  const update = (patch: ClipPatch) => commit([{ type: "clip.update", id: clip.id, patch }]);
+  const t = clip.transform;
+  const moved = t.x !== 0 || t.y !== 0 || t.rotation !== 0 || t.scale !== 1;
+  const seconds = (cells: number) => (cells / fps).toFixed(2).replace(/\.?0+$/, "");
+
+  return (
+    <div className="layer-details">
+      <label className="control">
+        <span>Nombre</span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => name.trim() && name !== clip.name && update({ name: name.trim() })}
+          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        />
+      </label>
+      {track && (
+        <button className="btn small ghost go-track" onClick={() => useLayers.getState().select(track.id)} title="Ver los ajustes del track">
+          Track: <strong>{track.name}</strong> →
+        </button>
+      )}
+      <p className="hint">
+        Celdas {clip.start + 1}–{clip.start + clip.length} · desde {seconds(clip.start)} s, dura {seconds(clip.length)} s
+      </p>
+      <div className="control">
+        <span>Duración</span>
+        <span className="hold-control">
+          <button className="icon-btn small" onClick={() => update({ length: clip.length - 1 })} disabled={clip.length <= 1}>
+            <Icon name="minus" size={14} />
+          </button>
+          <span>
+            ×{clip.length} {clip.length === 1 ? "celda" : "celdas"}
+          </span>
+          <button className="icon-btn small" onClick={() => update({ length: clip.length + 1 })}>
+            <Icon name="plus" size={14} />
+          </button>
+        </span>
+      </div>
+      <OpacitySlider value={clip.opacity} onCommit={(opacity) => update({ opacity })} />
+      <label className="control toggle">
+        <input type="checkbox" checked={clip.visible} onChange={(e) => update({ visible: e.target.checked })} />
+        <span>Visible</span>
+      </label>
+      <div className="control">
+        <span>Posición</span>
+        <p className="hint">
+          Arrastrala sobre la imagen grande para moverla; las esquinas la agrandan y el círculo la gira (con ⇧, en pasos).
+          {moved && ` Ahora: ${Math.round(t.scale * 100)} % · ${Math.round((t.rotation * 180) / Math.PI)}°.`}
+        </p>
+        <button className="btn small" onClick={() => update({ transform: IDENTITY_TRANSFORM })} disabled={!moved}>
+          Restablecer posición
+        </button>
+      </div>
+      <FrameInfo clip={clip} />
+      <button
+        className="btn small danger"
+        onClick={() => commit([{ type: "clip.remove", ids: [clip.id] }], undefined, { selection: [] })}
+      >
+        <Icon name="trash" size={14} /> Borrar imagen
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The detail panel: the selected picture's settings, or a track's (from its
+ * name in the timeline, or from "Track: …" in a picture's settings).
+ */
+export function DetailPanel() {
   const trackId = useLayers((s) => s.trackId);
+  const detail = useLayers((s) => s.detail);
   const track = useEditor((s) => s.film?.tracks.find((t) => t.id === trackId) ?? null);
+  const clip = useEditor((s) => (s.selection.length === 1 ? (s.film?.clips[s.selection[0]!] ?? null) : null));
+  const many = useEditor((s) => s.selection.length > 1);
 
   // Undo can remove the selected track.
   useEffect(() => {
     if (trackId && !track) useLayers.getState().select(null);
   }, [trackId, track]);
 
+  if (detail === "clip" && clip) {
+    return (
+      <div className="layers-panel">
+        <h3>Imagen</h3>
+        <ClipDetails key={clip.id} clip={clip} />
+      </div>
+    );
+  }
   return (
     <div className="layers-panel">
       <h3>Track</h3>
       {track ? (
-        <Details key={track.id} track={track} />
+        <>
+          {clip && clip.track === track.id && (
+            <button className="btn small ghost go-track" onClick={() => useLayers.getState().showClip(track.id)}>
+              ← Volver a la imagen <strong>{clip.name}</strong>
+            </button>
+          )}
+          <Details key={track.id} track={track} />
+        </>
       ) : (
         <p className="hint">
-          Tocá el nombre de un track, abajo en la línea de tiempo, para ajustarlo. Con «+ Track» agregás una capa vacía, una
-          imagen fija o un video para rotoscopia.
+          {many
+            ? "Hay varias imágenes seleccionadas: moverlas, alargarlas o borrarlas se hace desde la línea de tiempo y la barra de abajo."
+            : "Tocá una imagen o el nombre de un track en la línea de tiempo para ver sus ajustes. Con «+ Track» agregás una capa vacía, una imagen fija o un video para rotoscopia."}
         </p>
       )}
     </div>
