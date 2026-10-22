@@ -4,6 +4,7 @@ import { proxyCache } from "../media/cache";
 import { containScale, drawContained, drawFrame } from "../render/frame";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
+import { QuickControls } from "./QuickControls";
 
 const PREFETCH = 12;
 
@@ -119,6 +120,7 @@ export function Stage() {
       )}
       {playing && <div className="stage-badge">▶ Reproduciendo</div>}
       {!playing && view === "live" && hasSource && <div className="stage-badge live">● En vivo</div>}
+      <QuickControls />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { CameraControls } from "./CameraControls";
 import { PhoneConnect } from "./PhoneConnect";
+import { isQuick } from "./QuickControls";
 
 function useDslrStatus(): DslrStatus | null {
   const [status, setStatus] = useState<DslrStatus | null>(null);
@@ -120,6 +121,7 @@ export function CameraPanel() {
       </button>
       {advanced && (
         <div className="advanced">
+          {source && controls.some(isQuick) && <p className="hint">El foco y el zoom están sobre la imagen en vivo.</p>}
           {source && controls.length === 0 && (
             <p className="hint">
               {source.kind === "webcam"
@@ -127,7 +129,7 @@ export function CameraPanel() {
                 : "Esta cámara no informó ajustes."}
             </p>
           )}
-          <CameraControls controls={controls} slow={source?.kind === "dslr"} onChange={(c, v) => void setControl(c, v)} />
+          <CameraControls controls={controls.filter((c) => !isQuick(c))} slow={source?.kind === "dslr"} onChange={(c, v) => void setControl(c, v)} />
           {source?.kind === "webcam" && (
             <label className="control">
               <span>Promediar fotos (menos ruido)</span>

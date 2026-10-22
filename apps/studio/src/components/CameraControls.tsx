@@ -42,10 +42,13 @@ export function CameraControls({
   controls,
   onChange,
   slow,
+  compact = false,
 }: {
   controls: CameraControl[];
   onChange(control: CameraControl, value: ControlValue): void;
   slow: boolean;
+  /** Short choice lists render as segmented buttons (for the live-view bar). */
+  compact?: boolean;
 }) {
   return (
     <>
@@ -54,6 +57,23 @@ export function CameraControls({
           case "range":
             return <RangeControl key={c.key} control={c} applyOnRelease={slow} onChange={(v) => onChange(c, v)} />;
           case "choice":
+            if (compact && c.options.length <= 4)
+              return (
+                <div key={c.key} className="control">
+                  <span>{c.label}</span>
+                  <div className="segmented">
+                    {c.options.map((o) => (
+                      <button
+                        key={o.value}
+                        className={o.value === c.value ? "active" : ""}
+                        onClick={() => o.value !== c.value && onChange(c, o.value)}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
             return (
               <label key={c.key} className="control">
                 <span>{c.label}</span>

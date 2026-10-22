@@ -818,3 +818,57 @@ input[type="range"] {
   align-items: flex-start;
   color: var(--danger);
 }
+
+/* Focus / zoom bar over the live view */
+
+.quick-controls {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 14px;
+  max-width: calc(100% - 24px);
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: rgb(20 18 16 / 0.82);
+  backdrop-filter: blur(6px);
+}
+
+.quick-controls .control {
+  color: var(--text);
+  min-width: 0;
+}
+
+.quick-controls input[type="range"] {
+  width: 160px;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.segmented button {
+  border: none;
+  background: transparent;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--line);
+}
+
+.segmented button.active {
+  background: var(--teal);
+  color: var(--accent-text);
+  font-weight: 700;
+}

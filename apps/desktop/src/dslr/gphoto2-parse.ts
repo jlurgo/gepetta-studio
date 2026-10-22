@@ -128,6 +128,16 @@ const CURATED: { names: string[]; label: string }[] = [
 /** Names setControl accepts as plain value changes. */
 export const SETTABLE_NAMES = new Set(CURATED.flatMap((c) => c.names));
 
+/** Live-view magnification steps (Canon "eoszoom"): for checking focus up close. */
+export const ZOOM_STEPS: ControlOption[] = [
+  { value: "1", label: "Normal" },
+  { value: "5", label: "Lupa 5×" },
+  { value: "10", label: "Lupa 10×" },
+];
+
+/** Every config name the driver reads: the curated settings plus focus, zoom and live view. */
+export const READ_NAMES = new Set([...SETTABLE_NAMES, "manualfocusdrive", "autofocusdrive", "eoszoom", "viewfinder"]);
+
 const FOCUS_STEPS: ControlOption[] = [
   { value: "Near 3", label: "◀◀◀ Cerca" },
   { value: "Near 2", label: "◀◀ Cerca" },
@@ -203,6 +213,11 @@ export function toCameraControls(entries: ConfigEntry[]): CameraControl[] {
   if (focus && (focus.type === "RADIO" || focus.type === "MENU")) {
     const actions = FOCUS_STEPS.filter((s) => focus.choices.includes(s.value));
     if (actions.length) controls.push({ kind: "action", key: "manualfocusdrive", label: "Foco manual", actions });
+  }
+  const zoom = byName.get("eoszoom");
+  if (zoom) {
+    const value = ZOOM_STEPS.some((z) => z.value === zoom.current) ? zoom.current : "1";
+    controls.push({ kind: "choice", key: "eoszoom", label: "Lupa (para enfocar)", options: ZOOM_STEPS, value });
   }
   if (byName.has("autofocusdrive")) {
     controls.push({
