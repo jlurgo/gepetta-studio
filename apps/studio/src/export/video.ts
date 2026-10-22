@@ -1,4 +1,4 @@
-import { type FilmState, frameSpans, frameStack, orderedFrames } from "@gepetta/core";
+import { type FilmState, type TrackId, cellIndex, stackAt } from "@gepetta/core";
 import {
   BufferTarget,
   CanvasSource,
@@ -21,6 +21,8 @@ export interface VideoExportOptions {
   width: number;
   height: number;
   quality: VideoQuality;
+  /** Only these tracks (e.g. one track on its own); all exported tracks when missing. */
+  tracks?: TrackId[];
 }
 
 const QUALITY = { medium: QUALITY_MEDIUM, high: QUALITY_HIGH, max: QUALITY_VERY_HIGH };
@@ -59,38 +61,34 @@ export async function exportVideo(
   await output.start();
 
   const scale = { x: width / film.settings.width, y: height / film.settings.height };
-  let tick = 0;
   try {
-    const spans = frameSpans(film);
-    const frames = orderedFrames(film);
-    // Decoded originals, kept while consecutive ticks still show them.
+    const index = cellIndex(film);
+    const only = opts.tracks;
+    // Decoded originals, kept while consecutive cells still show them.
     let bitmaps = new Map<string, ImageBitmap>();
-    let shown = "";
-    for (const [i, frame] of frames.entries()) {
-      for (let h = 0; h < frame.hold; h++) {
-        const stack = frameStack(film, frame, tick, { exportOnly: true, spans });
-        // A video channel can change during a held frame; otherwise the canvas stays as it is.
-        const key = stack.map((s) => s.key + s.media.original).join("|");
-        if (key !== shown) {
-          const next = new Map<string, ImageBitmap>();
-          for (const item of stack) {
-            const id = item.media.original;
-            if (next.has(id)) continue;
-            next.set(id, bitmaps.get(id) ?? (await createImageBitmap(await storage.getAsset(filmId, id))));
-          }
-          bitmaps.forEach((b, id) => !next.has(id) && b.close());
-          bitmaps = next;
-          ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.fillStyle = "#000";
-          ctx.fillRect(0, 0, width, height);
-          ctx.setTransform(scale.x, 0, 0, scale.y, 0, 0);
-          drawStack(ctx, stack, film.settings, (m) => bitmaps.get(m.original));
-          shown = key;
+    let shown: string | null = null;
+    for (let cell = 0; cell < film.length; cell++) {
+      // A track exported on its own goes out even if it is only a reference.
+      const stack = stackAt(film, cell, { index, ...(only ? { tracks: only } : { exportOnly: true }) });
+      const key = stack.map((s) => `${s.clipId}:${s.media.original}`).join("|");
+      if (key !== shown) {
+        const next = new Map<string, ImageBitmap>();
+        for (const item of stack) {
+          const id = item.media.original;
+          if (next.has(id)) continue;
+          next.set(id, bitmaps.get(id) ?? (await createImageBitmap(await storage.getAsset(filmId, id))));
         }
-        await source.add(tick / fps, 1 / fps);
-        tick++;
+        bitmaps.forEach((b, id) => !next.has(id) && b.close());
+        bitmaps = next;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, width, height);
+        ctx.setTransform(scale.x, 0, 0, scale.y, 0, 0);
+        drawStack(ctx, stack, film.settings, (m) => bitmaps.get(m.original));
+        shown = key;
       }
-      progress(i + 1);
+      await source.add(cell / fps, 1 / fps);
+      progress(cell + 1);
     }
     bitmaps.forEach((b) => b.close());
     await output.finalize();

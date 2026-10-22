@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  canRedo,
+  canUndo,
   createHistory,
   makeEntry,
   pushEntry,
@@ -10,83 +12,146 @@ import {
   undo,
   updateEntryOp,
 } from "./history";
-import type { MediaRef } from "./model";
+import { type Clip, IDENTITY_TRANSFORM, type MediaRef, PHOTO_TRACK } from "./model";
 import type { Op } from "./ops";
-import { frameIndexAtTick, tailStartTick, timeline } from "./timing";
+import { isLegacyHistory, migrateHistory } from "./legacy/convert";
 
-const media: MediaRef = { original: "o", proxy: "p", thumb: "t", width: 10, height: 10 };
-const insert = (frameId: string, afterFrameId: string | null): Op => ({
-  type: "frame.insert",
-  afterFrameId,
-  frameId,
-  layerId: `${frameId}-l`,
-  media,
-  label: "Foto",
+const SETTINGS = { name: "t", fps: 12, width: 1600, height: 900 };
+const media = (id: string): MediaRef => ({ original: id, proxy: id, thumb: id, width: 100, height: 100 });
+const clip = (id: string, start: number, length = 1, track = PHOTO_TRACK): Clip => ({
+  id,
+  track,
+  start,
+  length,
+  media: media(id),
+  name: id,
+  visible: true,
+  opacity: 1,
+  transform: IDENTITY_TRANSFORM,
 });
-
-function build(...ops: Op[]) {
-  return ops.reduce((h, op) => pushEntry(h, makeEntry([op])), createHistory({ name: "t", fps: 12, width: 10, height: 10 }));
-}
+const place = (...clips: Clip[]): Op => ({ type: "clip.place", clips });
+const cells = (h: ReturnType<typeof createHistory>) =>
+  Object.values(replay(h).film.clips)
+    .sort((a, b) => a.start - b.start)
+    .map((c) => `${c.id}@${c.start}+${c.length}`);
 
 describe("history", () => {
-  it("replays inserts by anchor id", () => {
-    const h = build(insert("a", null), insert("c", "a"), insert("b", "a"));
-    expect(replay(h).film.frameOrder).toEqual(["a", "b", "c"]);
-  });
-
   it("undo/redo move the cursor and new steps insert at the cursor", () => {
-    let h = build(insert("a", null), insert("b", "a"));
+    let h = createHistory(SETTINGS);
+    h = pushEntry(h, makeEntry([place(clip("a", 0))]));
+    h = pushEntry(h, makeEntry([place(clip("b", 1))]));
+    expect(cells(h)).toEqual(["a@0+1", "b@1+1"]);
     h = undo(h);
-    expect(replay(h).film.frameOrder).toEqual(["a"]);
-    h = pushEntry(h, makeEntry([insert("x", null)]));
-    expect(h.cursor).toBe(2);
-    expect(replay(h).film.frameOrder).toEqual(["x", "a"]);
+    expect(cells(h)).toEqual(["a@0+1"]);
+    expect(canRedo(h)).toBe(true);
+    h = pushEntry(h, makeEntry([place(clip("c", 1))]));
+    expect(cells(h)).toEqual(["a@0+1", "c@1+1"]);
+    // Redo brings back "b", which now overwrites "c" in the same cell.
     h = redo(h);
-    expect(replay(h).film.frameOrder).toEqual(["x", "a", "b"]);
+    expect(cells(h)).toEqual(["a@0+1", "b@1+1"]);
+    expect(canUndo(h)).toBe(true);
   });
 
   it("disabling a past step recomputes and flags steps that no longer apply", () => {
-    const h = build(insert("a", null), insert("b", "a"), { type: "frame.setHold", frameId: "b", hold: 3 });
-    const off = setEntryEnabled(h, h.entries[1]!.id, false);
-    const r = replay(off);
-    expect(r.film.frameOrder).toEqual(["a"]);
-    expect(Object.keys(r.errors)).toEqual([h.entries[2]!.id]);
+    let h = createHistory(SETTINGS);
+    const add = makeEntry([place(clip("a", 0, 3))]);
+    h = pushEntry(h, add);
+    h = pushEntry(h, makeEntry([{ type: "clip.update", id: "a", patch: { length: 2 } }]));
+    h = setEntryEnabled(h, add.id, false);
+    const { film, errors } = replay(h);
+    expect(Object.keys(film.clips)).toEqual([]);
+    expect(Object.keys(errors)).toHaveLength(1);
   });
 
   it("edits parameters of a past step", () => {
-    const h = build(insert("a", null), { type: "frame.setHold", frameId: "a", hold: 2 }, insert("b", "a"));
-    const edited = updateEntryOp(h, h.entries[1]!.id, 0, { type: "frame.setHold", frameId: "a", hold: 4 });
-    expect(replay(edited).film.frames["a"]!.hold).toBe(4);
-    expect(edited.entries[1]!.label).toContain("×4");
+    let h = createHistory(SETTINGS);
+    const step = makeEntry([{ type: "film.setFps", fps: 12 }]);
+    h = pushEntry(h, step);
+    h = updateEntryOp(h, step.id, 0, { type: "film.setFps", fps: 24 });
+    expect(replay(h).film.settings.fps).toBe(24);
   });
 
   it("removing a past step keeps the cursor on the same future", () => {
-    const h = build(insert("a", null), insert("b", "a"), insert("c", "b"));
-    const r = removeEntry(undo(h), h.entries[0]!.id);
-    expect(r.cursor).toBe(1);
-    expect(replay(r).errors[h.entries[1]!.id]).toBeDefined();
-  });
-
-  it("duplicate places the copy right after its source", () => {
-    const h = build(insert("a", null), insert("b", "a"), {
-      type: "frame.duplicate",
-      sourceFrameId: "a",
-      frameId: "a2",
-      layerIds: ["a2-l"],
-    });
-    const film = replay(h).film;
-    expect(film.frameOrder).toEqual(["a", "a2", "b"]);
-    expect(film.frames["a2"]!.layers[0]!.id).toBe("a2-l");
+    let h = createHistory(SETTINGS);
+    const first = makeEntry([place(clip("a", 0))]);
+    h = pushEntry(h, first);
+    h = pushEntry(h, makeEntry([place(clip("b", 1))]));
+    h = removeEntry(h, first.id);
+    expect(h.cursor).toBe(1);
+    expect(cells(h)).toEqual(["b@1+1"]);
   });
 });
 
-describe("timing", () => {
-  it("maps ticks to frames honoring holds", () => {
-    const h = build(insert("a", null), insert("b", "a"), { type: "frame.setHold", frameId: "a", hold: 2 });
+describe("grid", () => {
+  it("placing overwrites: trims, splits and removes what it lands on", () => {
+    let h = createHistory(SETTINGS);
+    h = pushEntry(h, makeEntry([place(clip("long", 0, 6), clip("x", 7))]));
+    h = pushEntry(h, makeEntry([place(clip("mid", 2, 2), clip("y", 7))]));
+    // "long" is cut around "mid"; its tail keeps a derived id; "x" is replaced by "y".
+    expect(cells(h)).toEqual(["long@0+2", "mid@2+2", "long@4@4+2", "y@7+1"]);
+    expect(replay(h).film.length).toBe(8);
+  });
+
+  it("moves clips together across cells and tracks", () => {
+    let h = createHistory(SETTINGS);
+    h = pushEntry(h, makeEntry([{ type: "track.add", track: { id: "t2", name: "Capa", visible: true, opacity: 1, transform: IDENTITY_TRANSFORM, exported: true } }]));
+    h = pushEntry(h, makeEntry([place(clip("a", 0), clip("b", 1), clip("c", 3))]));
+    // a and b swap places with each other's cells and go to the other track; c is overwritten by nothing.
+    h = pushEntry(h, makeEntry([{ type: "clip.move", moves: [{ id: "a", track: "t2", start: 3 }, { id: "b", track: "t2", start: 4 }] }]));
     const film = replay(h).film;
-    const { frames, totalTicks } = timeline(film);
-    expect(totalTicks).toBe(3);
-    expect([0, 1, 2, 3].map((t) => frameIndexAtTick(frames, t))).toEqual([0, 0, 1, -1]);
-    expect(tailStartTick(film, 1 / 12)).toBe(2);
+    expect(Object.values(film.clips).map((c) => `${c.id}:${c.track}@${c.start}`).sort()).toEqual(["a:t2@3", "b:t2@4", `c:${PHOTO_TRACK}@3`]);
+  });
+
+  it("moving clips onto each other's old cells does not erase them", () => {
+    let h = createHistory(SETTINGS);
+    h = pushEntry(h, makeEntry([place(clip("a", 0), clip("b", 1))]));
+    h = pushEntry(h, makeEntry([{ type: "clip.move", moves: [{ id: "a", track: PHOTO_TRACK, start: 1 }, { id: "b", track: PHOTO_TRACK, start: 2 }] }]));
+    expect(cells(h)).toEqual(["a@1+1", "b@2+1"]);
+  });
+
+  it("a longer clip overwrites the cells it grows into", () => {
+    let h = createHistory(SETTINGS);
+    h = pushEntry(h, makeEntry([place(clip("a", 0), clip("b", 1), clip("c", 2))]));
+    h = pushEntry(h, makeEntry([{ type: "clip.update", id: "a", patch: { length: 2 } }]));
+    expect(cells(h)).toEqual(["a@0+2", "c@2+1"]);
+  });
+
+  it("the grid can be extended but never cuts clips", () => {
+    let h = createHistory(SETTINGS);
+    h = pushEntry(h, makeEntry([place(clip("a", 0, 3))]));
+    h = pushEntry(h, makeEntry([{ type: "film.setLength", length: 24 }]));
+    expect(replay(h).film.length).toBe(24);
+    h = pushEntry(h, makeEntry([{ type: "film.setLength", length: 1 }]));
+    expect(replay(h).film.length).toBe(3);
+  });
+});
+
+describe("films made before the grid", () => {
+  const entry = (ops: unknown[]) => ({ id: Math.random().toString(36), label: "", ops, enabled: true, createdAt: 0 }) as never;
+  const legacyMedia = (id: string) => media(id);
+  const old = {
+    initial: SETTINGS,
+    entries: [
+      entry([{ type: "frame.insert", afterFrameId: null, frameId: "f1", layerId: "l1", media: legacyMedia("p1"), label: "Foto" }]),
+      entry([{ type: "frame.insert", afterFrameId: "f1", frameId: "f2", layerId: "l2", media: legacyMedia("p2"), label: "Foto" }]),
+      entry([{ type: "frame.setHold", frameId: "f1", hold: 3 }]),
+      entry([{ type: "frame.duplicate", sourceFrameId: "f2", frameId: "f3", layerIds: ["l3"] }]),
+    ],
+    cursor: 4,
+  };
+
+  it("are recognized and converted to clips in the photo track, holds as lengths", () => {
+    expect(isLegacyHistory(old)).toBe(true);
+    const h = migrateHistory(old);
+    expect(h.entries).toEqual([]);
+    expect(cells(h)).toEqual(["l1@0+3", "l2@3+1", "l3@4+1"]);
+    expect(replay(h).film.clips.l3!.media.original).toBe("p2");
+    expect(replay(h).film.length).toBe(5);
+  });
+
+  it("keep working after conversion", () => {
+    let h = migrateHistory(old);
+    h = pushEntry(h, makeEntry([place(clip("new", 5))]));
+    expect(cells(h).at(-1)).toBe("new@5+1");
   });
 });

@@ -1,28 +1,25 @@
-import {
-  type FilmState,
-  type Frame,
-  type FrameId,
-  type FrameSpans,
-  type MediaRef,
-  PHOTO_TRACK,
-  type Track,
-  frameSpans,
-  frameStack,
-  trackItem,
-} from "@gepetta/core";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { type CellIndex, type Clip, type ClipId, type FilmState, type Track, cellIndex, clipEnd, stackAt } from "@gepetta/core";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { thumbUrl } from "../media/cache";
 import { drawStack } from "../render/frame";
-import { addCellsTrack, addImageTrack, importImages, moveFrame, setCellImage } from "../state/actions";
+import { addImageTrack, addTrack, extendFilm, importImages, moveClips, setCellImage } from "../state/actions";
 import { useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
 import { Icon } from "./Icon";
+import { capturePointer } from "./pointer";
 import { OpacitySlider } from "./TrackPanel";
 import { VideoImportDialog } from "./VideoImportDialog";
 
-const DRAG_TYPE = "application/x-gepetta-frame";
+const RULER_H = 22;
+const RESULT_H = 64;
+const TRACK_H = 44;
+const ROW_GAP = 4;
+const ZOOMS = [12, 20, 32, 48, 72, 108];
+const ZOOM_KEY = "gepetta.timelineZoom";
+/** Empty cells shown past the end, to place pictures there. */
+const TAIL_SECONDS = 2;
 
-/** Decoded thumbnails, shared by every cell that shows them. */
+/** Decoded thumbnails, shared by every place that shows them. */
 const thumbImages = new Map<string, Promise<HTMLImageElement>>();
 function thumbImage(filmId: string, assetId: string): Promise<HTMLImageElement> {
   const key = `${filmId}/${assetId}`;
@@ -43,22 +40,22 @@ function thumbImage(filmId: string, assetId: string): Promise<HTMLImageElement> 
   return p;
 }
 
-const Thumb = memo(function Thumb({ filmId, media }: { filmId: string; media: MediaRef }) {
+const Thumb = memo(function Thumb({ filmId, asset }: { filmId: string; asset: string }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    thumbUrl(filmId, media.thumb).then((u) => alive && setUrl(u), () => undefined);
+    thumbUrl(filmId, asset).then((u) => alive && setUrl(u), () => undefined);
     return () => {
       alive = false;
     };
-  }, [filmId, media.thumb]);
-  return url ? <img src={url} alt="" draggable={false} /> : <div className="thumb-placeholder" />;
+  }, [filmId, asset]);
+  return url ? <img src={url} alt="" draggable={false} /> : null;
 });
 
-/** The frame as it comes out: every visible track combined, drawn from thumbnails. */
-const CompositeThumb = memo(function CompositeThumb({ filmId, film, frame, tick, spans }: { filmId: string; film: FilmState; frame: Frame; tick: number; spans: FrameSpans }) {
+/** The film as it comes out at `cell`: every visible track combined, drawn from thumbnails. */
+const CompositeThumb = memo(function CompositeThumb({ filmId, film, cell, index }: { filmId: string; film: FilmState; cell: number; index: CellIndex }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const stack = frameStack(film, frame, tick, { spans });
+  const stack = stackAt(film, cell, { index });
   // Redraw only when what is drawn changes, not on every edit of the film.
   const key = JSON.stringify(stack.map((s) => [s.media.thumb, s.opacity, s.transform]));
   const { width, height } = film.settings;
@@ -67,8 +64,8 @@ const CompositeThumb = memo(function CompositeThumb({ filmId, film, frame, tick,
     Promise.all(stack.map((s) => thumbImage(filmId, s.media.thumb).catch(() => undefined))).then((images) => {
       const canvas = ref.current;
       if (!alive || !canvas) return;
-      const w = 240;
-      const h = Math.round((w * height) / width);
+      const h = 120;
+      const w = Math.round((h * width) / height);
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d")!;
@@ -87,63 +84,27 @@ const CompositeThumb = memo(function CompositeThumb({ filmId, film, frame, tick,
   return <canvas ref={ref} />;
 });
 
-function TrackHead({ track }: { track: Track }) {
+function TrackHead({ track, current }: { track: Track; current: boolean }) {
   const selected = useLayers((s) => s.trackId === track.id);
   return (
-    <div className={`tl-head track${selected ? " selected" : ""}${track.visible ? "" : " off"}`}>
-      <button
-        className="icon-btn small"
-        onClick={() => updateTrack(track.id, { visible: !track.visible })}
-        title={track.visible ? "Ocultar" : "Mostrar"}
-      >
+    <div className={`tl-head track${selected ? " selected" : ""}${current ? " current" : ""}${track.visible ? "" : " off"}`} style={{ height: TRACK_H }}>
+      <button className="icon-btn small" onClick={() => updateTrack(track.id, { visible: !track.visible })} title={track.visible ? "Ocultar" : "Mostrar"}>
         <Icon name={track.visible ? "eye" : "eyeOff"} size={15} />
       </button>
       <button
         className="tl-name"
-        onClick={() => useLayers.getState().select(selected ? null : track.id)}
-        title={track.exported ? track.name : `${track.name} (solo referencia: no se exporta)`}
+        onClick={() => {
+          useLayers.getState().select(selected ? null : track.id);
+          const { cursor, moveTo } = useEditor.getState();
+          moveTo(cursor.cell, track.id);
+        }}
+        title={`${track.name}${track.exported ? "" : " (solo referencia: no se exporta)"} — tocá para elegirlo y ver sus ajustes`}
       >
         {track.name}
         {!track.exported && <span className="ref-dot" aria-hidden />}
       </button>
       <OpacitySlider label={false} value={track.opacity} onCommit={(opacity) => updateTrack(track.id, { opacity })} />
     </div>
-  );
-}
-
-function TrackCell({
-  filmId,
-  film,
-  track,
-  frame,
-  tick,
-  spans,
-  onPick,
-}: {
-  filmId: string;
-  film: FilmState;
-  track: Track;
-  frame: Frame | null;
-  tick: number;
-  spans: FrameSpans;
-  onPick(frameId: FrameId, track: Track): void;
-}) {
-  const item = trackItem(film, { ...track, visible: true }, frame, tick, spans);
-  const selectedTrack = useLayers((s) => s.trackId === track.id);
-  const canFill = frame && track.source.kind === "cells" && track.id !== PHOTO_TRACK;
-  return (
-    <button
-      className={`tl-cell${item ? " filled" : ""}${track.source.kind !== "cells" && item ? " span" : ""}${selectedTrack ? " selected" : ""}${track.visible ? "" : " off"}`}
-      onClick={() => {
-        useLayers.getState().select(track.id);
-        if (!frame) return;
-        useEditor.getState().select(frame.id);
-        if (!item && canFill) onPick(frame.id, track);
-      }}
-      title={!item && canFill ? "Agregar una imagen en este cuadro" : track.name}
-    >
-      {item ? <Thumb filmId={filmId} media={item.media} /> : canFill ? <Icon name="plus" size={14} /> : null}
-    </button>
   );
 }
 
@@ -156,6 +117,17 @@ function AddTrackMenu({ onVideo }: { onVideo(): void }) {
     window.addEventListener("pointerdown", close);
     return () => window.removeEventListener("pointerdown", close);
   }, [open]);
+  const item = (title: string, text: string, run: () => void) => (
+    <button
+      onClick={() => {
+        setOpen(false);
+        run();
+      }}
+    >
+      <strong>{title}</strong>
+      <span>{text}</span>
+    </button>
+  );
   return (
     <div className="tl-add">
       <button className="btn small ghost" onClick={() => setOpen(!open)}>
@@ -163,37 +135,14 @@ function AddTrackMenu({ onVideo }: { onVideo(): void }) {
       </button>
       {open && (
         <div className="menu" onPointerDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => {
-              setOpen(false);
-              addCellsTrack();
-            }}
-          >
-            <strong>Capa</strong>
-            <span>Una imagen o dibujo por cuadro</span>
-          </button>
-          <button
-            onClick={() => {
-              setOpen(false);
-              imageInput.current?.click();
-            }}
-          >
-            <strong>Imagen fija</strong>
-            <span>Un fondo, un marco o un logo para toda la película</span>
-          </button>
-          <button
-            onClick={() => {
-              setOpen(false);
-              onVideo();
-            }}
-          >
-            <strong>Video</strong>
-            <span>Avanza con la película: para rotoscopia</span>
-          </button>
+          {item("Capa vacía", "Para fotos, dibujos o recortes", addTrack)}
+          {item("Imagen fija", "Un fondo, un marco o un logo para toda la película", () => imageInput.current?.click())}
+          {item("Video", "Sus imágenes, una por celda: para rotoscopia", onVideo)}
         </div>
       )}
       <input
         ref={imageInput}
+        data-role="image-track"
         type="file"
         accept="image/*"
         hidden
@@ -207,128 +156,321 @@ function AddTrackMenu({ onVideo }: { onVideo(): void }) {
   );
 }
 
+type Gesture =
+  | { kind: "move"; x0: number; y0: number; id: ClipId; ids: ClipId[]; moved: boolean; dx: number; dy: number }
+  | { kind: "resize"; x0: number; id: ClipId; length0: number; dx: number }
+  | { kind: "band"; x0: number; y0: number; x1: number; y1: number; add: boolean; base: ClipId[] };
+
+function loadZoom(): number {
+  try {
+    const z = Number(localStorage.getItem(ZOOM_KEY));
+    return ZOOMS.includes(z) ? z : 32;
+  } catch {
+    return 32;
+  }
+}
+
 export function Timeline() {
   const film = useEditor((s) => s.film);
   const filmId = useEditor((s) => s.filmId);
-  const selected = useEditor((s) => s.selected);
+  const cursor = useEditor((s) => s.cursor);
+  const selection = useEditor((s) => s.selection);
   const view = useEditor((s) => s.view);
-  const select = useEditor((s) => s.select);
-  const setView = useEditor((s) => s.setView);
-  const stripRef = useRef<HTMLDivElement>(null);
-  const [dropTarget, setDropTarget] = useState<{ after: FrameId | null } | null>(null);
+  const [cw, setCw] = useState(loadZoom);
+  const scroller = useRef<HTMLDivElement>(null);
+  const [scroll, setScroll] = useState({ left: 0, width: 1200 });
+  const [gesture, setGestureState] = useState<Gesture | null>(null);
+  // Pointer events can arrive faster than React re-renders: handlers read the ref.
+  const gestureRef = useRef<Gesture | null>(null);
+  const setGesture = (g: Gesture | null) => {
+    gestureRef.current = g;
+    setGestureState(g);
+  };
   const cellInput = useRef<HTMLInputElement>(null);
-  const pickFor = useRef<{ frameId: FrameId; trackId: string } | null>(null);
+  const pickAt = useRef<{ track: string; cell: number } | null>(null);
   const videoInput = useRef<HTMLInputElement>(null);
-  const [video, setVideo] = useState<File | null>(null);
-  const spans = useMemo(() => (film ? frameSpans(film) : new Map()), [film]);
+  const [video, setVideo] = useState<{ file: File; mode: "frames" | "track" } | null>(null);
+  const index: CellIndex = useMemo(() => (film ? cellIndex(film) : new Map()), [film]);
 
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const update = () => setScroll({ left: el.scrollLeft, width: el.clientWidth });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Keep the cursor in view when it moves (by keys, captures…).
   useEffect(() => {
-    const el = stripRef.current?.querySelector(view === "live" ? ".cell.live" : ".cell.selected");
-    el?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [selected, view, film?.frameOrder.length]);
+    const el = scroller.current;
+    if (!el) return;
+    const x = cursor.cell * cw;
+    if (x < el.scrollLeft) el.scrollLeft = x - cw;
+    else if (x + cw > el.scrollLeft + el.clientWidth) el.scrollLeft = x + 2 * cw - el.clientWidth;
+  }, [cursor.cell, cw]);
 
   if (!film || !filmId) return null;
-  const aspect = film.settings.width / film.settings.height;
+  const fps = film.settings.fps;
   const tracks = [...film.tracks].reverse(); // top first, like the picture
+  const cells = film.length + TAIL_SECONDS * fps;
+  const firstCell = Math.max(0, Math.floor(scroll.left / cw) - 1);
+  const lastCell = Math.min(cells, Math.ceil((scroll.left + scroll.width) / cw) + 1);
+  const rowsTop = RULER_H + ROW_GAP + RESULT_H + ROW_GAP;
+  const rowTop = (i: number) => rowsTop + i * (TRACK_H + ROW_GAP);
+  const height = rowTop(tracks.length);
+  const selected = new Set(selection);
+  const aspect = film.settings.width / film.settings.height;
 
-  /** Where a drop over `id` lands: before it on its left half, after it on its right half. */
-  function dropAnchor(e: React.DragEvent, id: FrameId): FrameId | null {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const before = e.clientX < rect.left + rect.width / 2;
-    if (!before) return id;
-    const i = film!.frameOrder.indexOf(id);
-    return film!.frameOrder[i - 1] ?? null;
-  }
+  const setZoom = (z: number) => {
+    setCw(z);
+    try {
+      localStorage.setItem(ZOOM_KEY, String(z));
+    } catch {
+      // Not remembered.
+    }
+  };
 
-  function onDrop(e: React.DragEvent, after: FrameId | null) {
-    e.preventDefault();
-    setDropTarget(null);
-    const moving = e.dataTransfer.getData(DRAG_TYPE);
-    if (moving) moveFrame(moving, after);
-    else if (e.dataTransfer.files.length) {
-      useEditor.getState().select(after, "frame");
-      void importImages([...e.dataTransfer.files]);
+  /** Cell and track row under a pointer event, in the canvas. */
+  const at = (e: { clientX: number; clientY: number }) => {
+    const box = scroller.current!.getBoundingClientRect();
+    const x = e.clientX - box.left + scroller.current!.scrollLeft;
+    const y = e.clientY - box.top + scroller.current!.scrollTop;
+    const cell = Math.max(0, Math.floor(x / cw));
+    const row = Math.floor((y - rowsTop) / (TRACK_H + ROW_GAP));
+    return { x, y, cell, row, track: y >= rowsTop && row < tracks.length ? tracks[row]! : null };
+  };
+
+  // Results row: one box per run of cells that look the same.
+  const runs: { start: number; end: number }[] = [];
+  {
+    let prev = "";
+    for (let c = firstCell; c < Math.min(lastCell, film.length); c++) {
+      const key = stackAt(film, c, { index })
+        .map((s) => s.clipId)
+        .join("|");
+      if (runs.length && key === prev && runs[runs.length - 1]!.end === c) runs[runs.length - 1]!.end = c + 1;
+      else runs.push({ start: c, end: c + 1 });
+      prev = key;
     }
   }
 
-  const pick = (frameId: FrameId, track: Track) => {
-    pickFor.current = { frameId, trackId: track.id };
+  const visibleClips = (track: Track): Clip[] => (index.get(track.id) ?? []).filter((c) => clipEnd(c) > firstCell && c.start < lastCell);
+
+  // -- pointer gestures ------------------------------------------------------
+
+  function onPointerDown(e: React.PointerEvent) {
+    if (e.button !== 0) return;
+    const p = at(e);
+    if (p.y < rowsTop) {
+      // Ruler and results: pick the moment (on the results, also show the film there).
+      useEditor.getState().moveTo(p.cell, undefined, p.y < RULER_H ? undefined : "frame");
+      return;
+    }
+    if (!p.track) return;
+    const target = (e.target as HTMLElement).closest<HTMLElement>("[data-clip]");
+    const id = target?.dataset.clip;
+    const { setSelection } = useEditor.getState();
+    capturePointer(e);
+    if (id) {
+      const clip = film!.clips[id]!;
+      if ((e.target as HTMLElement).dataset.edge) {
+        setGesture({ kind: "resize", x0: p.x, id, length0: clip.length, dx: 0 });
+        return;
+      }
+      const add = e.shiftKey || e.metaKey || e.ctrlKey;
+      let ids = selection;
+      if (add) ids = selected.has(id) ? selection.filter((s) => s !== id) : [...selection, id];
+      else if (!selected.has(id)) ids = [id];
+      setSelection(ids);
+      useEditor.getState().moveTo(Math.max(clip.start, Math.min(p.cell, clipEnd(clip) - 1)), clip.track);
+      if (ids.includes(id)) setGesture({ kind: "move", x0: p.x, y0: p.y, id, ids, moved: false, dx: 0, dy: 0 });
+      return;
+    }
+    setGesture({ kind: "band", x0: p.x, y0: p.y, x1: p.x, y1: p.y, add: e.shiftKey || e.metaKey || e.ctrlKey, base: selection });
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    const gesture = gestureRef.current;
+    if (!gesture) return;
+    const p = at(e);
+    if (gesture.kind === "move") {
+      const dx = Math.round((p.x - gesture.x0) / cw);
+      const dy = Math.round((p.y - gesture.y0) / (TRACK_H + ROW_GAP));
+      const moved = gesture.moved || Math.abs(p.x - gesture.x0) + Math.abs(p.y - gesture.y0) > 4;
+      if (dx !== gesture.dx || dy !== gesture.dy || moved !== gesture.moved) setGesture({ ...gesture, dx, dy, moved });
+    } else if (gesture.kind === "resize") {
+      const dx = Math.round((p.x - gesture.x0) / cw);
+      if (dx !== gesture.dx) setGesture({ ...gesture, dx });
+    } else {
+      setGesture({ ...gesture, x1: p.x, y1: p.y });
+      const [x0, x1] = [Math.min(gesture.x0, p.x), Math.max(gesture.x0, p.x)];
+      const [y0, y1] = [Math.min(gesture.y0, p.y), Math.max(gesture.y0, p.y)];
+      if (x1 - x0 + (y1 - y0) <= 4) return;
+      const inside = Object.values(film!.clips)
+        .filter((c) => {
+          const top = rowTop(tracks.findIndex((t) => t.id === c.track));
+          return c.start * cw < x1 && clipEnd(c) * cw > x0 && top < y1 && top + TRACK_H > y0;
+        })
+        .map((c) => c.id);
+      useEditor.getState().setSelection(gesture.add ? [...new Set([...gesture.base, ...inside])] : inside);
+    }
+  }
+
+  function onPointerUp(e: React.PointerEvent) {
+    const g = gestureRef.current;
+    setGesture(null);
+    if (!g) return;
+    const p = at(e);
+    if (g.kind === "move" && g.moved && (g.dx || g.dy)) {
+      const moves = g.ids.map((id) => {
+        const c = film!.clips[id]!;
+        const row = tracks.findIndex((t) => t.id === c.track);
+        const to = tracks[Math.max(0, Math.min(tracks.length - 1, row + g.dy))]!;
+        return { id, track: to.id, start: c.start + g.dx };
+      });
+      if (moves.every((m) => m.start >= 0)) moveClips(moves);
+    } else if (g.kind === "move" && !g.moved && !(e.shiftKey || e.metaKey || e.ctrlKey)) {
+      // A plain click on a picture of a group picks just that one.
+      useEditor.getState().setSelection([g.id]);
+    } else if (g.kind === "resize" && g.dx) {
+      const length = Math.max(1, g.length0 + g.dx);
+      useEditor.getState().commit([{ type: "clip.update", id: g.id, patch: { length } }]);
+    } else if (g.kind === "band" && Math.abs(p.x - g.x0) + Math.abs(p.y - g.y0) <= 4 && p.track) {
+      // A click on an empty cell: that is where the next picture goes.
+      if (!g.add) useEditor.getState().setSelection([]);
+      useEditor.getState().moveTo(p.cell, p.track.id);
+    }
+  }
+
+  function onDoubleClick(e: React.MouseEvent) {
+    const p = at(e);
+    if (!p.track || (e.target as HTMLElement).closest("[data-clip]")) return;
+    pickAt.current = { track: p.track.id, cell: p.cell };
     cellInput.current?.click();
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    const p = at(e);
+    if (!p.track || !e.dataTransfer.files.length) return;
+    void importImages([...e.dataTransfer.files], { track: p.track.id, cell: p.cell });
+  }
+
+  // Where moved clips are drawn while dragging.
+  const shift = (c: Clip): { left: number; top: number } | null => {
+    if (!gesture || gesture.kind !== "move" || !gesture.moved || !selected.has(c.id)) return null;
+    const row = tracks.findIndex((t) => t.id === c.track);
+    const to = Math.max(0, Math.min(tracks.length - 1, row + gesture.dy));
+    return { left: Math.max(0, c.start + gesture.dx) * cw, top: rowTop(to) };
   };
-  const liveAfter = view === "live" ? selected : undefined;
-  const liveTick = selected ? (spans.get(selected)?.end ?? 0) : 0;
+
+  const ticks: number[] = [];
+  const every = cw >= 32 ? 1 : cw >= 20 ? 2 : 6;
+  for (let c = firstCell - (firstCell % every); c < lastCell; c += every) ticks.push(c);
+  const cursorRow = Math.max(0, tracks.findIndex((t) => t.id === cursor.track));
 
   return (
     <div className="timeline" style={{ ["--thumb-aspect" as string]: aspect }}>
-      <div className="tl-heads">
-        <div className="tl-head main">Resultado</div>
+      <div className="tl-heads" style={{ minHeight: height + 40 }}>
+        <div className="tl-head ruler" style={{ height: RULER_H }}>
+          <select value={cw} onChange={(e) => setZoom(Number(e.target.value))} title="Ancho de las celdas">
+            {ZOOMS.map((z, i) => (
+              <option key={z} value={z}>
+                zoom {i + 1}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="tl-head main" style={{ height: RESULT_H }}>
+          Resultado
+        </div>
         {tracks.map((t) => (
-          <TrackHead key={t.id} track={t} />
+          <TrackHead key={t.id} track={t} current={t.id === cursor.track} />
         ))}
         <AddTrackMenu onVideo={() => videoInput.current?.click()} />
       </div>
 
-      <div
-        className="tl-columns"
-        ref={stripRef}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => onDrop(e, film.frameOrder.at(-1) ?? null)}
-      >
-        {liveAfter === null && <div className="insert-marker" title="La próxima foto va acá" />}
-        {film.frameOrder.map((id, i) => {
-          const frame = film.frames[id]!;
-          const tick = spans.get(id)?.start ?? 0;
-          const isDrop = dropTarget?.after === id || (dropTarget?.after === null && i === 0);
-          return (
-            <div key={id} className="cell-wrap">
-              {isDrop && dropTarget?.after === null && <div className="drop-marker" />}
-              <div className="tl-col">
-                <button
-                  className={`cell${id === selected && view === "frame" ? " selected" : ""}`}
-                  draggable
-                  onDragStart={(e) => e.dataTransfer.setData(DRAG_TYPE, id)}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const after = dropAnchor(e, id);
-                    if (dropTarget?.after !== after) setDropTarget({ after });
-                  }}
-                  onDragLeave={() => setDropTarget(null)}
-                  onDrop={(e) => {
-                    e.stopPropagation();
-                    onDrop(e, dropAnchor(e, id));
-                  }}
-                  onClick={() => select(id)}
-                  title={`Cuadro ${i + 1}${frame.hold > 1 ? ` (dura ×${frame.hold})` : ""}`}
-                >
-                  <CompositeThumb filmId={filmId} film={film} frame={frame} tick={tick} spans={spans} />
-                  <span className="cell-index">{i + 1}</span>
-                  {frame.hold > 1 && <span className="cell-hold">×{frame.hold}</span>}
-                </button>
-                {tracks.map((t) => (
-                  <TrackCell key={t.id} filmId={filmId} film={film} track={t} frame={frame} tick={tick} spans={spans} onPick={pick} />
-                ))}
-              </div>
-              {isDrop && dropTarget?.after === id && <div className="drop-marker" />}
-              {liveAfter === id && <div className="insert-marker" title="La próxima foto va acá" />}
+      <div className="tl-body" ref={scroller} onScroll={(e) => setScroll({ left: e.currentTarget.scrollLeft, width: e.currentTarget.clientWidth })}>
+        <div
+          className="tl-canvas"
+          style={{ width: cells * cw + 120, height: height + 40 }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onDoubleClick={onDoubleClick}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDrop}
+        >
+          <div className="tl-ruler" style={{ height: RULER_H }}>
+            {ticks.map((c) => (
+              <span key={c} className={c % fps === 0 ? "sec" : ""} style={{ left: c * cw }}>
+                {c % fps === 0 ? `${c / fps}s` : c + 1}
+              </span>
+            ))}
+          </div>
+
+          {runs.map((r) => (
+            <div key={r.start} className="tl-result" style={{ left: r.start * cw + 1, width: (r.end - r.start) * cw - 2, top: RULER_H + ROW_GAP, height: RESULT_H }}>
+              <CompositeThumb filmId={filmId} film={film} cell={r.start} index={index} />
             </div>
-          );
-        })}
-        <div className="tl-col">
-          <button
-            className={`cell live${view === "live" ? " selected" : ""}`}
-            onClick={() => {
-              if (view !== "live") select(film.frameOrder.at(-1) ?? null, "live");
-              else setView("live");
-            }}
-            title="Cámara en vivo: la próxima foto va al final"
-          >
-            <Icon name="camera" size={28} />
-            <span>En vivo</span>
-          </button>
-          {tracks.map((t) => (
-            <TrackCell key={t.id} filmId={filmId} film={film} track={t} frame={null} tick={liveTick} spans={spans} onPick={pick} />
           ))}
+
+          {tracks.map((t, i) => (
+            <div
+              key={t.id}
+              className={`tl-row${t.id === cursor.track ? " current" : ""}${t.visible ? "" : " off"}`}
+              style={{ top: rowTop(i), height: TRACK_H, backgroundSize: `${cw}px 100%` }}
+            />
+          ))}
+
+          {/* The cell where the camera (or the next import) puts its picture. */}
+          <div className={`tl-cursor-cell${view === "live" ? " live" : ""}`} style={{ left: cursor.cell * cw, width: cw, top: rowTop(cursorRow), height: TRACK_H }} />
+
+          {tracks.map((t, row) =>
+            visibleClips(t).map((c) => {
+              const moving = shift(c);
+              const length = gesture?.kind === "resize" && gesture.id === c.id ? Math.max(1, gesture.length0 + gesture.dx) : c.length;
+              return (
+                <div
+                  key={c.id}
+                  data-clip={c.id}
+                  className={`tl-clip${selected.has(c.id) ? " selected" : ""}${moving ? " moving" : ""}${c.visible ? "" : " off"}`}
+                  style={{ left: (moving?.left ?? c.start * cw) + 1, top: moving?.top ?? rowTop(row), width: length * cw - 2, height: TRACK_H }}
+                  title={`${c.name} · celdas ${c.start + 1}–${c.start + c.length}`}
+                >
+                  {length * cw >= 20 && <Thumb filmId={filmId} asset={c.media.thumb} />}
+                  {length > 1 && cw * length >= 40 && <span className="tl-len">×{length}</span>}
+                  <span className="tl-edge" data-edge="1" />
+                </div>
+              );
+            }),
+          )}
+
+          <div className="tl-playhead" style={{ left: cursor.cell * cw + cw / 2, height }} />
+
+          {gesture?.kind === "band" && (
+            <div
+              className="tl-band"
+              style={{
+                left: Math.min(gesture.x0, gesture.x1),
+                top: Math.min(gesture.y0, gesture.y1),
+                width: Math.abs(gesture.x1 - gesture.x0),
+                height: Math.abs(gesture.y1 - gesture.y0),
+              }}
+            />
+          )}
+
+          <button
+            className="btn small ghost tl-extend"
+            style={{ left: cells * cw + 8, top: rowsTop }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => extendFilm(film, 1)}
+            title="Agregar un segundo de celdas vacías al final"
+          >
+            + 1 s
+          </button>
         </div>
       </div>
 
@@ -340,23 +482,23 @@ export function Timeline() {
         hidden
         onChange={(e) => {
           const f = e.target.files?.[0];
-          const target = pickFor.current;
-          if (f && target) void setCellImage(f, target.frameId, target.trackId);
+          if (f && pickAt.current) void setCellImage(f, pickAt.current);
           e.target.value = "";
         }}
       />
       <input
         ref={videoInput}
+        data-role="video-track"
         type="file"
         accept="video/*"
         hidden
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) setVideo(f);
+          if (f) setVideo({ file: f, mode: "track" });
           e.target.value = "";
         }}
       />
-      {video && <VideoImportDialog file={video} mode="track" onClose={() => setVideo(null)} />}
+      {video && <VideoImportDialog file={video.file} mode={video.mode} onClose={() => setVideo(null)} />}
     </div>
   );
 }

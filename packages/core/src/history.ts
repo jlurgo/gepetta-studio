@@ -23,6 +23,12 @@ export interface HistoryEntry {
  */
 export interface History {
   initial: FilmSettings;
+  /**
+   * Where replay starts instead of an empty film: films made before the grid
+   * timeline start from their converted content (their old history is kept
+   * in the saved file, see migrateHistory).
+   */
+  base?: FilmState;
   entries: HistoryEntry[];
   cursor: number;
 }
@@ -55,7 +61,7 @@ export function applyEntry(film: FilmState, entry: HistoryEntry): FilmState {
 }
 
 export function replay(history: History): Replay {
-  let film = emptyFilm(history.initial);
+  let film = history.base ?? emptyFilm(history.initial);
   const errors: Record<string, string> = {};
   for (const entry of history.entries.slice(0, history.cursor)) {
     if (!entry.enabled) continue;

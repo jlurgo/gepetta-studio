@@ -1,4 +1,4 @@
-import { type FilmState, orderedFrames, photoOf } from "@gepetta/core";
+import type { FilmState } from "@gepetta/core";
 
 /** A lens position whose focus distance is known from a photo taken there. */
 export interface FocusRef {
@@ -14,8 +14,8 @@ export interface FocusRef {
 export function focusRefs(film: FilmState | null, source: string | null): FocusRef[] {
   if (!film || !source) return [];
   const byPosition = new Map<number, number>();
-  for (const frame of orderedFrames(film)) {
-    const c = photoOf(frame)?.media.capture;
+  for (const clip of Object.values(film.clips)) {
+    const c = clip.media.capture;
     if (!c || c.source !== source || c.focusOrigin !== "infinity" || c.focusPosition === undefined || !c.focusDistance) continue;
     const { near, far } = c.focusDistance;
     byPosition.set(c.focusPosition, Number.isFinite(far) ? (near + far) / 2 : Infinity);

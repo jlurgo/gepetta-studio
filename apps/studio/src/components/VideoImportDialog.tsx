@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { type VideoInfo, loadVideo, sampleTimes } from "../media/video";
-import { importVideoTrack, importVideoStills } from "../state/actions";
+import { importVideoStills } from "../state/actions";
 import { useBusy } from "../state/busy";
 import { useEditor } from "../state/editor";
 import { Dialog } from "./Dialog";
@@ -51,8 +51,7 @@ export function VideoImportDialog({ file, mode = "frames", onClose }: { file: Fi
     v.video.remove();
     onClose();
     try {
-      if (mode === "track") await importVideoTrack(v.video, times, file.name, fps);
-      else await importVideoStills(v.video, times, file.name);
+      await importVideoStills(v.video, times, file.name, fps, mode === "track");
     } finally {
       v.dispose();
     }
@@ -91,12 +90,13 @@ export function VideoImportDialog({ file, mode = "frames", onClose }: { file: Fi
           <p className="hint">
             {mode === "track" ? (
               <>
-                Se va a crear un track de <strong>{times.length}</strong> imágenes que empieza en el cuadro seleccionado
-                y avanza con la película.
+                Se va a crear un track nuevo con <strong>{times.length}</strong> imágenes desde la celda elegida, semitransparente y
+                solo de referencia (no sale en la exportación).
               </>
             ) : (
               <>
-                Se van a insertar <strong>{times.length}</strong> cuadros después del cuadro seleccionado.
+                Se van a poner <strong>{times.length}</strong> imágenes desde la celda elegida, en el track elegido (reemplazan lo que
+                haya ahí).
               </>
             )}
           </p>

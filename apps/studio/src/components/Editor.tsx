@@ -1,3 +1,4 @@
+import { clipAt } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { isVideoFile } from "../media/ingest";
 import {
@@ -64,6 +65,7 @@ function useShortcuts() {
         guides.update(s.filmId, { visible: !guides.get(s.filmId).visible });
       }
       else if (key === "c") s.setView("live");
+      else if (e.key === "Escape" && s.selection.length) s.setSelection([]);
       else return;
       e.preventDefault();
     };
@@ -117,16 +119,16 @@ function TopBar({ onExport, onToggleHistory, historyOpen }: { onExport(): void; 
           ))}
         </select>
       </label>
-      <button className="btn" onClick={() => imageInput.current?.click()} title="Importar imágenes después del cuadro seleccionado">
+      <button className="btn" onClick={() => imageInput.current?.click()} title="Poner imágenes desde la celda elegida, en el track elegido">
         <Icon name="image" /> Imágenes
       </button>
-      <button className="btn" onClick={() => videoInput.current?.click()} title="Importar cuadros de un video">
+      <button className="btn" onClick={() => videoInput.current?.click()} title="Poner las imágenes de un video desde la celda elegida">
         <Icon name="video" /> Video
       </button>
       <button className={`btn${historyOpen ? " active" : ""}`} onClick={onToggleHistory} title="Historial de cambios">
         <Icon name="history" /> Historial
       </button>
-      <button className="btn primary" onClick={onExport} disabled={film.frameOrder.length === 0}>
+      <button className="btn primary" onClick={onExport} disabled={film.length === 0}>
         <Icon name="export" /> Exportar
       </button>
       <input
@@ -156,60 +158,86 @@ function TopBar({ onExport, onToggleHistory, historyOpen }: { onExport(): void; 
   );
 }
 
+/** "m:ss.cc"-ish position of a cell, for the transport bar. */
+function cellTime(cell: number, fps: number): string {
+  const seconds = cell / fps;
+  const m = Math.floor(seconds / 60);
+  const sec = (seconds % 60).toFixed(1).padStart(4, "0");
+  return `${m}:${sec}`;
+}
+
 function Transport() {
   const film = useEditor((s) => s.film)!;
-  const selected = useEditor((s) => s.selected);
+  const cursor = useEditor((s) => s.cursor);
+  const selection = useEditor((s) => s.selection);
   const view = useEditor((s) => s.view);
   const playing = useEditor((s) => s.playback !== null);
   const onion = useEditor((s) => s.onion);
   const loop = useEditor((s) => s.loop);
   const tailSeconds = useEditor((s) => s.tailSeconds);
+  const captureStep = useEditor((s) => s.captureStep);
   const hasSource = useCamera((s) => s.source !== null);
   const { play, stop, setOnion, set, setView } = useEditor.getState();
-  const frame = selected ? film.frames[selected] : undefined;
-  const frameTools = view === "frame" && frame;
+  const atCursor = clipAt(film, cursor.track, cursor.cell);
+  const target = selection.length ? film.clips[selection[0]!] : atCursor;
+  const trackName = film.tracks.find((t) => t.id === cursor.track)?.name ?? "";
 
   return (
     <div className="transport">
       <div className="group">
-        <button className="capture-btn" onClick={() => void capture()} disabled={!hasSource} title="Sacar foto (barra espaciadora)">
+        <button
+          className="capture-btn"
+          onClick={() => void capture()}
+          disabled={!hasSource}
+          title={`Sacar foto en "${trackName}", celda ${cursor.cell + 1} (barra espaciadora)`}
+        >
           <Icon name="camera" size={28} />
         </button>
-        {view === "frame" && (
-          <button className="btn" onClick={() => setView("live")} title="Ver la cámara; la foto se inserta después de este cuadro (C)">
-            <Icon name="camera" /> Cámara aquí
+        <div className="segmented" title="Qué se ve en el centro">
+          <button className={view === "live" ? "active" : ""} onClick={() => setView("live")} title="La cámara en la celda elegida (C)">
+            Cámara
           </button>
-        )}
+          <button className={view === "frame" ? "active" : ""} onClick={() => setView("frame")} title="La película en la celda elegida">
+            Película
+          </button>
+        </div>
+        <select value={captureStep} onChange={(e) => set({ captureStep: Number(e.target.value) })} title="Cuántas celdas dura cada foto nueva">
+          <option value={1}>en unos</option>
+          <option value={2}>en dos</option>
+          <option value={3}>en tres</option>
+          <option value={4}>en cuatro</option>
+        </select>
       </div>
 
       <div className="group">
-        {frameTools ? (
+        {target ? (
           <>
-            <button className="icon-btn" onClick={() => nudgeSelected(-1)} title="Mover a la izquierda (⌥←)">
+            <button className="icon-btn" onClick={() => nudgeSelected(-1)} title="Mover una celda a la izquierda (⌥←)">
               <Icon name="left" />
             </button>
-            <button className="icon-btn" onClick={() => nudgeSelected(1)} title="Mover a la derecha (⌥→)">
+            <button className="icon-btn" onClick={() => nudgeSelected(1)} title="Mover una celda a la derecha (⌥→)">
               <Icon name="right" />
             </button>
-            <span className="hold-control" title="Cuánto dura el cuadro (+ / −)">
-              <button className="icon-btn" onClick={() => changeHold(-1)} disabled={frame.hold <= 1}>
+            <span className="hold-control" title="Cuántas celdas dura (+ / −)">
+              <button className="icon-btn" onClick={() => changeHold(-1)} disabled={target.length <= 1}>
                 <Icon name="minus" size={16} />
               </button>
-              <span>×{frame.hold}</span>
+              <span>×{target.length}</span>
               <button className="icon-btn" onClick={() => changeHold(1)}>
                 <Icon name="plus" size={16} />
               </button>
             </span>
-            <button className="icon-btn" onClick={duplicateSelected} title="Repetir cuadro (D)">
+            <button className="icon-btn" onClick={duplicateSelected} title="Repetir a continuación (D)">
               <Icon name="copy" />
             </button>
-            <button className="icon-btn danger" onClick={deleteSelected} title="Borrar cuadro (Supr)">
+            <button className="icon-btn danger" onClick={deleteSelected} title="Borrar (Supr)">
               <Icon name="trash" />
             </button>
+            {selection.length > 1 && <span className="hint">{selection.length} imágenes</span>}
           </>
         ) : (
           <span className="hint">
-            {film.frameOrder.length} cuadros · {film.settings.fps} cuadros/s
+            Celda {cursor.cell + 1} · {cellTime(cursor.cell, film.settings.fps)} · {trackName}
           </span>
         )}
       </div>
@@ -219,11 +247,11 @@ function Transport() {
           className={`icon-btn${playing ? " active" : ""}`}
           onClick={() => (playing ? stop() : play())}
           title="Reproducir todo (Enter)"
-          disabled={film.frameOrder.length === 0}
+          disabled={film.length === 0}
         >
           <Icon name={playing ? "stop" : "play"} />
         </button>
-        <button className="icon-btn" onClick={() => play(true)} title="Reproducir los últimos segundos (P)" disabled={film.frameOrder.length === 0}>
+        <button className="icon-btn" onClick={() => play(true)} title="Reproducir los últimos segundos (P)" disabled={film.length === 0}>
           <Icon name="tail" />
         </button>
         <select value={tailSeconds} onChange={(e) => set({ tailSeconds: Number(e.target.value) })} title="Segundos a reproducir">

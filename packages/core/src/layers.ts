@@ -1,16 +1,4 @@
-import {
-  type FilmState,
-  type Frame,
-  type FrameId,
-  type LayerId,
-  type MediaRef,
-  PHOTO_TRACK,
-  type Track,
-  type TrackId,
-  type Transform2D,
-  trackOf,
-} from "./model";
-import { timeline } from "./timing";
+import { type Clip, type ClipId, type FilmState, type MediaRef, type TrackId, type Transform2D, clipEnd } from "./model";
 
 /** One picture to draw, bottom to top, with where it came from. */
 export interface StackItem {
@@ -19,21 +7,11 @@ export interface StackItem {
   opacity: number;
   transform: Transform2D;
   trackId: TrackId;
-  /** Set for a frame's own cell. */
-  layerId?: LayerId;
-}
-
-/** Ticks each frame occupies: [start, end). */
-export type FrameSpans = Map<FrameId, { start: number; end: number }>;
-
-export function frameSpans(film: FilmState): FrameSpans {
-  const spans: FrameSpans = new Map();
-  for (const t of timeline(film).frames) spans.set(t.frame.id, { start: t.start, end: t.start + t.frame.hold });
-  return spans;
+  clipId: ClipId;
 }
 
 /**
- * `outer` applied after `inner`, both about the film's center: what a cell
+ * `outer` applied after `inner`, both about the film's center: what a clip
  * looks like once its track's transform is added.
  */
 export function composeTransforms(outer: Transform2D, inner: Transform2D): Transform2D {
@@ -47,76 +25,75 @@ export function composeTransforms(outer: Transform2D, inner: Transform2D): Trans
   };
 }
 
-/** Ticks an image or sequence track covers: [start, end). A sequence ends with its last picture unless `to` cuts it earlier. */
-export function trackSpan(film: FilmState, track: Track, spans: FrameSpans): { start: number; end: number } {
-  const start = track.from ? (spans.get(track.from)?.start ?? 0) : 0;
-  let end = track.to ? (spans.get(track.to)?.end ?? Number.POSITIVE_INFINITY) : Number.POSITIVE_INFINITY;
-  if (track.source.kind === "sequence") {
-    const length = Math.ceil((track.source.media.length * film.settings.fps) / track.source.fps);
-    end = Math.min(end, start + length);
-  }
-  return { start, end };
+/** For each track, its clips in time order: lookups by cell without scanning every clip. */
+export type CellIndex = Map<TrackId, Clip[]>;
+
+export function cellIndex(film: FilmState): CellIndex {
+  const index: CellIndex = new Map(film.tracks.map((t) => [t.id, []]));
+  for (const c of Object.values(film.clips)) index.get(c.track)?.push(c);
+  for (const list of index.values()) list.sort((a, b) => a.start - b.start);
+  return index;
 }
 
-/** An image or sequence track's picture at `tick`, or null when it is not on then (always null for cells tracks). */
-export function trackMediaAt(film: FilmState, track: Track, tick: number, spans: FrameSpans): MediaRef | null {
-  const source = track.source;
-  if (source.kind === "cells") return null;
-  const { start, end } = trackSpan(film, track, spans);
-  if (tick < start || tick >= end) return null;
-  if (source.kind === "image") return source.media;
-  const i = Math.floor(((tick - start) * source.fps) / film.settings.fps + 1e-9);
-  return source.media[i] ?? null;
-}
-
-/** What one track shows on a frame at `tick` (its cell, or its picture then). */
-export function trackItem(film: FilmState, track: Track, frame: Frame | null, tick: number, spans: FrameSpans): StackItem | null {
-  if (track.source.kind === "cells") {
-    const cell = frame?.layers.find((l) => trackOf(l) === track.id);
-    if (!cell || !cell.visible) return null;
-    return {
-      key: `l:${cell.id}`,
-      media: cell.media,
-      opacity: track.opacity * cell.opacity,
-      transform: composeTransforms(track.transform, cell.transform),
-      trackId: track.id,
-      layerId: cell.id,
-    };
+/** The clip covering `cell` in a track's sorted clips. */
+export function clipIn(clips: Clip[], cell: number): Clip | undefined {
+  let lo = 0;
+  let hi = clips.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const c = clips[mid]!;
+    if (cell < c.start) hi = mid - 1;
+    else if (cell >= clipEnd(c)) lo = mid + 1;
+    else return c;
   }
-  const media = trackMediaAt(film, track, tick, spans);
-  return media ? { key: `t:${track.id}`, media, opacity: track.opacity, transform: track.transform, trackId: track.id } : null;
+  return undefined;
 }
 
 export interface StackOptions {
   /** Leave out reference-only tracks (for export). */
   exportOnly?: boolean;
-  /** Only tracks with their own cells (what onion skin shows of earlier frames). */
-  cellsOnly?: boolean;
-  /** Precomputed frameSpans(film), when drawing many frames. */
-  spans?: FrameSpans;
+  /** Only these tracks (exporting one track on its own). */
+  tracks?: TrackId[];
+  /** Precomputed cellIndex(film), when drawing many cells. */
+  index?: CellIndex;
 }
 
-/**
- * Everything visible on `frame` at `tick`, bottom to top: the film's tracks
- * combined. `frame` is null for the live view, where the camera takes the
- * photo track's place (see splitAtPhotos).
- */
-export function frameStack(film: FilmState, frame: Frame | null, tick: number, options: StackOptions = {}): StackItem[] {
-  const spans = options.spans ?? frameSpans(film);
-  return film.tracks.flatMap((track) => {
-    if (!track.visible || (options.exportOnly && !track.exported)) return [];
-    if (options.cellsOnly && track.source.kind !== "cells") return [];
-    const item = trackItem(film, track, frame, tick, spans);
-    return item ? [item] : [];
-  });
+/** Everything visible at `cell`, bottom to top: the film's tracks combined. */
+export function stackAt(film: FilmState, cell: number, options: StackOptions = {}): StackItem[] {
+  const index = options.index ?? cellIndex(film);
+  const out: StackItem[] = [];
+  for (const track of film.tracks) {
+    if (!track.visible || (options.exportOnly && !track.exported)) continue;
+    if (options.tracks && !options.tracks.includes(track.id)) continue;
+    const clip = clipIn(index.get(track.id) ?? [], cell);
+    if (!clip || !clip.visible) continue;
+    out.push({
+      key: clip.id,
+      media: clip.media,
+      opacity: track.opacity * clip.opacity,
+      transform: composeTransforms(track.transform, clip.transform),
+      trackId: track.id,
+      clipId: clip.id,
+    });
+  }
+  return out;
 }
 
-/** Items under and over the photo track: where the live camera goes between. */
-export function splitAtPhotos(film: FilmState, items: StackItem[]): { below: StackItem[]; above: StackItem[] } {
+/** Items under and over `track`: where the live camera goes, in place of that track's picture. */
+export function splitAtTrack(film: FilmState, items: StackItem[], track: TrackId): { below: StackItem[]; above: StackItem[] } {
   const order = new Map(film.tracks.map((t, i) => [t.id, i]));
-  const photos = order.get(PHOTO_TRACK) ?? -1;
+  const at = order.get(track) ?? film.tracks.length;
   return {
-    below: items.filter((i) => (order.get(i.trackId) ?? 0) < photos),
-    above: items.filter((i) => (order.get(i.trackId) ?? 0) > photos),
+    below: items.filter((i) => (order.get(i.trackId) ?? 0) < at),
+    above: items.filter((i) => (order.get(i.trackId) ?? 0) > at),
   };
+}
+
+/** The pictures of `track` before `cell`, nearest first (for onion skin). */
+export function previousClips(film: FilmState, track: TrackId, cell: number, count: number, index?: CellIndex): Clip[] {
+  const clips = (index ?? cellIndex(film)).get(track) ?? [];
+  return clips
+    .filter((c) => c.start < cell && !(cell < clipEnd(c)))
+    .slice(-count)
+    .reverse();
 }

@@ -1,12 +1,12 @@
-import { formatDistance, formatExposure, photoOf } from "@gepetta/core";
+import { clipAt, formatDistance, formatExposure } from "@gepetta/core";
 import { useEditor } from "../state/editor";
 
-/** What is known about how the selected frame's picture was taken. */
+/** What is known about how the picture at the cursor was taken. */
 export function FrameInfo() {
-  const frame = useEditor((s) => (s.film && s.selected ? s.film.frames[s.selected] : undefined));
+  const clip = useEditor((s) => (s.film ? clipAt(s.film, s.cursor.track, s.cursor.cell) : undefined));
   const view = useEditor((s) => s.view);
-  if (view !== "frame" || !frame) return null;
-  const media = photoOf(frame)?.media;
+  if (view !== "frame" || !clip) return null;
+  const media = clip.media;
   const c = media?.capture;
   const rows: [string, string | undefined][] = c
     ? [

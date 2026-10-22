@@ -28,7 +28,10 @@
 - [ ] App nativa de celular (mismo protocolo) para foco/ISO manual en iPhone
 
 ## Fase 3 — Editor de cuadros
-- [x] Tracks en la línea de tiempo: fotos, capas por cuadro, imagen fija y video para rotoscopia; resultado combinado arriba
+- [x] Línea de tiempo en grilla fija: tracks como filas de celdas, imágenes que se ponen, mueven (también en grupo y entre tracks) y alargan; resultado combinado arriba
+- [x] Exportar el resultado, un track solo o cada track por separado
+- [ ] Publicaciones versionadas al exportar, e historial de versiones (fecha, archivo, volver a exportar una versión)
+- [ ] Barra de herramientas: la cámara como herramienta que pinta una celda; pincel, sello, etc.
 - [x] Transformar capas: mover, rotar, escalar con manijas
 - Alinear capas por puntos de control
   (afín/homografía/TPS de CasitaDesign); deformación trapezoidal

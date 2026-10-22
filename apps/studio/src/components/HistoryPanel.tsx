@@ -1,5 +1,5 @@
 import type { HistoryEntry, Op } from "@gepetta/core";
-import { canRedo, canUndo, frameOfOp } from "@gepetta/core";
+import { canRedo, canUndo, cellOfOp } from "@gepetta/core";
 import { useState } from "react";
 import { useEditor } from "../state/editor";
 import { Icon } from "./Icon";
@@ -7,12 +7,20 @@ import { Icon } from "./Icon";
 /** The single numeric/text parameter an op exposes for editing, if any. */
 function editableParam(op: Op): { label: string; value: string; numeric: boolean; apply(v: string): Op | null } | null {
   switch (op.type) {
-    case "frame.setHold":
+    case "clip.update":
+      if (op.patch.length === undefined || Object.keys(op.patch).length !== 1) return null;
       return {
-        label: "Duración",
-        value: String(op.hold),
+        label: "Duración (celdas)",
+        value: String(op.patch.length),
         numeric: true,
-        apply: (v) => (Number(v) >= 1 ? { ...op, hold: Math.round(Number(v)) } : null),
+        apply: (v) => (Number(v) >= 1 ? { ...op, patch: { length: Math.round(Number(v)) } } : null),
+      };
+    case "film.setLength":
+      return {
+        label: "Largo (celdas)",
+        value: String(op.length),
+        numeric: true,
+        apply: (v) => (Number(v) >= 0 ? { ...op, length: Math.round(Number(v)) } : null),
       };
     case "film.setFps":
       return { label: "Cuadros/s", value: String(op.fps), numeric: true, apply: (v) => (Number(v) > 0 ? { ...op, fps: Number(v) } : null) };
@@ -24,7 +32,7 @@ function editableParam(op: Op): { label: string; value: string; numeric: boolean
 }
 
 function EntryRow({ entry, index, active, error }: { entry: HistoryEntry; index: number; active: boolean; error?: string }) {
-  const { setCursor, setEntryEnabled, removeEntry, updateEntryOp, film, select } = useEditor.getState();
+  const { setCursor, setEntryEnabled, removeEntry, updateEntryOp, moveTo } = useEditor.getState();
   const [open, setOpen] = useState(false);
   const op = entry.ops.length === 1 ? entry.ops[0]! : null;
   const param = op ? editableParam(op) : null;
@@ -44,8 +52,8 @@ function EntryRow({ entry, index, active, error }: { entry: HistoryEntry; index:
           title="Ir a este punto de la historia"
           onClick={() => {
             setCursor(index + 1);
-            const frameId = op ? frameOfOp(op) : null;
-            if (frameId && film?.frames[frameId]) select(frameId);
+            const cell = op ? cellOfOp(op) : null;
+            if (cell !== null) moveTo(cell, undefined, "frame");
           }}
         >
           <span>{entry.label}</span>

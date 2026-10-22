@@ -2,8 +2,8 @@ import type { CaptureInfo } from "./exif";
 
 /** Content hash (SHA-256 hex) of an immutable binary asset stored with the film. */
 export type AssetId = string;
-export type FrameId = string;
-export type LayerId = string;
+export type TrackId = string;
+export type ClipId = string;
 
 /** What is known about how a picture was taken: EXIF plus what the app knew at the moment. */
 export interface CaptureMeta extends CaptureInfo {
@@ -38,81 +38,36 @@ export interface Transform2D {
 
 export const IDENTITY_TRANSFORM: Transform2D = { x: 0, y: 0, rotation: 0, scale: 1 };
 
-/** A frame's picture in one track (a "cell"). */
-export interface ImageLayer {
-  id: LayerId;
-  kind: "image";
-  /** Track the cell belongs to; missing in films made before tracks = the photo track. */
-  track?: TrackId;
-  name: string;
+/**
+ * Time is a fixed grid: cell n shows from n/fps to (n+1)/fps. Each track is a
+ * row of cells; a clip is a picture placed in a track from cell `start`,
+ * staying `length` cells. Clips in one track never overlap.
+ */
+export interface Clip {
+  id: ClipId;
+  track: TrackId;
+  start: number;
+  length: number;
   media: MediaRef;
+  name: string;
   visible: boolean;
   opacity: number;
   transform: Transform2D;
 }
 
-export type Layer = ImageLayer;
-
-export type TrackId = string;
-
-/** The track every photo goes to. Films always have it (it can be hidden or moved, not removed). */
+/** The track every photo goes to by default. Films always have it (it can be hidden or moved, not removed). */
 export const PHOTO_TRACK: TrackId = "photos";
 
-/**
- * What a track shows: a picture per frame ("cells", like the photos), one
- * picture over a stretch of frames, or a sequence (e.g. video frames) that
- * advances with the film's time.
- */
-export type TrackSource =
-  | { kind: "cells" }
-  | { kind: "image"; media: MediaRef }
-  | {
-      kind: "sequence";
-      media: MediaRef[];
-      /** Pictures per second of the sequence (the video's rate when it was imported). */
-      fps: number;
-    };
-
-/**
- * A row of the timeline. The film is all tracks combined, bottom to top, each
- * with its own visibility, opacity and placement. Image and sequence tracks
- * start at the beginning of frame `from` (null = the film's start) and end
- * after frame `to` (null = the film's end, or the sequence's).
- */
+/** A row of the timeline. The film is all tracks combined, bottom to top. */
 export interface Track {
   id: TrackId;
   name: string;
-  source: TrackSource;
   visible: boolean;
   opacity: number;
-  /** Applied to everything in the track, on top of each cell's own transform. */
+  /** Applied to every clip of the track, on top of each clip's own transform. */
   transform: Transform2D;
-  /** false = reference only: seen while animating, left out of exports. */
+  /** false = reference only (e.g. a video to rotoscope): seen while animating, left out of exports. */
   exported: boolean;
-  from: FrameId | null;
-  to: FrameId | null;
-}
-
-export function photoTrack(): Track {
-  return {
-    id: PHOTO_TRACK,
-    name: "Fotos",
-    source: { kind: "cells" },
-    visible: true,
-    opacity: 1,
-    transform: IDENTITY_TRANSFORM,
-    exported: true,
-    from: null,
-    to: null,
-  };
-}
-
-export interface Frame {
-  id: FrameId;
-  /** How many timeline ticks (1/fps) the frame stays on screen. 1 = "on ones". */
-  hold: number;
-  /** Its cells, at most one per track. */
-  layers: Layer[];
 }
 
 export interface FilmSettings {
@@ -124,31 +79,43 @@ export interface FilmSettings {
 
 export interface FilmState {
   settings: FilmSettings;
-  frameOrder: FrameId[];
-  frames: Record<FrameId, Frame>;
   /** Bottom to top. */
   tracks: Track[];
+  clips: Record<ClipId, Clip>;
+  /** Cells in the film; grows to fit clips, and can be extended by hand. */
+  length: number;
 }
 
 export const DEFAULT_FPS = 12;
 
+export function photoTrack(): Track {
+  return { id: PHOTO_TRACK, name: "Fotos", visible: true, opacity: 1, transform: IDENTITY_TRANSFORM, exported: true };
+}
+
 export function emptyFilm(settings: FilmSettings): FilmState {
-  return { settings, frameOrder: [], frames: {}, tracks: [photoTrack()] };
+  return { settings, tracks: [photoTrack()], clips: {}, length: 0 };
 }
 
-export function orderedFrames(film: FilmState): Frame[] {
-  return film.frameOrder.map((id) => film.frames[id]!);
+export function clipEnd(clip: Clip): number {
+  return clip.start + clip.length;
 }
 
-export function trackOf(layer: Layer): TrackId {
-  return layer.track ?? PHOTO_TRACK;
+/** Clips of a track, in time order. */
+export function trackClips(film: FilmState, track: TrackId): Clip[] {
+  return Object.values(film.clips)
+    .filter((c) => c.track === track)
+    .sort((a, b) => a.start - b.start);
 }
 
-/** The frame's photo (what thumbnails and capture info show). */
-export function photoOf(frame: Frame): Layer | undefined {
-  return frame.layers.find((l) => trackOf(l) === PHOTO_TRACK) ?? frame.layers[0];
+/** The clip covering `cell` in `track`, if any. */
+export function clipAt(film: FilmState, track: TrackId, cell: number): Clip | undefined {
+  for (const c of Object.values(film.clips)) if (c.track === track && cell >= c.start && cell < clipEnd(c)) return c;
+  return undefined;
 }
 
-export function frameIndex(film: FilmState, id: FrameId): number {
-  return film.frameOrder.indexOf(id);
+/** End of the last clip (the film may be longer, see FilmState.length). */
+export function contentEnd(film: FilmState): number {
+  let end = 0;
+  for (const c of Object.values(film.clips)) end = Math.max(end, clipEnd(c));
+  return end;
 }

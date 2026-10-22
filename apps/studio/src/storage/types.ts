@@ -4,15 +4,19 @@ export interface FilmMeta {
   id: string;
   name: string;
   updatedAt: number;
+  /** Pictures in the film (clips; "frames" in films from before the grid). */
   frameCount: number;
-  /** Thumbnail asset of the first frame. */
+  /** Thumbnail asset of the first picture. */
   thumb: AssetId | null;
 }
 
 export interface FilmFile {
-  version: 1;
+  /** 1: frames in a row (before the grid timeline). 2: grid of cells and tracks. */
+  version: 1 | 2;
   id: string;
   history: History;
+  /** A version-1 film's original history, kept untouched when it was converted. */
+  legacy?: History;
 }
 
 export interface StorageBackend {

@@ -39,21 +39,8 @@ export function OpacitySlider({ value, onCommit, label = true }: { value: number
   );
 }
 
-function frameLabel(frameOrder: string[], id: string | null, fallback: string) {
-  if (!id) return fallback;
-  const i = frameOrder.indexOf(id);
-  return i < 0 ? fallback : `el cuadro ${i + 1}`;
-}
-
-const KIND_LABEL: Record<Track["source"]["kind"], string> = {
-  cells: "Un dibujo o imagen por cuadro",
-  image: "Imagen fija",
-  sequence: "Video que avanza con la película",
-};
-
 function Details({ track }: { track: Track }) {
   const film = useEditor((s) => s.film)!;
-  const selectedFrame = useEditor((s) => s.selected);
   const [name, setName] = useState(track.name);
   useEffect(() => setName(track.name), [track.name]);
   const update = (patch: Partial<Track>) => updateTrack(track.id, patch);
@@ -61,7 +48,6 @@ function Details({ track }: { track: Track }) {
   const commit = useEditor.getState().commit;
   const t = track.transform;
   const moved = t.x !== 0 || t.y !== 0 || t.rotation !== 0 || t.scale !== 1;
-  const spans = track.source.kind !== "cells";
 
   return (
     <div className="layer-details">
@@ -74,7 +60,6 @@ function Details({ track }: { track: Track }) {
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         />
       </label>
-      <p className="hint">{KIND_LABEL[track.source.kind]}</p>
       <OpacitySlider value={track.opacity} onCommit={(opacity) => update({ opacity })} />
       <label className="control toggle">
         <input type="checkbox" checked={track.visible} onChange={(e) => update({ visible: e.target.checked })} />
@@ -112,26 +97,6 @@ function Details({ track }: { track: Track }) {
         </button>
       </div>
 
-      {spans && (
-        <div className="control">
-          <span>
-            Desde {frameLabel(film.frameOrder, track.from, "el principio")} hasta{" "}
-            {frameLabel(film.frameOrder, track.to, track.source.kind === "sequence" ? "que termina" : "el final")}
-          </span>
-          <div className="action-row">
-            <button className="btn small" disabled={!selectedFrame} onClick={() => update({ from: selectedFrame })}>
-              Empieza acá
-            </button>
-            <button className="btn small" disabled={!selectedFrame} onClick={() => update({ to: selectedFrame })}>
-              Termina acá
-            </button>
-            <button className="btn small ghost" disabled={!track.from && !track.to} onClick={() => update({ from: null, to: null })}>
-              Toda
-            </button>
-          </div>
-        </div>
-      )}
-
       {track.id !== PHOTO_TRACK && (
         <button
           className="btn small danger"
@@ -163,7 +128,10 @@ export function TrackPanel() {
       {track ? (
         <Details key={track.id} track={track} />
       ) : (
-        <p className="hint">Tocá el nombre de un track, abajo en la línea de tiempo, para ajustarlo. Con «+ Track» agregás capas, imágenes fijas o un video para rotoscopia.</p>
+        <p className="hint">
+          Tocá el nombre de un track, abajo en la línea de tiempo, para ajustarlo. Con «+ Track» agregás una capa vacía, una
+          imagen fija o un video para rotoscopia.
+        </p>
       )}
     </div>
   );

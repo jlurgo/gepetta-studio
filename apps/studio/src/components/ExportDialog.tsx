@@ -21,6 +21,8 @@ export function ExportDialog({ onClose }: { onClose(): void }) {
   const [heightId, setHeightId] = useState("film");
   const [quality, setQuality] = useState<VideoQuality>("high");
   const [supported, setSupported] = useState<boolean | null>(null);
+  /** "result": every visible exported track combined; "each": one file per track; else a track id. */
+  const [what, setWhat] = useState<string>("result");
 
   const opts: VideoExportOptions = useMemo(() => {
     const { width, height } = film.settings;
@@ -33,16 +35,43 @@ export function ExportDialog({ onClose }: { onClose(): void }) {
     canExport(opts).then(setSupported, () => setSupported(false));
   }, [opts]);
 
+  async function exportOne(name: string, label: string, tracks?: string[]) {
+    const blob = await runTask(label, film.length, (progress) => exportVideo(filmId, film, { ...opts, tracks }, progress));
+    if (!blob) return false;
+    const saved = await saveBlob(blob, `${name}.${format}`);
+    if (saved) useBusy.getState().notify(`Video guardado: ${saved}`);
+    return Boolean(saved);
+  }
+
   async function run() {
     onClose();
-    const blob = await runTask("Exportando video", film.frameOrder.length, (progress) => exportVideo(filmId, film, opts, progress));
-    if (!blob) return;
-    const saved = await saveBlob(blob, `${film.settings.name}.${format}`);
-    if (saved) useBusy.getState().notify(`Video guardado: ${saved}`);
+    const title = film.settings.name;
+    if (what === "result") await exportOne(title, "Exportando video");
+    else if (what === "each") {
+      // One file per track, top to bottom; stops if a save is cancelled.
+      for (const t of [...film.tracks].reverse()) {
+        if (!(await exportOne(`${title} - ${t.name}`, `Exportando "${t.name}"`, [t.id]))) break;
+      }
+    } else {
+      const t = film.tracks.find((x) => x.id === what);
+      if (t) await exportOne(`${title} - ${t.name}`, `Exportando "${t.name}"`, [t.id]);
+    }
   }
 
   return (
     <Dialog title="Exportar video" onClose={onClose}>
+      <label className="control">
+        <span>Qué exportar</span>
+        <select value={what} onChange={(e) => setWhat(e.target.value)}>
+          <option value="result">El resultado (todos los tracks que salen en la exportación)</option>
+          <option value="each">Cada track por separado (un archivo por track)</option>
+          {[...film.tracks].reverse().map((t) => (
+            <option key={t.id} value={t.id}>
+              Solo el track "{t.name}"
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="control">
         <span>Formato</span>
         <select value={format} onChange={(e) => setFormat(e.target.value as VideoFormat)}>
@@ -70,14 +99,14 @@ export function ExportDialog({ onClose }: { onClose(): void }) {
       </label>
       <p className="hint">
         {opts.width}×{opts.height} · {film.settings.fps} cuadros/s · {durationSeconds(film).toFixed(1)} s ·{" "}
-        {film.frameOrder.length} cuadros
+        {film.length} celdas
       </p>
       {supported === false && <p className="panel-error">Este equipo no puede codificar ese formato a ese tamaño. Probá otro.</p>}
       <div className="row end">
         <button className="btn ghost" onClick={onClose}>
           Cancelar
         </button>
-        <button className="btn primary" disabled={!supported || film.frameOrder.length === 0} onClick={run}>
+        <button className="btn primary" disabled={!supported || film.length === 0} onClick={run}>
           Exportar
         </button>
       </div>

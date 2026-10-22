@@ -1,4 +1,4 @@
-import { photoOf } from "@gepetta/core";
+import { previousClips } from "@gepetta/core";
 import { storage } from "../storage";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
@@ -7,21 +7,20 @@ import { sendToPhone } from "./remote";
 const ONION_MAX = 960;
 
 /**
- * Keeps the phone's onion skin in sync: whenever the frame before the insertion
- * point changes, the phone in use gets a downscaled copy of it.
+ * Keeps the phone's onion skin in sync: whenever the picture before the cursor
+ * (in the cursor's track) changes, the phone in use gets a downscaled copy of it.
  */
 let lastKey = "";
 
 async function sync() {
   const { source } = useCamera.getState();
-  const { film, filmId, selected } = useEditor.getState();
+  const { film, filmId, cursor } = useEditor.getState();
   if (source?.kind !== "phone") {
     lastKey = "";
     return;
   }
   const sessionId = source.id.slice("phone:".length);
-  const frame = film && selected ? film.frames[selected] : undefined;
-  const asset = (frame ? photoOf(frame) : undefined)?.media.proxy;
+  const asset = film ? previousClips(film, cursor.track, cursor.cell, 1)[0]?.media.proxy : undefined;
   const key = `${sessionId}|${filmId}|${asset ?? ""}`;
   if (key === lastKey) return;
   lastKey = key;
@@ -41,7 +40,7 @@ async function sync() {
 }
 
 useEditor.subscribe((s, prev) => {
-  if (s.selected !== prev.selected || s.film !== prev.film) void sync();
+  if (s.cursor !== prev.cursor || s.film !== prev.film) void sync();
 });
 useCamera.subscribe((s, prev) => {
   if (s.source !== prev.source) void sync();

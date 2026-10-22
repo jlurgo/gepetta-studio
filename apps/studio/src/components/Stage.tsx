@@ -1,20 +1,16 @@
 import {
+  type CellIndex,
   type FilmState,
-  type Frame,
   type MediaRef,
   type Point,
   type Transform2D,
-  type FrameSpans,
-  type TimedFrame,
+  cellIndex,
+  clipAt,
   composeTransforms,
-  splitAtPhotos,
-  trackMediaAt,
-  trackOf,
-  frameIndexAtTick,
-  frameSpans,
-  frameStack,
   moveVanishingPoint,
-  timeline,
+  previousClips,
+  splitAtTrack,
+  stackAt,
   vanishingPoints,
 } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
@@ -53,16 +49,9 @@ function drawProxies(ctx: CanvasRenderingContext2D, filmId: string, film: FilmSt
   return complete;
 }
 
-/** Loads the proxies the next ticks will show. */
-function prefetch(filmId: string, film: FilmState, frames: TimedFrame[], index: number, tick: number, spans: FrameSpans) {
-  for (const f of frames.slice(index + 1, index + 1 + PREFETCH)) for (const l of f.frame.layers) void proxyCache.load(filmId, l.media.proxy);
-  for (const c of film.tracks) {
-    if (!c.visible || c.source.kind !== "sequence") continue;
-    for (let t = tick + 1; t <= tick + PREFETCH; t++) {
-      const m = trackMediaAt(film, c, t, spans);
-      if (m) void proxyCache.load(filmId, m.proxy);
-    }
-  }
+/** Loads the proxies the next cells will show. */
+function prefetch(filmId: string, film: FilmState, cell: number, index: CellIndex) {
+  for (let c = cell + 1; c <= cell + PREFETCH; c++) for (const item of stackAt(film, c, { index })) void proxyCache.load(filmId, item.media.proxy);
 }
 
 /** The film with the transform being dragged applied, so pictures follow the pointer before the change is committed. */
@@ -72,14 +61,6 @@ function withPreview(film: FilmState): FilmState {
   return { ...film, tracks: film.tracks.map((t) => (t.id === preview.trackId ? { ...t, transform: preview.transform } : t)) };
 }
 
-/** Previous frames (nearest first) for onion skinning, ending at `anchorIndex`. */
-function onionFrames(film: FilmState, anchorIndex: number, count: number): Frame[] {
-  const out: Frame[] = [];
-  for (let i = anchorIndex; i >= 0 && out.length < count; i--) out.push(film.frames[film.frameOrder[i]!]!);
-  return out;
-}
-
-/** Measuring spots over the live view: box, name, % of peak, bar and recent history. */
 function drawProbes(ctx: CanvasRenderingContext2D, live: LiveFrame, film: Size, scale: number) {
   const { probes } = useFocusProbes.getState();
   if (probes.length === 0) return;
@@ -271,24 +252,16 @@ function useGuideDrag(filmRect: React.RefObject<FilmRect | null>) {
  * `trackTransform` is what dragging changes.
  */
 function targetOnStage(): { media: MediaRef; transform: Transform2D; trackTransform: Transform2D } | null {
-  const { film, selected, view, playback } = useEditor.getState();
+  const { film, cursor, view, playback } = useEditor.getState();
   const { preview } = useLayers.getState();
   const track = selectedTrack();
   if (!film || playback || !track || !track.visible) return null;
+  // In the live view the cursor's track is the camera, which does not move.
+  if (view === "live" && track.id === cursor.track) return null;
+  const clip = clipAt(film, track.id, cursor.cell);
+  if (!clip) return null;
   const trackTransform = preview?.trackId === track.id ? preview.transform : track.transform;
-  if (track.source.kind === "cells") {
-    // In the live view the photo track's place is the camera, which does not move.
-    const frame = view === "frame" && selected ? film.frames[selected] : undefined;
-    const cell = frame?.layers.find((l) => trackOf(l) === track.id);
-    if (!cell) return null;
-    return { media: cell.media, transform: composeTransforms(trackTransform, cell.transform), trackTransform };
-  }
-  const spans = frameSpans(film);
-  const span = selected ? spans.get(selected) : undefined;
-  const tick = view === "live" ? (span?.end ?? 0) : (span?.start ?? 0);
-  const media =
-    trackMediaAt(film, track, tick, spans) ?? (track.source.kind === "image" ? track.source.media : (track.source.media[0] ?? null));
-  return media ? { media, transform: trackTransform, trackTransform } : null;
+  return { media: clip.media, transform: composeTransforms(trackTransform, clip.transform), trackTransform };
 }
 
 /** Moving, scaling and rotating the selected layer with its handles. */
@@ -357,8 +330,8 @@ export function Stage() {
     const ctx = canvas.getContext("2d")!;
     let raf = 0;
     let placingArea: { x: number; y: number; width: number; height: number } | null = null;
-    let spansOf: FilmState | null = null;
-    let spans: FrameSpans = new Map();
+    let indexOf: FilmState | null = null;
+    let index: CellIndex = new Map();
 
     const loop = () => {
       raf = requestAnimationFrame(loop);
@@ -407,42 +380,34 @@ export function Stage() {
       ctx.rect(0, 0, size.width, size.height);
       ctx.clip();
 
-      if (spansOf !== film) {
-        spans = frameSpans(film);
-        spansOf = film;
+      if (indexOf !== film) {
+        index = cellIndex(film);
+        indexOf = film;
       }
-      const { playback, onion, selected, view } = state;
+      const { playback, onion, cursor, view } = state;
       if (playback) {
-        const { frames, totalTicks } = timeline(film);
-        const tick = playback.startTick + Math.floor(((performance.now() - playback.startedAt) * size.fps) / 1000);
-        if (tick >= totalTicks) {
+        const cell = playback.startCell + Math.floor(((performance.now() - playback.startedAt) * size.fps) / 1000);
+        if (cell >= film.length) {
           if (playback.loop) useEditor.setState({ playback: { ...playback, startedAt: performance.now() } });
           else state.stop();
           ctx.restore();
           return;
         }
-        const index = frameIndexAtTick(frames, tick);
-        const current = frames[index];
-        if (current) {
-          drawProxies(ctx, filmId, film, frameStack(film, current.frame, tick, { spans }));
-          prefetch(filmId, film, frames, index, tick, spans);
-        }
+        drawProxies(ctx, filmId, film, stackAt(film, cell, { index }));
+        prefetch(filmId, film, cell, index);
         ctx.restore();
         return;
       }
 
-      const selIndex = selected ? film.frameOrder.indexOf(selected) : -1;
-      let onionAnchor: number;
       let probesToDraw: LiveFrame | null = null;
       let showGuides = guides.visible;
+      let showOnion = onion.enabled;
       liveRect.current = null;
+      const shown = withPreview(film);
       if (view === "live") {
         const live = useCamera.getState().live();
-        // Tracks as they will be on the next picture, which goes after the selected frame;
-        // the camera takes the photo track's place among them.
-        const nextTick = selected ? (spans.get(selected)?.end ?? 0) : 0;
-        const shown = withPreview(film);
-        const tracks = splitAtPhotos(shown, frameStack(shown, null, nextTick, { spans }));
+        // The film at the cursor, with the camera in place of the cursor track's picture.
+        const tracks = splitAtTrack(shown, stackAt(shown, cursor.cell), cursor.track);
         drawProxies(ctx, filmId, film, tracks.below);
         if (live) {
           drawContained(ctx, live.image, live, size);
@@ -453,28 +418,30 @@ export function Stage() {
           liveRect.current = { x: lx / dpr, y: ly / dpr, w: (live.width * c * s) / dpr, h: (live.height * c * s) / dpr };
         }
         drawProxies(ctx, filmId, film, tracks.above);
-        // A magnified view does not line up with earlier frames, nor with the measuring spots.
+        // A magnified view does not line up with earlier pictures, nor with the measuring spots.
         const magnify = magnifyControl(useCamera.getState().controls);
         const magnified = magnify !== undefined && magnify.value !== "1";
-        onionAnchor = magnified ? -1 : selIndex;
-        if (magnified) showGuides = false;
+        if (magnified) {
+          showGuides = false;
+          showOnion = false;
+        }
         if (live && !magnified) {
           measureProbes(live);
           probesToDraw = live;
         }
       } else {
-        const frame = selected ? film.frames[selected] : undefined;
-        const shown = withPreview(film);
-        if (frame) drawProxies(ctx, filmId, film, frameStack(shown, frame, spans.get(frame.id)?.start ?? 0, { spans }));
-        onionAnchor = selIndex - 1;
+        drawProxies(ctx, filmId, film, stackAt(shown, cursor.cell, { index }));
       }
 
-      if (onion.enabled && onionAnchor >= 0) {
-        const skins = onionFrames(film, onionAnchor, onion.count);
-        // Farthest first so the nearest frame ends on top.
-        skins.reverse().forEach((frame, i) => {
+      // Onion skin: the previous pictures of the track being worked on.
+      const track = shown.tracks.find((t) => t.id === cursor.track);
+      if (showOnion && track) {
+        const skins = previousClips(film, cursor.track, cursor.cell, onion.count, index);
+        // Farthest first so the nearest one ends on top.
+        skins.reverse().forEach((clip, i) => {
           const distance = skins.length - i - 1;
-          drawProxies(ctx, filmId, film, frameStack(film, frame, 0, { spans, cellsOnly: true }), onion.opacity * (1 - distance / (onion.count + 1)));
+          const item = { media: clip.media, opacity: 1, transform: composeTransforms(track.transform, clip.transform) };
+          drawProxies(ctx, filmId, film, [item], onion.opacity * (1 - distance / (onion.count + 1)));
         });
       }
       ctx.restore();

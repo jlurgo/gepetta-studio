@@ -35,32 +35,41 @@ docs/             Este documento, roadmap y decisiones.
 
 ## Modelo de datos (packages/core)
 
-- **Película** (`FilmState`): nombre, fps (12 por defecto, configurable por
-  película), resolución, lista ordenada de cuadros.
-- **Cuadro** (`Frame`): id estable, `hold` (cuántos tiempos dura: 1 = "en unos",
-  2 = "en dos"…) y capas.
-- **Capa** (`Layer`): por ahora capa de imagen (referencia a `MediaRef`), con
-  visibilidad, opacidad y transformación (traslación, rotación, escala; más adelante
-  matrices afines/homografía/TPS portadas de `CasitaDesign/src/lib/calibration.ts`).
-- **Tracks** (`Track`): la película es la combinación de sus tracks, de abajo hacia
-  arriba, cada uno con visibilidad, opacidad, transformación y "sale en la
-  exportación". Un track tiene una celda por cuadro (`cells`: el de **Fotos**, capas
-  de dibujo o recortes), una imagen fija, o una secuencia (cuadros de video con su
-  fps) que avanza con el tiempo de la película, retenciones incluidas; estos dos
-  abarcan un tramo `from`/`to` por id de cuadro. Las celdas son las `layers` de cada
-  cuadro, con su `track`. `frameStack(film, frame, tick)` arma lo que se dibuja; en
-  vivo la cámara ocupa el lugar del track de fotos. La línea de tiempo muestra el
-  resultado arriba y un renglón por track debajo.
+- **El tiempo es una grilla fija**: la celda n se ve de n/fps a (n+1)/fps. No se
+  "insertan momentos"; la grilla se alarga (`film.setLength`) o crece sola al poner
+  imágenes más allá del final.
+- **Película** (`FilmState`): nombre, fps (12 por defecto, por película),
+  resolución, `length` (celdas), `tracks` y `clips`.
+- **Track** (`Track`): una fila de celdas. La película es la combinación de los
+  tracks de abajo hacia arriba, cada uno con visibilidad, opacidad, transformación y
+  "sale en la exportación" (los de referencia, como un video para rotoscopia, se ven
+  al animar pero no se exportan). Siempre existe el de **Fotos**.
+- **Clip** (`Clip`): una imagen puesta en un track desde la celda `start`, que dura
+  `length` celdas, con visibilidad, opacidad y transformación propias (más adelante
+  afines/homografía/TPS de `CasitaDesign/src/lib/calibration.ts`). En un track los
+  clips no se superponen: **poner o mover una imagen pisa lo que haya** (recorta,
+  parte o quita), y la parte cortada recibe un id derivado del corte para que el
+  replay dé siempre lo mismo.
+- **Herramientas**: la cámara (y después pincel, sello, etc.) "pinta" en la celda
+  del cursor (`track` + `cell`); la foto dura `captureStep` celdas ("en unos",
+  "en dos"…) y el cursor avanza.
+- `stackAt(film, cell)` arma lo que se ve en una celda; en vivo, la cámara ocupa el
+  lugar del track del cursor (`splitAtTrack`). El papel de cebolla muestra las
+  imágenes anteriores de ese track. La línea de tiempo muestra la regla, el
+  resultado combinado y una fila por track; se seleccionan varias imágenes (clic con
+  ⇧/⌘ o rectángulo) y se arrastran entre celdas y tracks.
+- **Películas de antes de la grilla** (cuadros en fila con `hold`): al abrirlas se
+  reproduce su historial viejo (`legacy/`), se convierte a clips y queda como `base`
+  del historial nuevo; el historial viejo se guarda intacto en el archivo (`legacy`).
 - **MediaRef**: `{ original, proxy, thumb, width, height }`. Cada importación
   genera un proxy (≤1920 px) para edición/reproducción fluida y una miniatura.
   La exportación usa el original.
 
 ### Operaciones e historial
 
-Cada cambio es una `Op` serializable (`frame.insert`, `frame.delete`,
-`frame.duplicate`, `frame.setHold`, `frame.move`, `film.setFps`, …). Las
-operaciones referencian cuadros **por id, nunca por índice** (`afterFrameId`), así
-siguen siendo válidas si se quita un paso anterior.
+Cada cambio es una `Op` serializable (`clip.place`, `clip.move`, `clip.update`,
+`clip.remove`, `track.*`, `film.*`). Las operaciones referencian imágenes y tracks
+**por id**, así siguen siendo válidas si se quita un paso anterior.
 
 `History = { entries: HistoryEntry[], cursor }`. El estado es
 `replay(entries[0..cursor] habilitadas)`.
@@ -70,7 +79,7 @@ siguen siendo válidas si se quita un paso anterior.
   el futuro: queda después, como en Fusion).
 - **Deshacer selectivo** = desactivar o borrar una entrada.
 - **Paramétrico** = editar los parámetros de una entrada y recalcular.
-- Una operación que ya no aplica (p. ej. su cuadro ancla fue borrado) queda
+- Una operación que ya no aplica (p. ej. su imagen fue borrada) queda
   marcada con error en el historial y se saltea — igual que los pasos en rojo de
   Fusion.
 
@@ -158,8 +167,8 @@ puede tomar la cámara por USB: el botón "Liberar cámara" lo resuelve.
 
 ## Reproducción y exportación
 
-- Reproductor con timing por `hold`; reproducir todo, los últimos N segundos o en
-  loop.
+- Reproductor por celdas; reproducir todo, los últimos N segundos o en loop.
+- Exportar el resultado, un track solo, o cada track por separado.
 - Exportación de video con WebCodecs (librería `mediabunny`): MP4 (H.264), WebM
   (VP9). Luego ffmpeg (Electron) para ProRes, GIF, secuencias PNG, etc.
 - Dispositivos: zootropo (port de `~/Repos/zootropo`), fenakitoscopio (port de
