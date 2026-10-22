@@ -127,10 +127,16 @@ puede tomar la cámara por USB: el botón "Liberar cámara" lo resuelve.
 
 ### Foco, lupa y datos de cada toma (réflex)
 
-- **Foco:** el motor del lente se mueve en pasos finos (`manualfocusdrive=Near 2/Far 2`),
-  medidos como exactamente repetibles en la 500D. El driver cuenta la posición desde
-  "∞ Cero" (llevar el lente al tope de infinito). Después de un autofoco la cuenta pasa
-  a ser relativa a ese punto. Las marcas de foco se guardan por cámara.
+- **Foco:** el motor del lente se mueve en pasos finos (`manualfocusdrive=Near 2/Far 2`).
+  El driver cuenta la posición desde "∞ Cero" (llevar el lente al tope de infinito),
+  pero **la cuenta es aproximada**. Medido en la 500D con EF-S 18-55:
+  - la cámara descarta comandos que llegan con el motor en marcha (90 pasos sin pausa ≈ 6);
+  - el avance de cada paso depende del ritmo (80 pasos a 80, 120 o 200 ms terminan en
+    lugares distintos) y un paso "lejos" ≈ 1,5 pasos "cerca";
+  - la misma secuencia exacta sí se repite.
+  Por eso los pasos van con ritmo fijo (60 ms) y el cero con 250 ms entre comandos.
+  El autofoco por contraste propio (`autofocus.ts`) existe pero no se usa hasta tener
+  un posicionamiento confiable; "Enfocar" usa el autofoco de la cámara.
 - **Distancias:** la cámara no informa la distancia en vivo, pero cada JPEG trae la
   distancia de foco (Canon FileInfo, cerca–lejos en cm). Las fotos de la película
   tomadas con posición conocida se convierten en referencias del deslizador; entre

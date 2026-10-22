@@ -18,8 +18,9 @@ export type CameraControl =
   /**
    * A lens focus motor driven in repeatable fine steps (DSLRs). Commands go
    * through setControl as strings: "move:<±steps>" (+ = nearer), "zero" (drive
-   * to the infinity end, position 0), "af" (autofocus), "af:<x>,<y>" (autofocus
-   * at a point of the live image, 0..1).
+   * to the infinity end, position 0), "af" / "af:<x>,<y>" (the app's contrast
+   * autofocus, centered or at a point of the live image 0..1; keeps the step
+   * count), "camera-af" / "camera-af:<x>,<y>" (the camera's own, faster autofocus).
    */
   | {
       kind: "focus";

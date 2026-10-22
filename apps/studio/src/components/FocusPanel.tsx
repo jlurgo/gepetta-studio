@@ -90,7 +90,7 @@ function LensFocus({ control }: { control: Focus }) {
         {!known
           ? "Posición desconocida. Tocá «∞ Cero» para medirla."
           : fromInfinity
-            ? `Posición ${draft} desde ∞${estimate !== null ? ` · ≈ ${formatDistance(estimate)}` : ""}`
+            ? `Posición ≈${draft} desde ∞${estimate !== null ? ` · ≈ ${formatDistance(estimate)}` : ""}`
             : `${draft > 0 ? "+" : ""}${draft} desde el último autofoco`}
       </p>
 
@@ -155,6 +155,12 @@ function LensFocus({ control }: { control: Focus }) {
       </div>
 
       {fromInfinity && (
+        <p className="hint">
+          La posición es aproximada: esta cámara no mueve el lente siempre igual. Para que una marca se repita,
+          volvé a ella de la misma forma (desde «∞ Cero»).
+        </p>
+      )}
+      {fromInfinity && (
         <div className="marks">
           {marks.map((m) => (
             <span key={m.id} className="mark-chip">
@@ -173,7 +179,7 @@ function LensFocus({ control }: { control: Focus }) {
         </div>
       )}
       {!fromInfinity && known && (
-        <p className="hint">Para guardar marcas y animar el foco, trabajá desde «∞ Cero» (el autofoco pierde la cuenta).</p>
+        <p className="hint">Para guardar marcas, empezá desde «∞ Cero» (el autofoco pierde la cuenta).</p>
       )}
     </div>
   );

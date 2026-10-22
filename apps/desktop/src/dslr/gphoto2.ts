@@ -14,6 +14,7 @@ import {
   rawMimeOf,
   toCameraControls,
 } from "./gphoto2-parse";
+import { contrastFocus, jpegSharpness } from "./autofocus";
 import { extractEmbeddedJpeg } from "./jpeg";
 import {
   type DslrCamera,
@@ -50,6 +51,21 @@ const ZERO_STEPS = 8;
 /** Travel assumed until the closest-focus end has been reached at least once (EF-S 18-55 measured > 300). */
 const DEFAULT_RANGE = 400;
 const ZOOM_SETTLE_MS = 700;
+/** Live-view frames still showing the previous lens position after a move (measured on a 500D). */
+const AF_STALE_FRAMES = 3;
+/** Time the lens takes to run to the infinity end after the commands return. */
+const ZERO_TRAVEL_MS = 1000;
+/** Pause between "Far 3" commands: closer ones are dropped and the lens stops short of infinity. */
+const ZERO_GAP_MS = 250;
+/**
+ * Pause between fine steps. The 500D drops drive commands that arrive while
+ * the motor still runs, and how far a step goes depends on this cadence, so it
+ * is kept fixed. Positions are therefore approximate: repeatable only for the
+ * same sequence of moves.
+ */
+const STEP_GAP_MS = 60;
+/** Part of the magnified view the app autofocus judges. */
+const AF_ROI = { x: 0.25, y: 0.25, w: 0.5, h: 0.5 };
 
 /**
  * Live-view magnification frame, in the camera's coordinate system, as a
@@ -345,23 +361,109 @@ export function createGphoto2Driver(): DslrDriver {
     }
   }
 
-  /** Drives the lens `steps` fine steps (+ nearer, − farther), tracking its position. */
+  /**
+   * Drives the lens `steps` fine steps (+ nearer, − farther), tracking its position.
+   * A far step is not the same size as a near one (~1.5× on the 500D) and
+   * reversing adds backlash, so when counting from infinity a farther target is
+   * reached by going back to infinity and counting near steps up again.
+   */
   async function driveFocus(s: CameraSession, steps: number) {
+    if (steps < 0 && s.focusOrigin === "infinity" && s.focusPosition !== null) {
+      const target = Math.max(0, s.focusPosition + steps);
+      await zero(s);
+      steps = target;
+    }
     const dir = steps > 0 ? "Near 2" : "Far 2";
     for (let left = Math.abs(steps); left > 0; ) {
       const n = Math.min(FOCUS_CHUNK, left);
       await enqueue(s, async (shell) => {
-        for (let i = 0; i < n; i++) await exec(shell, `set-config manualfocusdrive=${dir}`, true);
+        for (let i = 0; i < n; i++) {
+          await exec(shell, `set-config manualfocusdrive=${dir}`, true);
+          await wait(STEP_GAP_MS);
+        }
       });
       left -= n;
-      if (s.focusPosition === null) continue;
-      s.focusPosition += steps > 0 ? n : -n;
-      if (s.focusOrigin === "infinity") {
-        // The lens cannot go past the infinity end; going near past the known range means the range is longer.
-        s.focusPosition = Math.max(0, s.focusPosition);
-        s.focusRange = Math.max(s.focusRange, s.focusPosition);
-      }
+      track(s, steps > 0 ? n : -n);
     }
+  }
+
+  /** Updates the tracked lens position after moving `delta` steps. */
+  function track(s: CameraSession, delta: number) {
+    if (s.focusPosition === null) return;
+    s.focusPosition += delta;
+    if (s.focusOrigin === "infinity") {
+      // The lens cannot go past the infinity end; going near past the known range means the range is longer.
+      s.focusPosition = Math.max(0, s.focusPosition);
+      s.focusRange = Math.max(s.focusRange, s.focusPosition);
+    }
+  }
+
+  async function zero(s: CameraSession) {
+    await enqueue(s, async (shell) => {
+      // Commands sent while the motor is still running are dropped: pace them, then let the lens arrive.
+      for (let i = 0; i < ZERO_STEPS; i++) {
+        await exec(shell, "set-config manualfocusdrive=Far 3", true);
+        await wait(ZERO_GAP_MS);
+      }
+      await wait(ZERO_TRAVEL_MS);
+    });
+    s.focusPosition = 0;
+    s.focusOrigin = "infinity";
+  }
+
+  /**
+   * The app's own contrast autofocus, magnified on the target for full sensor
+   * detail. Keeps the step count, unlike the camera's autofocus.
+   */
+  async function appAutofocus(s: CameraSession, point: [number, number] | null) {
+    // The search counts from infinity; after the camera's own AF the count is relative, so restart it.
+    if (s.focusPosition === null || s.focusOrigin !== "infinity") await zero(s);
+    await enqueue(s, async (shell) => {
+      const wasLevel = s.zoom;
+      const center = point ?? (s.zoom === "1" ? ([0.5, 0.5] as [number, number]) : s.zoomCenter);
+      if (s.zoom === "1") {
+        await exec(shell, "set-config eoszoom=5");
+        await wait(ZOOM_SETTLE_MS);
+      }
+      await exec(shell, `set-config eoszoomposition=${zoomPosition(center, Number(s.zoom === "1" ? "5" : s.zoom))}`);
+      await wait(300);
+      try {
+        await contrastFocus({
+          max: s.focusRange,
+          lag: AF_STALE_FRAMES,
+          position: () => s.focusPosition!,
+          async near(steps) {
+            for (let i = 0; i < steps; i++) await exec(shell, "set-config manualfocusdrive=Near 2", true);
+            track(s, steps);
+          },
+          async zero() {
+            for (let i = 0; i < ZERO_STEPS; i++) {
+              await exec(shell, "set-config manualfocusdrive=Far 3", true);
+              await wait(ZERO_GAP_MS);
+            }
+            s.focusPosition = 0;
+            // The commands return before the lens finishes this long trip: wait it out and flush stale frames.
+            await wait(ZERO_TRAVEL_MS);
+            for (let i = 0; i < AF_STALE_FRAMES; i++) {
+              await shell.exec("capture-preview");
+              s.onFrame?.(await readFile(path.join(shell.dir, PREVIEW_FILE)));
+            }
+          },
+          async frame() {
+            await shell.exec("capture-preview");
+            const frame = await readFile(path.join(shell.dir, PREVIEW_FILE));
+            s.onFrame?.(frame); // live view keeps moving while focusing
+            return jpegSharpness(frame, AF_ROI);
+          },
+        });
+      } finally {
+        if (wasLevel === "1") {
+          await exec(shell, "set-config eoszoom=1");
+          await wait(400);
+        }
+        s.zoomCenter = center;
+      }
+    });
   }
 
   /** Top-left of the magnified frame, in camera coordinates, for a normalized center. */
@@ -409,16 +511,14 @@ export function createGphoto2Driver(): DslrDriver {
   async function focusCommand(s: CameraSession, value: string) {
     const move = /^move:([+-]?\d{1,4})$/.exec(value);
     if (move) return driveFocus(s, Number(move[1]));
-    if (value === "zero") {
-      await enqueue(s, async (shell) => {
-        for (let i = 0; i < ZERO_STEPS; i++) await exec(shell, "set-config manualfocusdrive=Far 3", true);
-      });
-      s.focusPosition = 0;
-      s.focusOrigin = "infinity";
-      return;
-    }
+    if (value === "zero") return zero(s);
+    // The camera's own autofocus (fast; the step count restarts from where it leaves the lens).
     if (value === "af") return autofocus(s, null);
     if (value.startsWith("af:")) return autofocus(s, parsePoint(value.slice(3)));
+    // Experimental: the app's contrast autofocus. It relies on counted steps, which the
+    // 500D does not execute consistently (see docs/ARQUITECTURA.md), so the UI does not use it yet.
+    if (value === "app-af") return appAutofocus(s, null);
+    if (value.startsWith("app-af:")) return appAutofocus(s, parsePoint(value.slice(7)));
     throw new DslrError("Ajuste inválido.", "failed");
   }
 

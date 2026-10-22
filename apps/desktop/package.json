@@ -26,6 +26,7 @@
     "electron": "38.8.6",
     "electron-builder": "26.0.12",
     "esbuild": "0.25.12",
+    "jpeg-js": "0.4.4",
     "node-forge": "1.4.0",
     "qrcode": "1.5.4",
     "typescript": "5.9.3",
