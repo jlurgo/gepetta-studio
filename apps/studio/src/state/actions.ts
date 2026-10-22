@@ -1,4 +1,4 @@
-import { type FrameId, type MediaRef, type Op, newId } from "@gepetta/core";
+import { type CaptureMeta, type FrameId, type MediaRef, type Op, newId } from "@gepetta/core";
 import { onRemoteMessage } from "../capture/remote";
 import { ingestImage, isImageFile, sortFiles } from "../media/ingest";
 import { grabStill } from "../media/video";
@@ -22,11 +22,11 @@ let capturing = false;
 /** Stills are inserted one after another, in arrival order. */
 let insertQueue: Promise<unknown> = Promise.resolve();
 
-function insertStill(image: Blob, raw: Blob | null, label: string): Promise<void> {
+function insertStill(image: Blob, raw: Blob | null, label: string, meta?: CaptureMeta): Promise<void> {
   const run = async () => {
     const { filmId } = useEditor.getState();
     if (!filmId) return;
-    const media = await ingestImage(filmId, image, raw);
+    const media = await ingestImage(filmId, image, raw, meta);
     const state = useEditor.getState();
     if (state.filmId !== filmId) return;
     const { ops, last } = insertOps(state.selected, [media], label);
@@ -40,12 +40,19 @@ function insertStill(image: Blob, raw: Blob | null, label: string): Promise<void
 
 export async function capture() {
   const { filmId, captureAverage } = useEditor.getState();
-  const source = useCamera.getState().source;
+  const { source, controls } = useCamera.getState();
   if (!filmId || !source || capturing) return;
   capturing = true;
   try {
+    // Snapshot what the app knows before the shot (the lens may move right after).
+    const meta: CaptureMeta = { source: useCamera.getState().sourceLabel() ?? undefined, sourceKind: source.kind };
+    const focus = controls.find((c) => c.kind === "focus");
+    if (focus?.kind === "focus" && focus.position !== null && focus.origin) {
+      meta.focusPosition = focus.position;
+      meta.focusOrigin = focus.origin;
+    }
     const still = await source.capture(captureAverage);
-    await insertStill(still.image, still.raw?.blob ?? null, "Foto");
+    await insertStill(still.image, still.raw?.blob ?? null, "Foto", meta);
   } catch (e) {
     useBusy.getState().notify(e instanceof Error ? e.message : "No se pudo sacar la foto", "error");
   } finally {
@@ -57,7 +64,9 @@ export async function capture() {
 onRemoteMessage((_sessionId, header, payload) => {
   if (header.t !== "photo" || header.requestId !== null || !payload) return;
   if (!useEditor.getState().filmId) return;
-  insertStill(new Blob([payload.slice()], { type: header.mime || "image/jpeg" }), null, "Foto del celular").catch((e) =>
+  insertStill(new Blob([payload.slice()], { type: header.mime || "image/jpeg" }), null, "Foto del celular", {
+    sourceKind: "phone",
+  }).catch((e) =>
     useBusy.getState().notify(e instanceof Error ? e.message : "No se pudo agregar la foto", "error"),
   );
 });
@@ -69,7 +78,7 @@ export async function importImages(files: File[]) {
   const media = await runTask("Importando imágenes", images.length, async (progress) => {
     const out: MediaRef[] = [];
     for (const file of images) {
-      out.push(await ingestImage(filmId, file));
+      out.push(await ingestImage(filmId, file, null, { sourceKind: "import" }));
       progress(out.length);
     }
     return out;

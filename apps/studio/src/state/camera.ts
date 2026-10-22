@@ -19,6 +19,13 @@ interface CameraState {
   controls: CameraControl[];
   opening: boolean;
   error: { message: string; code?: DslrErrorCode } | null;
+  /** What a click on the live view does. */
+  pointerTool: "none" | "focus";
+  /** A 1× snapshot of the live view, taken when the magnifier turns on, to steer it. */
+  overview: string | null;
+  setPointerTool(tool: "none" | "focus"): void;
+  /** The current camera's name as listed. */
+  sourceLabel(): string | null;
   start(): Promise<void>;
   stop(): void;
   select(id: string): Promise<void>;
@@ -55,6 +62,18 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(e);
 }
 
+/** A small JPEG data URL of the current live frame. */
+function snapshot(source: CameraSource | null): string | null {
+  const live = source?.live();
+  if (!live) return null;
+  const scale = Math.min(1, 480 / live.width);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(live.width * scale);
+  canvas.height = Math.round(live.height * scale);
+  canvas.getContext("2d")!.drawImage(live.image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.8);
+}
+
 /** Bumped by every start/stop so a slow, superseded open does not win. */
 let generation = 0;
 let offChange: (() => void) | null = null;
@@ -69,6 +88,7 @@ function stopReconnecting() {
 
 export const useCamera = create<CameraState>((set, get) => {
   function attach(source: CameraSource | null) {
+    set({ overview: null, pointerTool: "none" });
     offChange?.();
     offChange = null;
     get().source?.close();
@@ -133,6 +153,19 @@ export const useCamera = create<CameraState>((set, get) => {
     controls: [],
     opening: false,
     error: null,
+    pointerTool: "none",
+    overview: null,
+
+    setPointerTool(tool) {
+      set({ pointerTool: tool });
+    },
+
+    sourceLabel() {
+      const id = get().source?.id;
+      if (!id) return null;
+      const phone = useRemote.getState().devices.find((d) => `phone:${d.sessionId}` === id);
+      return phone?.device ?? [...get().webcams, ...get().dslrs].find((o) => o.id === id)?.label ?? null;
+    },
 
     async start() {
       const gen = ++generation;
@@ -181,6 +214,8 @@ export const useCamera = create<CameraState>((set, get) => {
     },
 
     async setControl(control, value) {
+      // Remember the whole picture before magnifying, to show where the magnifier is looking.
+      if (control.kind === "magnify" && value !== "1" && control.value === "1") set({ overview: snapshot(get().source) });
       try {
         await get().source?.setControl(control, value);
       } catch (e) {

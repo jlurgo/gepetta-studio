@@ -1,7 +1,19 @@
+import type { CaptureInfo } from "./exif";
+
 /** Content hash (SHA-256 hex) of an immutable binary asset stored with the film. */
 export type AssetId = string;
 export type FrameId = string;
 export type LayerId = string;
+
+/** What is known about how a picture was taken: EXIF plus what the app knew at the moment. */
+export interface CaptureMeta extends CaptureInfo {
+  /** Camera name as shown in the app, e.g. "Canon EOS 500D / Rebel T1i". */
+  source?: string;
+  sourceKind?: "webcam" | "phone" | "dslr" | "import";
+  /** Lens focus position in fine steps when the shot was taken, and what it counts from. */
+  focusPosition?: number;
+  focusOrigin?: "infinity" | "autofocus";
+}
 
 /** An imported image: the untouched original plus derived, cheaper versions. */
 export interface MediaRef {
@@ -12,6 +24,7 @@ export interface MediaRef {
   thumb: AssetId;
   /** Camera RAW file (CR2, CR3, NEF…) kept alongside, when the camera produced one. */
   raw?: AssetId;
+  capture?: CaptureMeta;
   width: number;
   height: number;
 }

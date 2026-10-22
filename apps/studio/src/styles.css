@@ -376,7 +376,7 @@ input[type="range"] {
 }
 
 .side-panel {
-  width: 260px;
+  width: 280px;
   flex-shrink: 0;
   background: var(--panel);
   border-left: 1px solid var(--line);
@@ -408,7 +408,8 @@ input[type="range"] {
   border: none;
   text-align: left;
   padding: 4px 0;
-  color: var(--muted);
+  color: var(--text);
+  opacity: 0.85;
   cursor: pointer;
 }
 
@@ -819,34 +820,6 @@ input[type="range"] {
   color: var(--danger);
 }
 
-/* Focus / zoom bar over the live view */
-
-.quick-controls {
-  position: absolute;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: flex-end;
-  gap: 14px;
-  max-width: calc(100% - 24px);
-  padding: 8px 12px;
-  border-radius: 14px;
-  background: rgb(20 18 16 / 0.82);
-  backdrop-filter: blur(6px);
-}
-
-.quick-controls .control {
-  color: var(--text);
-  min-width: 0;
-}
-
-.quick-controls input[type="range"] {
-  width: 160px;
-}
-
 .segmented {
   display: inline-flex;
   border: 1px solid var(--line);
@@ -871,4 +844,239 @@ input[type="range"] {
   background: var(--teal);
   color: var(--accent-text);
   font-weight: 700;
+}
+
+/* Camera panel sections: focus, magnifier, frame info */
+
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.panel-section h4 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+
+.focus-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.focus-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.focus-buttons .btn {
+  justify-content: center;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.focus-status {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-track {
+  position: relative;
+}
+
+.focus-track input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+
+.focus-marks-row {
+  position: relative;
+  height: 14px;
+  margin: 0 8px 2px;
+}
+
+.focus-marks-row b {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.focus-ticks {
+  position: relative;
+  height: 30px;
+  margin: 2px 8px 0;
+}
+
+.focus-ticks i {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 6px;
+  background: var(--muted);
+}
+
+.focus-ticks span {
+  position: absolute;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-style: normal;
+  white-space: nowrap;
+  color: var(--text);
+  opacity: 0.8;
+}
+
+.focus-ticks span.row0 {
+  top: 7px;
+}
+
+.focus-ticks span.row1 {
+  top: 18px;
+}
+
+.focus-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text);
+  opacity: 0.75;
+}
+
+.nudges .btn {
+  min-width: 40px;
+  justify-content: center;
+}
+
+.marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.mark-chip {
+  display: inline-flex;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.mark-chip button {
+  border: none;
+  background: transparent;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mark-chip button + button {
+  border-left: 1px solid var(--accent);
+  color: var(--muted);
+}
+
+.overview {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.overview img {
+  display: block;
+  width: 100%;
+}
+
+.overview-empty {
+  aspect-ratio: 3 / 2;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.overview-rect {
+  position: absolute;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.35);
+  pointer-events: none;
+}
+
+.frame-info {
+  border-top: none;
+  padding-top: 0;
+}
+
+.frame-info dl {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.frame-info dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.frame-info dt {
+  color: var(--muted);
+}
+
+.frame-info dd {
+  margin: 0;
+  text-align: right;
+}
+
+.stage.tool-focus {
+  cursor: crosshair;
+}
+
+.stage.magnified {
+  cursor: grab;
+  touch-action: none;
+}
+
+.stage.magnified:active {
+  cursor: grabbing;
+}
+
+.focus-marker {
+  position: absolute;
+  width: 56px;
+  height: 40px;
+  margin: -20px 0 0 -28px;
+  border: 2px solid var(--teal);
+  border-radius: 4px;
+  pointer-events: none;
+  animation: focus-pulse 1.8s ease-out forwards;
+}
+
+@keyframes focus-pulse {
+  from {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  20% {
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.stage-badge.zoom {
+  left: auto;
+  right: 12px;
+  color: var(--teal);
 }

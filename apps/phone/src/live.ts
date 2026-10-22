@@ -242,6 +242,10 @@ export function renderLive(root: HTMLElement) {
         });
         return h("div", { class: "control" }, label, h("div", { class: "actions" }, ...buttons));
       }
+      // Lens-motor focus and magnifier only exist on DSLRs; a phone track never reports them.
+      case "focus":
+      case "magnify":
+        return h("div", {});
     }
   }
 

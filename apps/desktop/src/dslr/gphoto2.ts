@@ -43,6 +43,20 @@ const WINDOWS_HINT =
 
 const FRAME_INTERVAL_MS = 50; // ≤ 20 fps to the renderer
 const AF_SETTLE_MS = 2500;
+/** Fine focus steps ("Near 2"/"Far 2") sent per queued task, so live view keeps updating while the lens moves. */
+const FOCUS_CHUNK = 4;
+/** "Far 3" is a huge step: this many always reach the infinity end. */
+const ZERO_STEPS = 8;
+/** Travel assumed until the closest-focus end has been reached at least once (EF-S 18-55 measured > 300). */
+const DEFAULT_RANGE = 400;
+const ZOOM_SETTLE_MS = 700;
+
+/**
+ * Live-view magnification frame, in the camera's coordinate system, as a
+ * linear map of the normalized live image (fitted on an EOS 500D; the frame's
+ * top-left is what the camera takes). Cameras differ; the Canon SDK reports it.
+ */
+const ZOOM_MAP = { x: { scale: 4529, offset: 73 }, y: { scale: 3061, offset: 28 } };
 const PREVIEW_FILE = "capture_preview.jpg";
 const PROMPT = /gphoto2: \{[^}]*\} \/> $/;
 const TIMEOUT = { detect: 10_000, start: 10_000, command: 20_000, capture: 90_000, exit: 3_000 };
@@ -194,6 +208,14 @@ interface CameraSession {
   paths: Map<string, string>;
   /** Canon reports eoszoom as 0 whatever it is set to, so we remember what we set. */
   zoom: string;
+  /** Normalized center of the magnified area (Canon does not report it either). */
+  zoomCenter: [number, number];
+  /** Tracked lens position in fine steps from `focusOrigin`; null when unknown. */
+  focusPosition: number | null;
+  focusOrigin: "infinity" | "autofocus" | null;
+  focusRange: number;
+  /** Last listed controls. */
+  controls: CameraControl[];
   /**
    * open() calls not yet matched by close(). Overlapping open/close pairs (React
    * mounts effects twice in development) must not tear down a session in use.
@@ -216,7 +238,7 @@ export function createGphoto2Driver(): DslrDriver {
   function session(id: string): CameraSession {
     let s = sessions.get(id);
     if (!s) {
-      s = { id, shell: null, queue: Promise.resolve(), wantLive: false, loopRunning: false, onFrame: null, onError: null, paths: new Map(), zoom: "1", leases: 0 };
+      s = { id, shell: null, queue: Promise.resolve(), wantLive: false, loopRunning: false, onFrame: null, onError: null, paths: new Map(), zoom: "1", leases: 0, zoomCenter: [0.5, 0.5], focusPosition: null, focusOrigin: null, focusRange: DEFAULT_RANGE, controls: [] };
       sessions.set(id, s);
     }
     return s;
@@ -298,7 +320,125 @@ export function createGphoto2Driver(): DslrDriver {
     s.shell = null;
     s.paths.clear();
     s.zoom = "1";
+    s.focusPosition = null;
+    s.focusOrigin = null;
     await shell?.close();
+  }
+
+  /** The last listed controls with the focus/magnify state we track patched in (no camera round trip). */
+  function currentControls(s: CameraSession): CameraControl[] {
+    return s.controls.map((c) => {
+      if (c.kind === "focus") return { ...c, position: s.focusPosition, origin: s.focusOrigin, range: s.focusRange };
+      if (c.kind === "magnify") return { ...c, value: s.zoom, center: s.zoomCenter };
+      return c;
+    });
+  }
+
+  const lensError = () =>
+    new DslrError("El lente no se movió. Poné la palanca del lente en AF para enfocar desde la app.", "failed");
+
+  async function exec(shell: Gphoto2Shell, line: string, lens = false) {
+    try {
+      return await shell.exec(line);
+    } catch (err) {
+      throw lens ? lensError() : err;
+    }
+  }
+
+  /** Drives the lens `steps` fine steps (+ nearer, − farther), tracking its position. */
+  async function driveFocus(s: CameraSession, steps: number) {
+    const dir = steps > 0 ? "Near 2" : "Far 2";
+    for (let left = Math.abs(steps); left > 0; ) {
+      const n = Math.min(FOCUS_CHUNK, left);
+      await enqueue(s, async (shell) => {
+        for (let i = 0; i < n; i++) await exec(shell, `set-config manualfocusdrive=${dir}`, true);
+      });
+      left -= n;
+      if (s.focusPosition === null) continue;
+      s.focusPosition += steps > 0 ? n : -n;
+      if (s.focusOrigin === "infinity") {
+        // The lens cannot go past the infinity end; going near past the known range means the range is longer.
+        s.focusPosition = Math.max(0, s.focusPosition);
+        s.focusRange = Math.max(s.focusRange, s.focusPosition);
+      }
+    }
+  }
+
+  /** Top-left of the magnified frame, in camera coordinates, for a normalized center. */
+  function zoomPosition(center: [number, number], level: number): string {
+    const half = 0.5 / level;
+    const clamp = (v: number) => Math.min(1 - 2 * half, Math.max(0, v - half));
+    const x = Math.round(ZOOM_MAP.x.scale * clamp(center[0]) + ZOOM_MAP.x.offset);
+    const y = Math.round(ZOOM_MAP.y.scale * clamp(center[1]) + ZOOM_MAP.y.offset);
+    return `${x},${y}`;
+  }
+
+  function parsePoint(text: string): [number, number] {
+    const m = /^(\d*\.?\d+),(\d*\.?\d+)$/.exec(text);
+    if (!m) throw new DslrError("Ajuste inválido.", "failed");
+    return [Math.min(1, Number(m[1])), Math.min(1, Number(m[2]))];
+  }
+
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function autofocus(s: CameraSession, point: [number, number] | null) {
+    await enqueue(s, async (shell) => {
+      if (point) {
+        // The camera focuses inside the magnifier frame, which only moves while magnified.
+        const level = s.zoom === "1" ? 5 : Number(s.zoom);
+        if (s.zoom === "1") {
+          await exec(shell, "set-config eoszoom=5");
+          await wait(ZOOM_SETTLE_MS);
+        }
+        await exec(shell, `set-config eoszoomposition=${zoomPosition(point, level)}`);
+        await wait(300);
+        if (s.zoom === "1") {
+          await exec(shell, "set-config eoszoom=1");
+          await wait(400);
+        }
+        s.zoomCenter = point;
+      }
+      await exec(shell, "set-config autofocusdrive=1", true);
+    });
+    // Releasing the AF trigger right away cancels the focus run: let the lens hunt while live view keeps refreshing.
+    setTimeout(() => void enqueue(s, (sh) => sh.exec("set-config autofocusdrive=0")).catch(() => undefined), AF_SETTLE_MS);
+    s.focusPosition = 0;
+    s.focusOrigin = "autofocus";
+  }
+
+  async function focusCommand(s: CameraSession, value: string) {
+    const move = /^move:([+-]?\d{1,4})$/.exec(value);
+    if (move) return driveFocus(s, Number(move[1]));
+    if (value === "zero") {
+      await enqueue(s, async (shell) => {
+        for (let i = 0; i < ZERO_STEPS; i++) await exec(shell, "set-config manualfocusdrive=Far 3", true);
+      });
+      s.focusPosition = 0;
+      s.focusOrigin = "infinity";
+      return;
+    }
+    if (value === "af") return autofocus(s, null);
+    if (value.startsWith("af:")) return autofocus(s, parsePoint(value.slice(3)));
+    throw new DslrError("Ajuste inválido.", "failed");
+  }
+
+  async function magnifyCommand(s: CameraSession, value: string) {
+    if (value.startsWith("at:")) {
+      s.zoomCenter = parsePoint(value.slice(3));
+      if (s.zoom === "1") return;
+      await enqueue(s, (shell) => exec(shell, `set-config eoszoomposition=${zoomPosition(s.zoomCenter, Number(s.zoom))}`));
+      return;
+    }
+    if (!ZOOM_STEPS.some((z) => z.value === value)) throw new DslrError("Ajuste inválido.", "failed");
+    await enqueue(s, async (shell) => {
+      await exec(shell, `set-config eoszoom=${value}`);
+      if (value !== "1") {
+        // The position is ignored until the camera has finished magnifying.
+        await wait(ZOOM_SETTLE_MS);
+        await exec(shell, `set-config eoszoomposition=${zoomPosition(s.zoomCenter, Number(value))}`);
+      }
+    });
+    s.zoom = value;
   }
 
   async function listControls(s: CameraSession): Promise<CameraControl[]> {
@@ -314,9 +454,25 @@ export function createGphoto2Driver(): DslrDriver {
       // Same text shape as --list-all-config, so one parser serves both.
       let text = "";
       for (const p of s.paths.values()) text += `${p}\n${await shell.exec(`get-config ${p}`)}\n`;
-      return toCameraControls(parseConfigList(text)).map((c) =>
-        c.key === "eoszoom" && c.kind === "choice" ? { ...c, value: s.zoom } : c,
+      const controls = toCameraControls(parseConfigList(text)).filter(
+        (c) => !["manualfocusdrive", "autofocusdrive", "eoszoom"].includes(c.key),
       );
+      if (s.paths.has("manualfocusdrive")) {
+        controls.push({
+          kind: "focus",
+          key: "focus",
+          label: "Foco",
+          position: s.focusPosition,
+          origin: s.focusOrigin,
+          range: s.focusRange,
+          canPointFocus: s.paths.has("eoszoomposition") && s.paths.has("autofocusdrive"),
+        });
+      }
+      if (s.paths.has("eoszoom")) {
+        controls.push({ kind: "magnify", key: "magnify", label: "Lupa", levels: ZOOM_STEPS, value: s.zoom, center: s.zoomCenter });
+      }
+      s.controls = controls;
+      return controls;
     });
   }
 
@@ -387,37 +543,16 @@ export function createGphoto2Driver(): DslrDriver {
         throw new DslrError("Ajuste inválido.", "failed");
       }
       const s = session(id);
-      let commands: string[];
-      if (key === "manualfocusdrive") {
-        if (!/^(Near|Far) [1-3]$/.test(value)) throw new DslrError("Ajuste inválido.", "failed");
-        // Canon only drives the lens in live view, and only with the lens switch on AF.
-        commands = [...(s.wantLive ? [] : ["set-config viewfinder=1"]), `set-config manualfocusdrive=${value}`];
-      } else if (key === "autofocusdrive") {
-        // Releasing the AF trigger right away cancels the focus run, so it is released later (below).
-        commands = ["set-config autofocusdrive=1"];
-      } else if (key === "eoszoom") {
-        if (!ZOOM_STEPS.some((z) => z.value === value)) throw new DslrError("Ajuste inválido.", "failed");
-        commands = [`set-config eoszoom=${value}`];
-        s.zoom = value;
-      } else if (SETTABLE_NAMES.has(key)) {
-        commands = [`set-config-value ${key}=${value}`];
-      } else {
-        throw new DslrError("Ese ajuste no se puede cambiar desde Gepetta.", "failed");
+      if (key === "focus") {
+        await focusCommand(s, value);
+        return currentControls(s);
       }
-      await enqueue(s, async (shell) => {
-        try {
-          for (const c of commands) await shell.exec(c);
-          if (key === "autofocusdrive") {
-            // Give the lens time to hunt while live view keeps refreshing, then release the trigger.
-            setTimeout(() => void enqueue(s, (sh) => sh.exec("set-config autofocusdrive=0")).catch(() => undefined), AF_SETTLE_MS);
-          }
-        } catch (err) {
-          if (key === "manualfocusdrive" || key === "autofocusdrive") {
-            throw new DslrError("El lente no se movió. Poné la palanca del lente en AF para enfocar desde la app.", "failed");
-          }
-          throw err;
-        }
-      });
+      if (key === "magnify") {
+        await magnifyCommand(s, value);
+        return currentControls(s);
+      }
+      if (!SETTABLE_NAMES.has(key)) throw new DslrError("Ese ajuste no se puede cambiar desde Gepetta.", "failed");
+      await enqueue(s, (shell) => shell.exec(`set-config-value ${key}=${value}`));
       return listControls(s);
     },
 

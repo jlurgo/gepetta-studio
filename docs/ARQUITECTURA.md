@@ -125,6 +125,24 @@ RAW; el RAW se guarda intacto junto a la foto (`MediaRef.raw`) y, si la cámara
 solo hace RAW, se usa la vista previa JPEG que trae adentro. En Mac el sistema
 puede tomar la cámara por USB: el botón "Liberar cámara" lo resuelve.
 
+### Foco, lupa y datos de cada toma (réflex)
+
+- **Foco:** el motor del lente se mueve en pasos finos (`manualfocusdrive=Near 2/Far 2`),
+  medidos como exactamente repetibles en la 500D. El driver cuenta la posición desde
+  "∞ Cero" (llevar el lente al tope de infinito). Después de un autofoco la cuenta pasa
+  a ser relativa a ese punto. Las marcas de foco se guardan por cámara.
+- **Distancias:** la cámara no informa la distancia en vivo, pero cada JPEG trae la
+  distancia de foco (Canon FileInfo, cerca–lejos en cm). Las fotos de la película
+  tomadas con posición conocida se convierten en referencias del deslizador; entre
+  ellas se interpola en dioptrías.
+- **Lupa:** `eoszoom` 5×/10× y `eoszoomposition` (solo funciona con la lupa ya activa;
+  la cámara no informa ni el nivel ni la posición, así que el driver los recuerda).
+  El autofoco de Live mode enfoca dentro de ese recuadro: "tocar para enfocar" lo
+  mueve al punto y dispara el autofoco.
+- **Datos de la toma:** `MediaRef.capture` guarda EXIF (`packages/core/src/exif.ts`:
+  cámara, lente, focal, diafragma, velocidad, ISO, balance de blancos, distancia de
+  foco, fecha) más lo que sabe la app (fuente, posición de foco y su origen).
+
 ## Reproducción y exportación
 
 - Reproductor con timing por `hold`; reproducir todo, los últimos N segundos o en

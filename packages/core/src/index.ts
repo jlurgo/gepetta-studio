@@ -3,3 +3,4 @@ export * from "./ops";
 export * from "./history";
 export * from "./timing";
 export { newId } from "./ids";
+export * from "./exif";

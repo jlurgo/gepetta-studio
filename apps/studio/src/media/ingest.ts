@@ -1,4 +1,4 @@
-import type { AssetId, MediaRef } from "@gepetta/core";
+import { type AssetId, type CaptureMeta, type MediaRef, readCaptureInfo } from "@gepetta/core";
 import { storage } from "../storage";
 
 const PROXY_MAX = 1920;
@@ -30,7 +30,14 @@ async function downscale(bitmap: ImageBitmap, max: number, quality: number): Pro
  * Stores an image untouched plus its proxy and thumbnail, all content-addressed.
  * A camera RAW file, when given, is stored alongside untouched.
  */
-export async function ingestImage(filmId: string, blob: Blob, raw?: Blob | null): Promise<MediaRef> {
+export async function ingestImage(
+  filmId: string,
+  blob: Blob,
+  raw?: Blob | null,
+  /** What the app knows about the shot; EXIF found in the file is merged in. */
+  meta?: CaptureMeta,
+): Promise<MediaRef> {
+  const exif = blob.type === "image/jpeg" || blob.type === "" ? readCaptureInfo(new Uint8Array(await blob.arrayBuffer())) : {};
   const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
   try {
     const [original, proxy, thumb, rawId] = await Promise.all([
@@ -41,6 +48,8 @@ export async function ingestImage(filmId: string, blob: Blob, raw?: Blob | null)
     ]);
     const media: MediaRef = { original, proxy, thumb, width: bitmap.width, height: bitmap.height };
     if (rawId) media.raw = rawId;
+    const capture = { ...exif, ...meta };
+    if (Object.keys(capture).length > 0) media.capture = capture;
     return media;
   } finally {
     bitmap.close();

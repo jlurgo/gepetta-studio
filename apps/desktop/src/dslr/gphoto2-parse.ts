@@ -136,7 +136,14 @@ export const ZOOM_STEPS: ControlOption[] = [
 ];
 
 /** Every config name the driver reads: the curated settings plus focus, zoom and live view. */
-export const READ_NAMES = new Set([...SETTABLE_NAMES, "manualfocusdrive", "autofocusdrive", "eoszoom", "viewfinder"]);
+export const READ_NAMES = new Set([
+  ...SETTABLE_NAMES,
+  "manualfocusdrive",
+  "autofocusdrive",
+  "eoszoom",
+  "eoszoomposition",
+  "viewfinder",
+]);
 
 const FOCUS_STEPS: ControlOption[] = [
   { value: "Near 3", label: "◀◀◀ Cerca" },

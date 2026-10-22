@@ -5,8 +5,14 @@ import type { DslrStatus } from "../native";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { CameraControls } from "./CameraControls";
+import { FOCUS_KEYS, FocusPanel } from "./FocusPanel";
+import { FrameInfo } from "./FrameInfo";
+import { MagnifyPanel, ZOOM_KEYS } from "./MagnifyPanel";
 import { PhoneConnect } from "./PhoneConnect";
-import { isQuick } from "./QuickControls";
+
+/** Shown in their own sections, not under "Ajustes de la cámara". */
+const isSectioned = (c: { kind: string; key: string }) =>
+  c.kind === "focus" || c.kind === "magnify" || FOCUS_KEYS.includes(c.key) || ZOOM_KEYS.includes(c.key);
 
 function useDslrStatus(): DslrStatus | null {
   const [status, setStatus] = useState<DslrStatus | null>(null);
@@ -38,6 +44,7 @@ export function CameraPanel() {
 
   return (
     <aside className="side-panel">
+      <FrameInfo />
       <h3>Cámara</h3>
       <label className="control">
         <span>Fuente {opening && <small>abriendo…</small>}</span>
@@ -116,20 +123,22 @@ export function CameraPanel() {
         </div>
       )}
 
+      <FocusPanel />
+      <MagnifyPanel />
+
       <button className="disclosure" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>
         {advanced ? "▾" : "▸"} Ajustes de la cámara
       </button>
       {advanced && (
         <div className="advanced">
-          {source && controls.some(isQuick) && <p className="hint">El foco y el zoom están sobre la imagen en vivo.</p>}
-          {source && controls.length === 0 && (
+          {source && controls.filter((c) => !isSectioned(c)).length === 0 && (
             <p className="hint">
               {source.kind === "webcam"
                 ? "Esta webcam no permite ajustes desde acá. (En Mac las webcams exponen pocos controles.)"
                 : "Esta cámara no informó ajustes."}
             </p>
           )}
-          <CameraControls controls={controls.filter((c) => !isQuick(c))} slow={source?.kind === "dslr"} onChange={(c, v) => void setControl(c, v)} />
+          <CameraControls controls={controls.filter((c) => !isSectioned(c))} slow={source?.kind === "dslr"} onChange={(c, v) => void setControl(c, v)} />
           {source?.kind === "webcam" && (
             <label className="control">
               <span>Promediar fotos (menos ruido)</span>

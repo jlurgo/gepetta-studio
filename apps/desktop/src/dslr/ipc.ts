@@ -44,7 +44,7 @@ async function guarded<T>(channel: string, fn: () => Promise<T>): Promise<T> {
 export function registerDslrIpc(
   getWindow: () => BrowserWindow | null,
   driver: DslrDriver = createGphoto2Driver(),
-): { dispose(): Promise<void> } {
+): { dispose(): Promise<void>; releaseCameras(): Promise<void> } {
   const send = (channel: string, ...args: unknown[]) => {
     const win = getWindow();
     if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(channel, ...args);
@@ -79,6 +79,8 @@ export function registerDslrIpc(
     guarded("dslr:releaseUsb", () => driver.releaseUsb()));
 
   return {
+    /** Ends every camera session (e.g. when the window closes but the app stays open on macOS). */
+    releaseCameras: () => driver.dispose(),
     dispose() {
       for (const channel of CHANNELS) ipcMain.removeHandler(channel);
       return driver.dispose();

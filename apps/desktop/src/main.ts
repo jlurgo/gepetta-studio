@@ -10,6 +10,7 @@ const library = new FilmLibrary(path.join(app.getPath("documents"), "Gepetta Stu
 let mainWindow: BrowserWindow | null = null;
 const getWindow = () => mainWindow;
 const disposers: (() => unknown)[] = [];
+let releaseCameras: () => Promise<void> = async () => undefined;
 
 function registerIpc() {
   ipcMain.handle("films:list", () => library.list());
@@ -31,7 +32,9 @@ function registerIpc() {
     await writeFile(result.filePath, Buffer.from(data));
     return result.filePath;
   });
-  disposers.push(registerRemoteIpc(getWindow).dispose, registerDslrIpc(getWindow).dispose);
+  const dslr = registerDslrIpc(getWindow);
+  releaseCameras = dslr.releaseCameras;
+  disposers.push(registerRemoteIpc(getWindow).dispose, dslr.dispose);
 }
 
 function createWindow() {
@@ -50,6 +53,8 @@ function createWindow() {
   }));
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
+    // On macOS the app outlives its window; the camera must not stay taken.
+    void releaseCameras();
   });
   // Links open in the system browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {

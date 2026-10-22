@@ -22,9 +22,16 @@ import { VideoImportDialog } from "./VideoImportDialog";
 
 const FPS_OPTIONS = [6, 8, 10, 12, 15, 24, 25, 30];
 
+const NON_TEXT_INPUTS = ["range", "checkbox", "radio", "button", "color", "file"];
+
+/** Text fields keep their keys; sliders and checkboxes do not block the shortcuts (Space still shoots). */
 function isTyping(e: KeyboardEvent) {
   const t = e.target as HTMLElement;
-  return t.isContentEditable || ["INPUT", "SELECT", "TEXTAREA"].includes(t.tagName);
+  if (t.isContentEditable || t.tagName === "TEXTAREA" || t.tagName === "SELECT") return true;
+  if (t.tagName !== "INPUT") return false;
+  if (!NON_TEXT_INPUTS.includes((t as HTMLInputElement).type)) return true;
+  // Arrow keys belong to the focused slider.
+  return e.key.startsWith("Arrow") && (t as HTMLInputElement).type === "range";
 }
 
 function useShortcuts() {
