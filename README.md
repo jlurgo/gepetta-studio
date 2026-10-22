@@ -26,6 +26,18 @@ pnpm dist       # instalador (.dmg en Mac, .exe en Windows) en apps/desktop/rele
   "Avanzado → Continuar" la primera vez; en iPhone hay que instalar el certificado
   (la página del celular explica los pasos).
 
+### Windows
+- **Instalador:** `pnpm --filter @gepetta/desktop exec electron-builder --win nsis --x64`
+  (se puede generar desde la Mac) → `apps/desktop/release/Gepetta Studio Setup <versión>.exe`.
+  No está firmado: Windows muestra "Windows protegió su PC" → "Más información" →
+  "Ejecutar de todas formas".
+- **Desarrollo en Windows:** instalar Node 22+, Git y pnpm (`corepack enable`), clonar el
+  repo y correr `pnpm install` y `pnpm dev`, igual que en Mac.
+- La primera vez que se conecta un celular, el Firewall de Windows pregunta si permitir
+  la conexión: hay que aceptar en "Redes privadas".
+- Webcams y celulares funcionan igual que en Mac. **Las réflex todavía no**: gphoto2 no
+  existe para Windows; hace falta el SDK de Canon (EDSDK).
+
 En escritorio las películas se guardan en `Documentos/Gepetta Studio/`; en el
 navegador, en IndexedDB.
 

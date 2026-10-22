@@ -185,17 +185,43 @@ function LensFocus({ control }: { control: Focus }) {
   );
 }
 
+const OPEN_KEY = "gepetta.focusPanelOpen";
+
+/** Collapsed by default; the choice is remembered. */
+function readOpen(): boolean {
+  try {
+    return localStorage.getItem(OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveOpen(open: boolean) {
+  try {
+    localStorage.setItem(OPEN_KEY, open ? "1" : "0");
+  } catch {
+    // Only a convenience.
+  }
+}
+
 export function FocusPanel() {
   const controls = useCamera((s) => s.controls);
   const kind = useCamera((s) => s.source?.kind);
   const lens = controls.find((c): c is Focus => c.kind === "focus");
   const generic = controls.filter((c) => FOCUS_KEYS.includes(c.key));
+  const [open, setOpen] = useState(() => readOpen());
   if (!lens && generic.length === 0) return null;
+  const toggle = () => {
+    setOpen(!open);
+    saveOpen(!open);
+  };
   return (
     <section className="panel-section">
-      <h4>Foco</h4>
-      {lens && <LensFocus control={lens} />}
-      {generic.length > 0 && (
+      <button className="disclosure section-toggle" onClick={toggle} aria-expanded={open}>
+        {open ? "▾" : "▸"} Foco
+      </button>
+      {open && lens && <LensFocus control={lens} />}
+      {open && generic.length > 0 && (
         <CameraControls controls={generic} slow={kind === "dslr"} onChange={(c, v) => void useCamera.getState().setControl(c, v)} />
       )}
     </section>

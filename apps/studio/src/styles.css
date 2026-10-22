@@ -1117,3 +1117,10 @@ input[type="range"] {
   text-align: right;
   font-size: 12px;
 }
+
+.section-toggle {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
