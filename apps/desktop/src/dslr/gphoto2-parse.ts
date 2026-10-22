@@ -293,6 +293,9 @@ export function rawMimeOf(ext: string): string | null {
 }
 
 export const MSG_BUSY = "La cámara está tomada por otro programa (en Mac suele ser el sistema). Tocá «Liberar cámara».";
+/** On Windows "busy" almost always means the camera still has the stock driver instead of WinUSB. */
+export const MSG_BUSY_WINDOWS =
+  "Windows no deja usar la cámara. Cerrá otros programas de fotos y, si es la primera vez, cambiale el driver USB a WinUSB con Zadig (ver el README).";
 export const MSG_DISCONNECTED = "Se perdió la conexión con la cámara. Revisá el cable USB y que esté prendida.";
 export const MSG_NOT_FOUND = "No encuentro la cámara. Revisá el cable USB y que esté prendida.";
 
@@ -301,9 +304,15 @@ export const MSG_NOT_FOUND = "No encuentro la cámara. Revisá el cable USB y qu
  * `wasWorking`: the camera had already answered in this session, so I/O
  * errors most likely mean the cable was pulled or the camera turned off.
  */
-export function classifyGphotoError(stderr: string, wasWorking = false): { code: DslrErrorCode; message: string } {
+export function classifyGphotoError(
+  stderr: string,
+  wasWorking = false,
+  platform: string = process.platform,
+): { code: DslrErrorCode; message: string } {
   const text = stderr.replace(/\*{3,}/g, " ");
-  if (/Could not claim the USB device|\(-53\b/i.test(text)) return { code: "busy", message: MSG_BUSY };
+  if (/Could not claim the USB device|\(-53\b/i.test(text)) {
+    return { code: "busy", message: platform === "win32" ? MSG_BUSY_WINDOWS : MSG_BUSY };
+  }
   if (/Could not detect any camera|No camera found|Could not find the requested device|Unknown port|\(-52\b|\(-105\b|Unknown model/i.test(text)) {
     return { code: "disconnected", message: wasWorking ? MSG_DISCONNECTED : MSG_NOT_FOUND };
   }

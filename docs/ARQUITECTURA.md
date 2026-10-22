@@ -93,7 +93,7 @@ vivo, ajustes (`CameraControl` de `packages/protocol`, igual para todas) y
 |---|---|---|
 | Webcams | `getUserMedia` + `getCapabilities()` (foco, balance de blancos, exposición, zoom… lo que exponga el driver). Opción de promediar N cuadros | `capture/webcam.ts` |
 | Celulares | Servidor LAN en Electron + página web del celular (`apps/phone`) | `capture/phone.ts`, `apps/desktop/src/remote/` |
-| Réflex / mirrorless | gphoto2 en el proceso main (Mac). Driver intercambiable: el SDK de Canon (EDSDK) se suma como otro `DslrDriver` y trae Windows | `capture/dslr.ts`, `apps/desktop/src/dslr/` |
+| Réflex / mirrorless | gphoto2 en el proceso main (Mac; Windows con gphoto2 de MSYS2 + driver WinUSB vía Zadig). Driver intercambiable: el SDK de Canon (EDSDK) se suma como otro `DslrDriver` | `capture/dslr.ts`, `apps/desktop/src/dslr/` |
 | Escáner | ImageCaptureCore (Mac) / WIA-TWAIN (Windows) | más adelante |
 
 ### Celular

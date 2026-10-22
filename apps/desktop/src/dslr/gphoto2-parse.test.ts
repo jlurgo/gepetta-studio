@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MSG_BUSY, classifyGphotoError, parseAutoDetect, parseConfigList, rawMimeOf, toCameraControls } from "./gphoto2-parse";
+import { MSG_BUSY, MSG_BUSY_WINDOWS, classifyGphotoError, parseAutoDetect, parseConfigList, rawMimeOf, toCameraControls } from "./gphoto2-parse";
 
 describe("parseAutoDetect", () => {
   it("parses models with spaces and skips the header", () => {
@@ -304,7 +304,8 @@ describe("classifyGphotoError", () => {
 *** Error ***
 An error occurred in the io-library ('Could not claim the USB device'): Could not claim interface 0 (Permission denied). Make sure no other program (gvfs-gphoto2-volume-monitor) or kernel module (such as sdc2xx, stv680, spca50x) is using the device and you have read/write access to the device.
 *** Error (-53: 'Could not claim the USB device') ***`;
-    expect(classifyGphotoError(stderr)).toEqual({ code: "busy", message: MSG_BUSY });
+    expect(classifyGphotoError(stderr, false, "darwin")).toEqual({ code: "busy", message: MSG_BUSY });
+    expect(classifyGphotoError(stderr, false, "win32")).toEqual({ code: "busy", message: MSG_BUSY_WINDOWS });
   });
 
   it("detects a missing camera (real gphoto2 2.5.32 output, no camera plugged)", () => {

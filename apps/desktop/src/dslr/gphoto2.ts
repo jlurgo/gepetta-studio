@@ -27,7 +27,7 @@ import {
 } from "./types";
 
 /**
- * DSLR driver on top of gphoto2 (macOS/Linux, any camera libgphoto2 supports).
+ * DSLR driver on top of gphoto2 (macOS, Linux and Windows via MSYS2; any camera libgphoto2 supports).
  *
  * Each camera gets one long-lived `gphoto2 --shell` process. Live view is a loop
  * of `capture-preview` commands, and settings, focus and shots are queued in
@@ -35,12 +35,20 @@ import {
  * Starting and stopping live view per command used to flip the mirror each time.
  */
 
-/** Electron GUI apps on macOS do not inherit the shell PATH. */
-const EXTRA_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
+const IS_WINDOWS = process.platform === "win32";
 
-const INSTALL_HINT = "Para usar cámaras réflex instalá gphoto2: abrí la Terminal y escribí  brew install gphoto2";
-const WINDOWS_HINT =
-  "En Windows todavía no se pueden usar cámaras réflex. Llegará para Canon con el kit oficial de Canon (EDSDK).";
+/**
+ * Where gphoto2 may live besides PATH. Electron GUI apps on macOS do not inherit
+ * the shell PATH; on Windows it comes from MSYS2 (UCRT64), which is not on PATH either.
+ */
+const EXTRA_DIRS = IS_WINDOWS
+  ? [path.join(process.env.SystemDrive ?? "C:", "\\msys64", "ucrt64", "bin")]
+  : ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
+const BINARY_NAME = IS_WINDOWS ? "gphoto2.exe" : "gphoto2";
+
+const INSTALL_HINT = IS_WINDOWS
+  ? "Para usar cámaras réflex instalá MSYS2 (msys2.org), abrí «MSYS2 UCRT64» y escribí  pacman -S mingw-w64-ucrt-x86_64-gphoto2  — después cambiá el driver USB de la cámara a WinUSB con Zadig (ver el README)."
+  : "Para usar cámaras réflex instalá gphoto2: abrí la Terminal y escribí  brew install gphoto2";
 
 const FRAME_INTERVAL_MS = 50; // ≤ 20 fps to the renderer
 const AF_SETTLE_MS = 2500;
@@ -87,7 +95,7 @@ function searchDirs(): string[] {
 /** gphoto2 binary path, or null when it is not installed. */
 export async function findGphoto2(): Promise<string | null> {
   for (const dir of searchDirs()) {
-    const candidate = path.join(dir, "gphoto2");
+    const candidate = path.join(dir, BINARY_NAME);
     try {
       await access(candidate, constants.X_OK);
       return candidate;
@@ -98,9 +106,31 @@ export async function findGphoto2(): Promise<string | null> {
   return null;
 }
 
-/** English messages (for error classification) and a PATH that finds gphoto2's helpers. */
+/**
+ * libgphoto2 looks for its camera and port drivers at the path it was built
+ * with ("/ucrt64/lib/..." in MSYS2), which a native Windows process cannot
+ * resolve, so point it at the folders next to the binary.
+ */
+async function windowsLibDirs(binary: string): Promise<NodeJS.ProcessEnv> {
+  const lib = path.join(path.dirname(binary), "..", "lib");
+  const versionDir = async (name: string) => {
+    try {
+      const versions = (await readdir(path.join(lib, name))).filter((v) => /^\d/.test(v)).sort();
+      const latest = versions.at(-1);
+      return latest ? path.join(lib, name, latest) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const [camlibs, iolibs] = await Promise.all([versionDir("libgphoto2"), versionDir("libgphoto2_port")]);
+  return { ...(camlibs && { CAMLIBS: camlibs }), ...(iolibs && { IOLIBS: iolibs }) };
+}
+
+let extraEnv: NodeJS.ProcessEnv = {};
+
+/** English messages (for error classification) and a PATH that finds gphoto2's helpers (and DLLs on Windows). */
 function childEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, LANG: "C", LC_ALL: "C", PATH: searchDirs().join(path.delimiter) };
+  return { ...process.env, ...extraEnv, LANG: "C", LC_ALL: "C", PATH: searchDirs().join(path.delimiter) };
 }
 
 function assertPort(id: unknown): asserts id is string {
@@ -243,10 +273,14 @@ export function createGphoto2Driver(): DslrDriver {
   const sessions = new Map<string, CameraSession>();
   let binary: string | null = null;
 
+  async function locate() {
+    binary = await findGphoto2();
+    if (binary && IS_WINDOWS) extraEnv = await windowsLibDirs(binary);
+  }
+
   async function bin(): Promise<string> {
-    if (process.platform === "win32") throw new DslrError(WINDOWS_HINT, "failed");
     // Re-check while missing: the user may install it with the app open.
-    binary ??= await findGphoto2();
+    if (!binary) await locate();
     if (!binary) throw new DslrError(INSTALL_HINT, "failed");
     return binary;
   }
@@ -578,8 +612,7 @@ export function createGphoto2Driver(): DslrDriver {
 
   return {
     async status(): Promise<DslrStatus> {
-      if (process.platform === "win32") return { available: false, reason: "unsupported-os", hint: WINDOWS_HINT };
-      binary = await findGphoto2();
+      await locate();
       if (!binary) return { available: false, reason: "not-installed", hint: INSTALL_HINT };
       return { available: true };
     },

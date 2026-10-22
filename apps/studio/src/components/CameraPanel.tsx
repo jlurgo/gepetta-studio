@@ -140,7 +140,7 @@ export function CameraPanel() {
         <div className="panel-error">
           {error.message}
           <div className="action-row">
-            {error.code === "busy" && (
+            {error.code === "busy" && window.gepetta?.platform !== "win32" && (
               <button
                 className="btn small"
                 onClick={async () => {

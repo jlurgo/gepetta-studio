@@ -1,8 +1,8 @@
 import type { CameraControl } from "@gepetta/protocol";
 
 /**
- * DSLR support behind one interface, so the gphoto2 driver (macOS/Linux) can
- * later be joined by a Canon EDSDK one (which is also what will bring Windows).
+ * DSLR support behind one interface, so the gphoto2 driver (macOS, Linux and
+ * Windows via MSYS2 + WinUSB) can later be joined by a Canon EDSDK one.
  * Mirrors `GepettaNative.dslr` in apps/studio/src/native.d.ts.
  */
 

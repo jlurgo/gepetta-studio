@@ -35,8 +35,18 @@ pnpm dist       # instalador (.dmg en Mac, .exe en Windows) en apps/desktop/rele
   repo y correr `pnpm install` y `pnpm dev`, igual que en Mac.
 - La primera vez que se conecta un celular, el Firewall de Windows pregunta si permitir
   la conexión: hay que aceptar en "Redes privadas".
-- Webcams y celulares funcionan igual que en Mac. **Las réflex todavía no**: gphoto2 no
-  existe para Windows; hace falta el SDK de Canon (EDSDK).
+- Webcams y celulares funcionan igual que en Mac.
+- **Cámaras réflex (gphoto2), una sola vez por PC** — sin probar todavía en una PC real:
+  1. Instalar MSYS2 desde https://www.msys2.org (carpeta por defecto `C:\msys64`).
+  2. Abrir **"MSYS2 UCRT64"** desde el menú Inicio y escribir
+     `pacman -S mingw-w64-ucrt-x86_64-gphoto2` (aceptar con Enter).
+  3. Enchufar y prender la cámara. Bajar **Zadig** de https://zadig.akeo.ie, abrirlo,
+     menú *Options → List All Devices*, elegir la cámara (ej. "Canon Digital Camera"),
+     elegir **WinUSB** a la derecha y tocar *Replace Driver*.
+     Ojo: después de esto el Explorador de Windows ya no muestra las fotos de la
+     cámara. Para volver atrás: Administrador de dispositivos → la cámara →
+     *Desinstalar el dispositivo* (marcando "eliminar el controlador") y reenchufar.
+  4. Abrir Gepetta → "Buscar cámaras conectadas".
 
 En escritorio las películas se guardan en `Documentos/Gepetta Studio/`; en el
 navegador, en IndexedDB.
