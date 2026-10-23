@@ -39,6 +39,7 @@
 - [x] Cámaras como herramientas en la barra, con sus propiedades en el panel de detalle; botón grande en modo foto o video con todas las cámaras habilitadas
 - [x] Ajustes de imagen sin tocar la foto (tamaño, recorte, giro, espejo, transparencia, mezcla, brillo/contraste/saturación): en vivo, en cada foto y cuadro grabado, editables en uno o varios
 - [ ] Fundido en el tiempo (aparecer/desaparecer en varios cuadros)
+- [x] Herramienta «Imágenes y videos»: varias imágenes en una lista para ordenar y poner en celdas seguidas; video cuadro por cuadro o en un track para calcar; imagen fija; «+ Track» agrega un track vacío directo
 - [ ] Selección y transformación de una parte de la imagen (lazo/rectángulo)
 - [x] Transformar capas: mover, rotar, escalar con manijas
 - Alinear capas por puntos de control

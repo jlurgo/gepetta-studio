@@ -581,45 +581,8 @@ input[type="range"] {
 }
 
 .tl-add {
-  position: relative;
+  align-self: flex-start;
   margin: 2px 0 10px;
-}
-
-.menu {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 4px);
-  z-index: 20;
-  width: 250px;
-  display: flex;
-  flex-direction: column;
-  padding: 4px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: 0 10px 32px rgb(0 0 0 / 0.45);
-}
-
-.menu button {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.menu button:hover {
-  background: var(--panel);
-}
-
-.menu button span {
-  font-size: 11px;
-  color: var(--muted);
 }
 
 .tl-body {
@@ -2180,5 +2143,65 @@ input[type="range"] {
   color: var(--accent-text);
   font-weight: 700;
   z-index: 5;
+}
+
+/* The import tool: images in order before they go into the cells. */
+.import-panel.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: 4px;
+}
+
+.import-panel h4 {
+  margin: 8px 0 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.import-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.import-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  cursor: grab;
+}
+
+.import-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.import-list img {
+  width: 44px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.import-cell {
+  width: 26px;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.import-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 

@@ -9,6 +9,7 @@ import { CameraControls } from "./CameraControls";
 import { FocusMeterPanel } from "./FocusMeterPanel";
 import { FOCUS_KEYS, FocusPanel } from "./FocusPanel";
 import { Icon } from "./Icon";
+import { ImportPanel } from "./ImportPanel";
 import { MagnifyPanel, ZOOM_KEYS } from "./MagnifyPanel";
 import { PhoneConnect } from "./PhoneConnect";
 import { applyChange } from "../state/shot";
@@ -370,6 +371,8 @@ export function ToolPanel() {
         <CameraToolPanel />
       ) : tool === "addCamera" ? (
         <AddCameraPanel />
+      ) : tool === "import" ? (
+        <ImportPanel />
       ) : (
         <PaintOptions />
       )}

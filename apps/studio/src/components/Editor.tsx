@@ -2,13 +2,11 @@ import { currentSettings, hasSettings, usePaint } from "../state/paint";
 import { TOOLS } from "./StageTools";
 import { type FilmState, clipAt } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
-import { isVideoFile } from "../media/ingest";
 import {
   shoot,
   changeHold,
   deleteSelected,
   duplicateSelected,
-  importImages,
   nudgeSelected,
   readyRigs,
   selectRelative, stopAllRecordings } from "../state/actions";
@@ -28,7 +26,6 @@ import { HistoryPanel } from "./HistoryPanel";
 import { Icon } from "./Icon";
 import { Stage } from "./Stage";
 import { Timeline } from "./Timeline";
-import { VideoImportDialog } from "./VideoImportDialog";
 
 const FPS_OPTIONS = [6, 8, 10, 12, 15, 24, 25, 30];
 
@@ -106,9 +103,6 @@ function TopBar({
   const saveStatus = useEditor((s) => s.saveStatus);
   const { close, commit } = useEditor.getState();
   const [name, setName] = useState(film.settings.name);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
-  const imageInput = useRef<HTMLInputElement>(null);
-  const videoInput = useRef<HTMLInputElement>(null);
   useEffect(() => setName(film.settings.name), [film.settings.name]);
 
   const rename = () => {
@@ -150,12 +144,6 @@ function TopBar({
         <input type="checkbox" checked={!!film.settings.loop} onChange={(e) => commit([{ type: "film.setLoop", loop: e.target.checked }])} />
         <span>↻ Loop</span>
       </label>
-      <button className="btn" onClick={() => imageInput.current?.click()} title="Poner imágenes desde la celda elegida, en el track elegido">
-        <Icon name="image" /> Imágenes
-      </button>
-      <button className="btn" onClick={() => videoInput.current?.click()} title="Poner las imágenes de un video desde la celda elegida">
-        <Icon name="video" /> Video
-      </button>
       <button className={`btn${historyOpen ? " active" : ""}`} onClick={onToggleHistory} title="Historial de cambios">
         <Icon name="history" /> Historial
       </button>
@@ -165,29 +153,6 @@ function TopBar({
       <button className="btn primary" onClick={onExport} disabled={film.length === 0}>
         <Icon name="export" /> Exportar
       </button>
-      <input
-        ref={imageInput}
-        type="file"
-        accept="image/*"
-        multiple
-        hidden
-        onChange={(e) => {
-          void importImages([...(e.target.files ?? [])]);
-          e.target.value = "";
-        }}
-      />
-      <input
-        ref={videoInput}
-        type="file"
-        accept="video/*"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f && isVideoFile(f)) setVideoFile(f);
-          e.target.value = "";
-        }}
-      />
-      {videoFile && <VideoImportDialog file={videoFile} onClose={() => setVideoFile(null)} />}
     </header>
   );
 }

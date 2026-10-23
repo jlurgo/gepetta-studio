@@ -7,6 +7,7 @@ import { Icon, type IconName } from "./Icon";
 
 export const TOOLS: { id: StageTool; icon: IconName; label: string; key: string }[] = [
   { id: "move", icon: "pointer", label: "Mover y elegir", key: "V" },
+  { id: "import", icon: "image", label: "Imágenes y videos", key: "M" },
   { id: "draw", icon: "brush", label: "Dibujar", key: "B" },
   { id: "erase", icon: "eraser", label: "Borrar", key: "E" },
   { id: "fill", icon: "fill", label: "Rellenar", key: "F" },
@@ -73,7 +74,7 @@ export function StageTools() {
   const tool = usePaint((s) => s.tool);
   const rigs = useCamera((s) => s.rigs);
   const free = useFreeCameras();
-  const [move, ...paint] = TOOLS;
+  const [move, importer, ...paint] = TOOLS;
   const button = (t: (typeof TOOLS)[number]) => (
     <button key={t.id} className={tool === t.id ? "active" : ""} aria-pressed={tool === t.id} title={`${t.label} (${t.key})`} onClick={() => showTool(t.id)}>
       <Icon name={t.icon} size={18} />
@@ -84,6 +85,7 @@ export function StageTools() {
     <div className="stage-tools" onPointerDown={(e) => e.stopPropagation()}>
       <div className="tool-buttons" role="toolbar" aria-label="Herramientas">
         {button(move!)}
+        {button(importer!)}
         <span className="tool-sep" />
         {rigs.map((r, i) => (
           <CameraTool key={r.id} rig={r} index={i} />

@@ -1,14 +1,13 @@
 import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, stackAt, wrapCell } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
-import { addImageTrack, addTrack, extendFilm, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
+import { addTrack, extendFilm, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
 import { type Rig, rigColor, shotOn, useCamera } from "../state/camera";
 import { Icon } from "./Icon";
 import { capturePointer } from "./pointer";
 import { OpacitySlider } from "./TrackPanel";
-import { VideoImportDialog } from "./VideoImportDialog";
 
 const RULER_H = 22;
 /** Every row (results and tracks) has the same height: a uniform grid. */
@@ -50,54 +49,6 @@ function TrackHead({ track, current }: { track: Track; current: boolean }) {
         {!track.exported && <span className="ref-dot" aria-hidden />}
       </button>
       <OpacitySlider label={false} value={track.opacity} onCommit={(opacity) => updateTrack(track.id, { opacity })} />
-    </div>
-  );
-}
-
-function AddTrackMenu({ onVideo }: { onVideo(): void }) {
-  const [open, setOpen] = useState(false);
-  const imageInput = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener("pointerdown", close);
-    return () => window.removeEventListener("pointerdown", close);
-  }, [open]);
-  const item = (title: string, text: string, run: () => void) => (
-    <button
-      onClick={() => {
-        setOpen(false);
-        run();
-      }}
-    >
-      <strong>{title}</strong>
-      <span>{text}</span>
-    </button>
-  );
-  return (
-    <div className="tl-add">
-      <button className="btn small ghost" onClick={() => setOpen(!open)}>
-        <Icon name="plus" size={14} /> Track
-      </button>
-      {open && (
-        <div className="menu" onPointerDown={(e) => e.stopPropagation()}>
-          {item("Capa vacía", "Para fotos, dibujos o recortes", addTrack)}
-          {item("Imagen fija", "Un fondo, un marco o un logo para toda la película", () => imageInput.current?.click())}
-          {item("Video", "Sus imágenes, una por celda: para rotoscopia", onVideo)}
-        </div>
-      )}
-      <input
-        ref={imageInput}
-        data-role="image-track"
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void addImageTrack(f);
-          e.target.value = "";
-        }}
-      />
     </div>
   );
 }
@@ -151,8 +102,6 @@ export function Timeline() {
   };
   const cellInput = useRef<HTMLInputElement>(null);
   const pickAt = useRef<{ track: string; cell: number } | null>(null);
-  const videoInput = useRef<HTMLInputElement>(null);
-  const [video, setVideo] = useState<{ file: File; mode: "frames" | "track" } | null>(null);
   const index: CellIndex = useMemo(() => (film ? cellIndex(film) : new Map()), [film]);
 
   useLayoutEffect(() => {
@@ -590,7 +539,9 @@ export function Timeline() {
           {tracks.map((t) => (
             <TrackHead key={t.id} track={t} current={t.id === cursor.track} />
           ))}
-          <AddTrackMenu onVideo={() => videoInput.current?.click()} />
+          <button className="btn small ghost tl-add" onClick={() => addTrack()} title="Agregar un track vacío arriba (imágenes y videos: herramienta «Imágenes y videos»)">
+            <Icon name="plus" size={14} /> Track
+          </button>
         </div>
 
         <div className="tl-body" ref={scroller} onScroll={(e) => onScroll(e.currentTarget)}>
@@ -762,19 +713,6 @@ export function Timeline() {
             e.target.value = "";
           }}
         />
-        <input
-          ref={videoInput}
-          data-role="video-track"
-          type="file"
-          accept="video/*"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) setVideo({ file: f, mode: "track" });
-            e.target.value = "";
-          }}
-        />
-        {video && <VideoImportDialog file={video.file} mode={video.mode} onClose={() => setVideo(null)} />}
       </div>
     </div>
   );

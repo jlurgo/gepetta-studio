@@ -37,8 +37,9 @@ import { useEditor } from "./editor";
  * laid on the picture at the tool's strength when it ends (so a marker does
  * not darken where it crosses itself); meanwhile the stage shows the two together.
  */
-/** "camera": the active camera (see useCamera), as a tool among the others; "addCamera": choosing one more. */
-export type StageTool = "move" | "camera" | "addCamera" | "draw" | "erase" | "fill" | "tint" | "shape" | "clone" | "picker";
+/** "camera": the active camera (see useCamera), as a tool among the others; "addCamera": choosing one more;
+ * "import": putting images and videos into cells. */
+export type StageTool = "move" | "camera" | "addCamera" | "import" | "draw" | "erase" | "fill" | "tint" | "shape" | "clone" | "picker";
 export type BrushKind = "pencil" | "ink" | "marker" | "airbrush";
 export type ShapeKind = "line" | "box" | "ellipse";
 
@@ -165,8 +166,8 @@ export const usePaint = create<PaintState>((set, get) => ({
 }));
 
 /** The drawing tools work on the cell at the cursor (and hide the handles). */
-export function isPainting(tool: StageTool): tool is Exclude<StageTool, "move" | "camera" | "addCamera"> {
-  return tool !== "move" && tool !== "camera" && tool !== "addCamera";
+export function isPainting(tool: StageTool): tool is Exclude<StageTool, "move" | "camera" | "addCamera" | "import"> {
+  return tool !== "move" && tool !== "camera" && tool !== "addCamera" && tool !== "import";
 }
 
 /** Whether the tool has a width and a strength. */

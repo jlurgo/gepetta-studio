@@ -219,9 +219,10 @@ export function stopAllRecordings() {
 }
 
 /** Images in a row from the cursor (or `at`), in name order. */
-export async function importImages(files: File[], at?: GridCursor) {
+export async function importImages(files: File[], at?: GridCursor, ordered = false) {
   const { filmId, cursor, captureStep } = useEditor.getState();
-  const images = sortFiles(files.filter(isImageFile));
+  // In name order, unless already put in order (the import tool's list).
+  const images = ordered ? files.filter(isImageFile) : sortFiles(files.filter(isImageFile));
   if (!filmId || images.length === 0) return;
   const media = await runTask("Importando imágenes", images.length, async (progress) => {
     const out: MediaRef[] = [];
@@ -233,8 +234,8 @@ export async function importImages(files: File[], at?: GridCursor) {
   });
   if (!media || useEditor.getState().filmId !== filmId) return;
   const from = at ?? cursor;
-  const name = images.length === 1 ? images[0]!.name.replace(/\.[^.]+$/, "") : "Imagen importada";
-  const clips = clipsFrom(from, media, captureStep, name);
+  // Each picture named after its file.
+  const clips = clipsFrom(from, media, captureStep, "").map((c, i) => ({ ...c, name: images[i]!.name.replace(/\.[^.]+$/, "") }));
   const label = `Importar ${media.length} ${media.length === 1 ? "imagen" : "imágenes"}`;
   useEditor.getState().commit([{ type: "clip.place", clips, label }], label, {
     cursor: { track: from.track, cell: clipEnd(clips.at(-1)!) },
