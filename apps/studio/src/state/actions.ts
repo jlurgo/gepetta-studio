@@ -261,10 +261,10 @@ function newTrackOp(name: string, patch: Partial<Track> = {}): { op: Op; id: Tra
 }
 
 /** An empty track on top of the others; the cursor goes to it. */
-export function addTrack() {
+export function addTrack(name?: string) {
   const film = useEditor.getState().film;
   if (!film) return;
-  const { id, op } = newTrackOp(`Capa ${film.tracks.length}`);
+  const { id, op } = newTrackOp(name ?? `Capa ${film.tracks.length}`);
   useEditor.getState().commit([op], undefined, { cursor: { track: id, cell: useEditor.getState().cursor.cell } });
   useLayers.getState().select(id);
 }

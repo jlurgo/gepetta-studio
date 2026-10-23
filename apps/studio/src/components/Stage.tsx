@@ -25,9 +25,11 @@ import { useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
 import { playbackCell, useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
+import { beginStroke, brushOutline, endStroke, isPainting, leaveStage, moveStroke, surfaceAt, usePaint } from "../state/paint";
 import { drawGuides, hitVanishingPoint } from "../render/guides";
 import { magnifyControl } from "./MagnifyPanel";
 import { capturePointer } from "./pointer";
+import { StageTools } from "./StageTools";
 
 const PREFETCH = 12;
 
@@ -351,6 +353,44 @@ function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
   return { onPointerDown, onPointerMove, onPointerUp };
 }
 
+/** Painting with the brush or the eraser on the cell at the cursor. */
+function usePaintPointer(filmRect: React.RefObject<FilmRect | null>) {
+  const down = useRef(false);
+
+  const filmPoints = (e: React.PointerEvent): Point[] => {
+    const r = filmRect.current;
+    if (!r) return [];
+    const box = e.currentTarget.getBoundingClientRect();
+    // Every position the pointer went through since the last event, for smooth lines.
+    const events = e.nativeEvent.getCoalescedEvents?.() ?? [];
+    return (events.length ? events : [e]).map((ev) => ({ x: (ev.clientX - box.left - r.x) / r.s, y: (ev.clientY - box.top - r.y) / r.s }));
+  };
+
+  const onPointerDown = (e: React.PointerEvent): boolean => {
+    if (!isPainting(usePaint.getState().tool) || e.button !== 0) return false;
+    const [p] = filmPoints(e);
+    if (!p || !beginStroke(p, e.pressure, e.pointerType === "pen")) return false;
+    capturePointer(e);
+    down.current = true;
+    return true;
+  };
+
+  const onPointerMove = (e: React.PointerEvent): boolean => {
+    if (!isPainting(usePaint.getState().tool)) return false;
+    moveStroke(filmPoints(e), e.pressure, e.pointerType === "pen");
+    return down.current;
+  };
+
+  const onPointerUp = (): boolean => {
+    if (!down.current) return false;
+    down.current = false;
+    endStroke();
+    return true;
+  };
+
+  return { onPointerDown, onPointerMove, onPointerUp };
+}
+
 export function Stage() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRect = useRef<Rect | null>(null);
@@ -358,6 +398,8 @@ export function Stage() {
   const filmRect = useRef<FilmRect | null>(null);
   const guideDrag = useGuideDrag(filmRect);
   const layerDrag = useLayerDrag(filmRect);
+  const paintPointer = usePaintPointer(filmRect);
+  const painting = usePaint((s) => isPainting(s.tool));
   const layerHandles = useRef(targetOnStage);
   const guideEditing = useGuides((s) => s.editing);
   const pointerTool = useCamera((s) => s.pointerTool);
@@ -455,6 +497,9 @@ export function Stage() {
       let showOnion = onion.enabled;
       liveRect.current = null;
       const shown = withPreview(film);
+      const drawPainted = (canvas: OffscreenCanvas, opacity: number, transform: Transform2D) =>
+        drawStack(ctx, [{ media: { width: canvas.width, height: canvas.height } as MediaRef, opacity, transform }], size, () => canvas);
+      const tool = usePaint.getState().tool;
       {
         const camera = useCamera.getState();
         const active = camera.rigs.find((r) => r.id === camera.activeRig);
@@ -484,14 +529,21 @@ export function Stage() {
           const items = stackAt(shown, cursor.cell, { index });
           const here = camera.rigs.filter((r) => r.source && camera.targetOf(r).cell === cursor.cell);
           for (const t of shown.tracks) {
-            const rig = here.find((r) => camera.targetOf(r).track === t.id);
+            // While drawing, the cell drawn on shows its drawing, not the camera aimed there.
+            const drawingHere = isPainting(tool) && t.id === cursor.track;
+            const rig = drawingHere ? undefined : here.find((r) => camera.targetOf(r).track === t.id);
             if (rig) {
               const live = t.visible ? camera.liveOf(rig) : null;
               if (live) drawLive(live, t.transform, t.opacity, rig.id === camera.activeRig);
               continue;
             }
             const item = items.find((i) => i.trackId === t.id);
-            if (item) drawProxies(ctx, filmId, film, [item]);
+            const painted = t.visible ? surfaceAt(film, t.id, cursor.cell) : null;
+            if (painted) {
+              // The picture being painted, as it is right now.
+              const clip = clipAt(shown, t.id, cursor.cell);
+              drawPainted(painted, t.opacity * (clip?.opacity ?? 1), composeTransforms(t.transform, clip?.transform ?? IDENTITY_TRANSFORM));
+            } else if (item) drawProxies(ctx, filmId, film, [item]);
           }
         }
         if (activeLive && !magnified) {
@@ -504,14 +556,17 @@ export function Stage() {
       const focus = focusedClip(shown);
       if (focus) {
         const transform = composeTransforms(focus.track.transform, focus.clip.transform);
-        drawProxies(ctx, filmId, film, [{ media: focus.clip.media, opacity: state.focusOpacity, transform }]);
+        const painted = surfaceAt(film, focus.track.id, cursor.cell);
+        if (painted) drawPainted(painted, state.focusOpacity, transform);
+        else drawProxies(ctx, filmId, film, [{ media: focus.clip.media, opacity: state.focusOpacity, transform }]);
       }
 
       // Onion skin: the previous pictures of the track being worked on. Looking at
       // the film, only over a picture of that track (an empty cell shows just the film).
       const track = shown.tracks.find((t) => t.id === cursor.track);
       // Onion skin over a camera live in that track, or over a picture of it (an empty cell shows just the film).
-      if (!liveRigAt(cursor.track, cursor.cell) && !clipAt(film, cursor.track, cursor.cell)) showOnion = false;
+      // While drawing, also over an empty cell: the drawings before guide the next one.
+      if (!isPainting(tool) && !liveRigAt(cursor.track, cursor.cell) && !clipAt(film, cursor.track, cursor.cell)) showOnion = false;
       if (showOnion && track) {
         const skins = previousClips(film, cursor.track, cursor.cell, onion.count, index);
         // Farthest first so the nearest one ends on top.
@@ -524,7 +579,19 @@ export function Stage() {
       ctx.restore();
       if (showGuides) drawGuides(ctx, guides, size, dpr / s, placing);
       const handles = layerHandles.current();
-      if (handles && !placing) drawHandles(ctx, handles.media, handles.transform, size, dpr / s);
+      if (handles && !placing && !isPainting(tool)) drawHandles(ctx, handles.media, handles.transform, size, dpr / s);
+      const outline = brushOutline();
+      if (outline) {
+        // The brush's size where it would paint, visible over light and dark.
+        ctx.beginPath();
+        ctx.arc(outline.at.x, outline.at.y, Math.max(outline.size / 2, 1), 0, Math.PI * 2);
+        ctx.lineWidth = (3 * dpr) / s;
+        ctx.strokeStyle = "rgb(0 0 0 / 0.6)";
+        ctx.stroke();
+        ctx.lineWidth = (1.2 * dpr) / s;
+        ctx.strokeStyle = "#fff";
+        ctx.stroke();
+      }
       if (probesToDraw) drawProbes(ctx, probesToDraw, size, s);
     };
     raf = requestAnimationFrame(loop);
@@ -533,22 +600,25 @@ export function Stage() {
 
   return (
     <div
-      className={`stage${guideEditing ? " guides-editing" : ""}${hasSource && pointerTool !== "none" ? " tool-focus" : ""}${hasSource && magnified ? " magnified" : ""}`}
+      className={`stage${guideEditing ? " guides-editing" : ""}${painting ? " painting" : hasSource && pointerTool !== "none" ? " tool-focus" : ""}${hasSource && magnified ? " magnified" : ""}`}
       ref={wrapRef}
       onPointerDown={(e) => {
-        if (playing || guideDrag.onPointerDown(e) || layerDrag.onPointerDown(e)) return;
+        if (playing || guideDrag.onPointerDown(e) || paintPointer.onPointerDown(e) || layerDrag.onPointerDown(e)) return;
         if (hasSource) handlers.onPointerDown(e);
       }}
       onPointerMove={(e) => {
-        if (playing || guideDrag.onPointerMove(e) || layerDrag.onPointerMove(e)) return;
+        if (playing || guideDrag.onPointerMove(e) || paintPointer.onPointerMove(e) || layerDrag.onPointerMove(e)) return;
         if (hasSource) handlers.onPointerMove(e);
       }}
       onPointerUp={(e) => {
-        if (playing || guideDrag.onPointerUp() || layerDrag.onPointerUp()) return;
+        if (playing || guideDrag.onPointerUp() || paintPointer.onPointerUp() || layerDrag.onPointerUp()) return;
         if (hasSource) handlers.onPointerUp(e);
       }}
+      onPointerCancel={() => paintPointer.onPointerUp()}
+      onPointerLeave={leaveStage}
     >
       <canvas ref={canvasRef} />
+      {!playing && <StageTools />}
       {marker && <div className="focus-marker" style={{ left: marker.x, top: marker.y }} />}
       {!playing && magnified && <div className="stage-badge zoom">🔍 Lupa · arrastrá para mover</div>}
       {!playing && !hasSource && (

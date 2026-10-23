@@ -93,9 +93,13 @@ Cada cambio es una `Op` serializable (`clip.place`, `clip.move`, `clip.update`,
   Fusion.
 
 Como las operaciones no contienen píxeles, recalcular miles de pasos es barato.
-Cuando lleguen las ediciones de dibujo, cada trazo será una operación vectorial y
-las capas raster pintadas se guardarán como assets (con *snapshots* cacheados para
-no re-renderizar desde cero).
+El dibujo es raster: el **pincel** y el **borrador** (`state/paint.ts`) pintan en la
+imagen de la celda del cursor (o empiezan un dibujo nuevo si está vacía) sobre un
+canvas con la resolución de esa imagen, mapeando el puntero con la inversa de la
+transformación del track y la imagen. Al soltar, el resultado se guarda como un
+asset nuevo (PNG si tiene transparencia) y el trazo es un paso del historial
+(`clip.update` con `media`, o `clip.place`): los pasos siguen sin píxeles, solo
+referencias a assets.
 
 ## Almacenamiento
 

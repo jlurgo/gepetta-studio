@@ -9,7 +9,7 @@ export type ClipId = string;
 export interface CaptureMeta extends CaptureInfo {
   /** Camera name as shown in the app, e.g. "Canon EOS 500D / Rebel T1i". */
   source?: string;
-  sourceKind?: "webcam" | "phone" | "dslr" | "import";
+  sourceKind?: "webcam" | "phone" | "dslr" | "import" | "drawing";
   /** Lens focus position in fine steps when the shot was taken, and what it counts from. */
   focusPosition?: number;
   focusOrigin?: "infinity" | "autofocus";

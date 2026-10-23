@@ -32,7 +32,8 @@
 - [x] Exportar el resultado, un track solo o cada track por separado
 - [x] Publicaciones versionadas al exportar (número, título, notas) y vista de Versiones: fecha, archivo y si sigue existiendo, mostrarlo, volver a exportar una versión vieja; marcadas en el historial
 - [x] Varias cámaras a la vez, cada una con su track y celda destino; en vivo con la transparencia de su track; grabar video con cada una
-- [ ] Barra de herramientas: pincel, sello, etc., como la cámara (pintan en una celda)
+- [x] Barra de herramientas en la pantalla grande: mover, pincel y borrador (pintan en la celda del cursor; presión del lápiz)
+- [ ] Más herramientas: sello de clonar, relleno, cuentagotas, selección
 - [x] Transformar capas: mover, rotar, escalar con manijas
 - Alinear capas por puntos de control
   (afín/homografía/TPS de CasitaDesign); deformación trapezoidal

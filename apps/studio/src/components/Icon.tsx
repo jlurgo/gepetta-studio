@@ -31,6 +31,9 @@ const PATHS = {
   grid: "M4 4h16v16H4Z M9.3 4v16 M14.7 4v16 M4 9.3h16 M4 14.7h16",
   more: "M6 10l6 6 6-6",
   film: "M4 4h16v16H4Z M8 4v16 M16 4v16 M4 8h4 M4 12h4 M4 16h4 M16 8h4 M16 12h4 M16 16h4",
+  pointer: "M5 3l14 8-6.5 1.5L9 19Z",
+  brush: "M4 20l1.2-4.8L15.5 4.9a2 2 0 0 1 2.8 0l.8.8a2 2 0 0 1 0 2.8L8.8 18.8Z M13.5 7l3.5 3.5",
+  eraser: "M8 20l-4.3-4.3a1 1 0 0 1 0-1.4L13.3 4.7a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L12 20Z M8.5 9.5l6 6 M12 20h8",
 } as const;
 
 export type IconName = keyof typeof PATHS;
