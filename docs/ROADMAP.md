@@ -33,7 +33,9 @@
 - [x] Publicaciones versionadas al exportar (número, título, notas) y vista de Versiones: fecha, archivo y si sigue existiendo, mostrarlo, volver a exportar una versión vieja; marcadas en el historial
 - [x] Varias cámaras a la vez, cada una con su track y celda destino; en vivo con la transparencia de su track; grabar video con cada una
 - [x] Barra de herramientas en la pantalla grande: mover, pincel y borrador (pintan en la celda del cursor; presión del lápiz)
-- [ ] Más herramientas: sello de clonar, relleno, cuentagotas, selección
+- [x] Herramientas al estilo Grease Pencil (Blender 2D): pinceles lápiz/tinta/marcador/aerógrafo con fuerza y suavizado, borrar, rellenar, teñir, formas (línea, rectángulo, elipse), sello de clonar (también desde otra celda) y cuentagotas
+- [ ] Trazos vectoriales editables (modo edición y esculpido de Grease Pencil): cambiaría el modelo de dibujo, a decidir
+- [ ] Selección y transformación de una parte de la imagen (lazo/rectángulo)
 - [x] Transformar capas: mover, rotar, escalar con manijas
 - Alinear capas por puntos de control
   (afín/homografía/TPS de CasitaDesign); deformación trapezoidal

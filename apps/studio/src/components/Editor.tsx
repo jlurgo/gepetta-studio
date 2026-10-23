@@ -1,4 +1,5 @@
-import { isPainting, toolSize, usePaint } from "../state/paint";
+import { currentSettings, hasSettings, usePaint } from "../state/paint";
+import { TOOLS } from "./StageTools";
 import { type FilmState, clipAt } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { isVideoFile } from "../media/ingest";
@@ -63,14 +64,10 @@ function useShortcuts() {
       else if (e.key === "-") changeHold(-1);
       else if (key === "o") s.setOnion({ enabled: !s.onion.enabled });
       else if (key === "l") s.set({ loop: !s.loop });
-      else if (key === "v") usePaint.getState().setTool("move");
-      else if (key === "b") usePaint.getState().setTool("brush");
-      else if (key === "e") usePaint.getState().setTool("eraser");
-      else if ((e.key === "[" || e.key === "]") && isPainting(usePaint.getState().tool)) {
-        const p = usePaint.getState();
-        const size = toolSize();
-        const next = Math.min(200, Math.max(1, e.key === "]" ? Math.ceil(size * 1.25) : Math.floor(size / 1.25)));
-        p.set(p.tool === "eraser" ? { eraserSize: next } : { brushSize: next });
+      else if (TOOLS.some((t) => t.key.toLowerCase() === key)) usePaint.getState().setTool(TOOLS.find((t) => t.key.toLowerCase() === key)!.id);
+      else if ((e.key === "[" || e.key === "]") && hasSettings(usePaint.getState().tool)) {
+        const { size } = currentSettings();
+        usePaint.getState().setCurrent({ size: Math.min(300, Math.max(1, e.key === "]" ? Math.ceil(size * 1.25) : Math.floor(size / 1.25))) });
       }
       else if (key === "g" && s.filmId) {
         const guides = useGuides.getState();

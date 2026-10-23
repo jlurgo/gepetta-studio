@@ -8,3 +8,4 @@ export * from "./sharpness";
 export * from "./guides";
 export * from "./layers";
 export { isLegacyHistory, migrateHistory } from "./legacy/convert";
+export * from "./fill";

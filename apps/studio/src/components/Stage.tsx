@@ -25,7 +25,7 @@ import { useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
 import { playbackCell, useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
-import { beginStroke, brushOutline, endStroke, isPainting, leaveStage, moveStroke, surfaceAt, usePaint } from "../state/paint";
+import { beginStroke, brushOutline, cloneMarker, endStroke, isPainting, leaveStage, moveStroke, surfaceAt, usePaint } from "../state/paint";
 import { drawGuides, hitVanishingPoint } from "../render/guides";
 import { magnifyControl } from "./MagnifyPanel";
 import { capturePointer } from "./pointer";
@@ -353,8 +353,19 @@ function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
   return { onPointerDown, onPointerMove, onPointerUp };
 }
 
-/** Painting with the brush or the eraser on the cell at the cursor. */
-function usePaintPointer(filmRect: React.RefObject<FilmRect | null>) {
+/** The color of the stage under the pointer, as "#rrggbb". */
+function stageColor(canvas: HTMLCanvasElement, e: React.PointerEvent): string | null {
+  const box = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const x = Math.floor((e.clientX - box.left) * dpr);
+  const y = Math.floor((e.clientY - box.top) * dpr);
+  if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return null;
+  const [r, g, b] = canvas.getContext("2d")!.getImageData(x, y, 1, 1).data;
+  return `#${[r, g, b].map((v) => v!.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** Painting tools on the cell at the cursor. */
+function usePaintPointer(filmRect: React.RefObject<FilmRect | null>, canvasRef: React.RefObject<HTMLCanvasElement | null>) {
   const down = useRef(false);
 
   const filmPoints = (e: React.PointerEvent): Point[] => {
@@ -367,9 +378,16 @@ function usePaintPointer(filmRect: React.RefObject<FilmRect | null>) {
   };
 
   const onPointerDown = (e: React.PointerEvent): boolean => {
-    if (!isPainting(usePaint.getState().tool) || e.button !== 0) return false;
+    const { tool, pickColor } = usePaint.getState();
+    if (!isPainting(tool) || e.button !== 0) return false;
+    // Eyedropper: the tool, or Alt+click with a tool that paints a color.
+    if (tool === "picker" || (e.altKey && tool !== "clone" && tool !== "erase")) {
+      const color = canvasRef.current && stageColor(canvasRef.current, e);
+      if (color) pickColor(color);
+      return true;
+    }
     const [p] = filmPoints(e);
-    if (!p || !beginStroke(p, e.pressure, e.pointerType === "pen")) return false;
+    if (!p || !beginStroke(p, e.pressure, e.pointerType === "pen", { alt: e.altKey, shift: e.shiftKey })) return false;
     capturePointer(e);
     down.current = true;
     return true;
@@ -377,7 +395,7 @@ function usePaintPointer(filmRect: React.RefObject<FilmRect | null>) {
 
   const onPointerMove = (e: React.PointerEvent): boolean => {
     if (!isPainting(usePaint.getState().tool)) return false;
-    moveStroke(filmPoints(e), e.pressure, e.pointerType === "pen");
+    moveStroke(filmPoints(e), e.pressure, e.pointerType === "pen", e.shiftKey);
     return down.current;
   };
 
@@ -398,13 +416,13 @@ export function Stage() {
   const filmRect = useRef<FilmRect | null>(null);
   const guideDrag = useGuideDrag(filmRect);
   const layerDrag = useLayerDrag(filmRect);
-  const paintPointer = usePaintPointer(filmRect);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const paintPointer = usePaintPointer(filmRect, canvasRef);
   const painting = usePaint((s) => isPainting(s.tool));
   const layerHandles = useRef(targetOnStage);
   const guideEditing = useGuides((s) => s.editing);
   const pointerTool = useCamera((s) => s.pointerTool);
   const magnified = useCamera((s) => (magnifyControl(s.controls)?.value ?? "1") !== "1");
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const hasSource = useCamera((s) => s.source !== null);
   const focusOpacity = useEditor((s) => s.focusOpacity);
   const focused = useEditor((s) => {
@@ -590,6 +608,22 @@ export function Stage() {
         ctx.stroke();
         ctx.lineWidth = (1.2 * dpr) / s;
         ctx.strokeStyle = "#fff";
+        ctx.stroke();
+      }
+      const source = cloneMarker();
+      if (source) {
+        // Where the clone stamp copies from: a cross.
+        const r = (10 * dpr) / s;
+        ctx.beginPath();
+        ctx.moveTo(source.x - r, source.y);
+        ctx.lineTo(source.x + r, source.y);
+        ctx.moveTo(source.x, source.y - r);
+        ctx.lineTo(source.x, source.y + r);
+        ctx.lineWidth = (3 * dpr) / s;
+        ctx.strokeStyle = "rgb(0 0 0 / 0.6)";
+        ctx.stroke();
+        ctx.lineWidth = (1.5 * dpr) / s;
+        ctx.strokeStyle = "#5cc8b5";
         ctx.stroke();
       }
       if (probesToDraw) drawProbes(ctx, probesToDraw, size, s);

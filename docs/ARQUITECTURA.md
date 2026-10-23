@@ -93,7 +93,9 @@ Cada cambio es una `Op` serializable (`clip.place`, `clip.move`, `clip.update`,
   Fusion.
 
 Como las operaciones no contienen píxeles, recalcular miles de pasos es barato.
-El dibujo es raster: el **pincel** y el **borrador** (`state/paint.ts`) pintan en la
+El dibujo es raster: las herramientas de `state/paint.ts` (pinceles, borrar, teñir,
+formas, sello de clonar; cada trazo va a una capa propia que se aplica con su fuerza
+al soltar; el relleno usa `fillMask` de core) pintan en la
 imagen de la celda del cursor (o empiezan un dibujo nuevo si está vacía) sobre un
 canvas con la resolución de esa imagen, mapeando el puntero con la inversa de la
 transformación del track y la imagen. Al soltar, el resultado se guarda como un
