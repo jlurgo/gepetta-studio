@@ -141,9 +141,15 @@ function TopBar({
           ))}
         </select>
       </label>
-      <label className="inline-control toggle" title="Película en loop: después del último cuadro viene el primero (la línea de tiempo no termina)">
-        <input type="checkbox" checked={!!film.settings.loop} onChange={(e) => commit([{ type: "film.setLoop", loop: e.target.checked }])} />
-        <span>↻ Loop</span>
+      <label className="inline-control" title="Loop: después del último cuadro viene el primero. Ping-pong: va hasta el final y vuelve.">
+        <select
+          value={!film.settings.loop ? "none" : film.settings.pingpong ? "pingpong" : "loop"}
+          onChange={(e) => commit([{ type: "film.setLoop", loop: e.target.value !== "none", pingpong: e.target.value === "pingpong" }])}
+        >
+          <option value="none">Sin loop</option>
+          <option value="loop">↻ Loop</option>
+          <option value="pingpong">⇄ Ping-pong</option>
+        </select>
       </label>
       <button className={`btn${historyOpen ? " active" : ""}`} onClick={onToggleHistory} title="Historial de cambios">
         <Icon name="history" /> Historial

@@ -133,6 +133,8 @@ export interface FilmSettings {
   height: number;
   /** A loop: the first cell comes after the last one (playing never ends, the onion skin wraps). */
   loop?: boolean;
+  /** A loop that plays forward and then back (ping-pong), instead of starting over. */
+  pingpong?: boolean;
 }
 
 export interface FilmState {

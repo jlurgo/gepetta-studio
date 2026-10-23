@@ -1,4 +1,4 @@
-import { type FilmState, durationSeconds, newId } from "@gepetta/core";
+import { type FilmState, exportedCells, newId } from "@gepetta/core";
 import { useEffect, useMemo, useState } from "react";
 import { type VideoExportOptions, type VideoFormat, type VideoQuality, canExport, exportVideo } from "../export/video";
 import { saveBlob } from "../storage";
@@ -62,7 +62,7 @@ export function ExportDialog({ onClose, past }: { onClose(): void; past?: { film
 
   /** Exports and saves one file; returns what was saved, or null if cancelled. */
   async function exportOne(name: string, label: string, tracks?: string[]) {
-    const blob = await runTask(label, film.length, (progress) => exportVideo(filmId, film, { ...opts, tracks }, progress));
+    const blob = await runTask(label, exportedCells(film).length, (progress) => exportVideo(filmId, film, { ...opts, tracks }, progress));
     if (!blob) return null;
     const saved = await saveBlob(blob, `${name}.${format}`);
     if (saved) useBusy.getState().notify(`Video guardado: ${saved}`);
@@ -151,7 +151,7 @@ export function ExportDialog({ onClose, past }: { onClose(): void; past?: { film
         </select>
       </label>
       <p className="hint">
-        {opts.width}×{opts.height} · {film.settings.fps} cuadros/s · {durationSeconds(film).toFixed(1)} s · {film.length} celdas
+        {opts.width}×{opts.height} · {film.settings.fps} cuadros/s · {(exportedCells(film).length / film.settings.fps).toFixed(1)} s · {exportedCells(film).length} cuadros{film.settings.pingpong ? " (ida y vuelta)" : ""}
       </p>
 
       {canPublish && (

@@ -137,6 +137,28 @@ export function previousClips(film: FilmState, track: TrackId, cell: number, cou
   return [...before, ...after].slice(0, count);
 }
 
+/**
+ * The cell shown at step `n` of playing (counted from cell 0): a loop starts
+ * over, a ping-pong goes back from the end (…, last-1, last, last-1, …, 1, 0, 1…).
+ */
+export function playedCell(film: FilmState, n: number): number {
+  const length = film.length;
+  if (!film.settings.loop || length === 0) return n;
+  if (film.settings.pingpong && length > 1) {
+    const period = 2 * length - 2;
+    const k = ((n % period) + period) % period;
+    return k < length ? k : period - k;
+  }
+  return ((n % length) + length) % length;
+}
+
+/** The cells an export goes through, in order: a ping-pong goes there and back once (it repeats from there). */
+export function exportedCells(film: FilmState): number[] {
+  const cells = Array.from({ length: film.length }, (_, i) => i);
+  if (!film.settings.loop || !film.settings.pingpong || film.length < 3) return cells;
+  return [...cells, ...cells.slice(1, -1).reverse()];
+}
+
 /** A cell of a loop film counted from anywhere (negative, or past the end): back inside it. */
 export function wrapCell(film: FilmState, cell: number): number {
   if (!film.settings.loop || film.length === 0) return cell;

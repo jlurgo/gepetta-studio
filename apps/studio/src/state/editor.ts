@@ -16,6 +16,7 @@ import {
   setCursor as historySetCursor,
   setEntryEnabled as historySetEnabled,
   tailStartCell,
+  playedCell,
   wrapCell,
   trackClips,
   undo as historyUndo,
@@ -326,7 +327,7 @@ export const useEditor = create<EditorState>((set, get) => {
     pause() {
       const { playback, film, cursor } = get();
       if (!playback || !film) return;
-      const cell = Math.min(film.length - 1, wrapCell(film, playbackCell(playback, film.settings.fps)));
+      const cell = Math.min(film.length - 1, playedCell(film, playbackCell(playback, film.settings.fps)));
       set({ playback: null, cursor: { ...cursor, cell }, cursorAlong: false });
     },
     stop() {

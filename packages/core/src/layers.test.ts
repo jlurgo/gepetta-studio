@@ -118,3 +118,15 @@ describe("loop films", () => {
     expect(previousClips(film, PHOTO_TRACK, 0, 2).map((c) => c.id)).toEqual(["d", "c"]);
   });
 });
+
+describe("ping-pong", () => {
+  it("goes to the end and back", async () => {
+    const { playedCell, exportedCells } = await import("./layers");
+    const { emptyFilm } = await import("./model");
+    const film = { ...emptyFilm({ name: "t", fps: 12, width: 160, height: 90, loop: true, pingpong: true }), length: 4 };
+    expect(Array.from({ length: 9 }, (_, n) => playedCell(film, n))).toEqual([0, 1, 2, 3, 2, 1, 0, 1, 2]);
+    expect(exportedCells(film)).toEqual([0, 1, 2, 3, 2, 1]);
+    const loop = { ...film, settings: { ...film.settings, pingpong: false } };
+    expect(Array.from({ length: 6 }, (_, n) => playedCell(loop, n))).toEqual([0, 1, 2, 3, 0, 1]);
+  });
+});

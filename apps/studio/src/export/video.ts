@@ -1,4 +1,4 @@
-import { type FilmState, type TrackId, cellIndex, stackAt } from "@gepetta/core";
+import { type FilmState, type TrackId, cellIndex, exportedCells, stackAt } from "@gepetta/core";
 import {
   BufferTarget,
   CanvasSource,
@@ -73,7 +73,10 @@ export async function exportVideo(
     // Decoded originals, kept while consecutive cells still show them.
     let bitmaps = new Map<string, CanvasImageSource>();
     let shown: string | null = null;
-    for (let cell = 0; cell < film.length; cell++) {
+    // A ping-pong goes there and back once (a player repeating it keeps going).
+    const order = exportedCells(film);
+    for (let i = 0; i < order.length; i++) {
+      const cell = order[i]!;
       // A track exported on its own goes out even if it is only a reference.
       const stack = stackAt(film, cell, { index, ...(only ? { tracks: only } : { exportOnly: true }) });
       const key = stack.map((s) => `${s.clipId}:${pictureId(s)}`).join("|");
@@ -100,8 +103,8 @@ export async function exportVideo(
         drawStack(ctx, stack, film.settings, (item) => bitmaps.get(pictureId(item)));
         shown = key;
       }
-      await source.add(cell / fps, 1 / fps);
-      progress(cell + 1);
+      await source.add(i / fps, 1 / fps);
+      progress(i + 1);
     }
     bitmaps.forEach((b) => b instanceof ImageBitmap && b.close());
     await output.finalize();

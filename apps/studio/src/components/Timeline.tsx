@@ -1,4 +1,4 @@
-import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, columnsContain, extendColumns, stackAt, toggleColumns, wrapCell } from "@gepetta/core";
+import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, columnsContain, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addTrack, extendFilm, setLoopLength, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
@@ -212,7 +212,7 @@ export function Timeline() {
       if (!playback || !f || !line || !el) return;
       if (f.settings.loop && f.length) {
         // The drum turns under the line, which stays in the middle (a drum that fits whole stays still).
-        const now = wrapCell(f, playbackCell(playback, f.settings.fps));
+        const now = playedCell(f, playbackCell(playback, f.settings.fps));
         const view = Math.floor(el.clientWidth / cw);
         if (f.length > view) turn(now - Math.floor(view / 2));
         line.style.transform = `translateX(${(rotRef.current + mod(now - rotRef.current, f.length)) * cw}px)`;
