@@ -10,6 +10,7 @@ import {
   cellsInColumns,
   removeColumnsOps,
   isPlainLook,
+  setSequenceOps,
   wrapCell,
   type MediaRef,
   type Op,
@@ -30,7 +31,7 @@ import { useLayers } from "./layers";
 import { pickedStrokes, removeStrokes } from "./strokes";
 
 /** Clips for pictures placed one after another from `at`, each `length` cells long (with a camera's settings, if from one). */
-function clipsFrom(at: GridCursor, media: MediaRef[], length: number, name: string, shot: Shot = PLAIN_SHOT): Clip[] {
+function clipsFrom(at: GridCursor, media: MediaRef[], length: number, name: string, shot: Shot = PLAIN_SHOT, seq?: string): Clip[] {
   return media.map((m, i) => ({
     id: newId(),
     track: at.track,
@@ -42,6 +43,7 @@ function clipsFrom(at: GridCursor, media: MediaRef[], length: number, name: stri
     opacity: shot.opacity,
     transform: shot.transform,
     ...(!isPlainLook(shot.look) && { look: shot.look }),
+    ...(seq && { seq }),
   }));
 }
 
@@ -69,7 +71,8 @@ function placeStill(rigId: string | null, image: Blob, raw: Blob | null, label: 
     if (state.filmId !== filmId) return;
     const rig = rigId ? rigFor(rigId) : undefined;
     const target = rig ? useCamera.getState().targetOf(rig) : state.cursor;
-    const [clip] = clipsFrom(target, [media], state.captureStep, label, shot ?? rig?.shot);
+    // Photos shot one after another by a camera make a sequence (until its cell is picked again).
+    const [clip] = clipsFrom(target, [media], state.captureStep, label, shot ?? rig?.shot, rig?.seq);
     state.commit([{ type: "clip.place", clips: [clip!], label }], undefined, { selection: [] });
     const next = { track: clip!.track, cell: clipEnd(clip!) };
     if (rig) useCamera.getState().setTarget(rig.id, next);
@@ -143,6 +146,8 @@ interface Recorder {
   step: string | null;
   cells: number;
   meta: CaptureMeta;
+  /** The recorded pictures make one sequence. */
+  seq: string;
 }
 const recorders = new Map<string, Recorder>();
 
@@ -166,6 +171,7 @@ export function startRecording(rigId?: string) {
     step: null,
     cells: 0,
     meta: { source: camera.labelOf(rig.source.id) ?? undefined, sourceKind: rig.source.kind },
+    seq: newId(),
   };
   const name = `Video de ${rec.meta.source ?? "la cámara"}`;
   const grab = () => {
@@ -181,7 +187,7 @@ export function startRecording(rigId?: string) {
         const media = await ingestImage(filmId, await encoded, null, rec.meta);
         const state = useEditor.getState();
         if (state.filmId !== filmId) return;
-        const [clip] = clipsFrom(rec.next, [media], 1, name, shot);
+        const [clip] = clipsFrom(rec.next, [media], 1, name, shot, rec.seq);
         rec.step = state.commit([{ type: "clip.place", clips: [clip!], label: "Video grabado" }], `Video grabado (${rec.cells + 1} imágenes)`, {
           amend: rec.step ?? undefined,
         });
@@ -210,6 +216,8 @@ export async function stopRecording(rigId?: string) {
   clearInterval(rec.timer);
   recorders.delete(rig.id);
   useCamera.getState().setRecording(rig.id, null);
+  // Photos after a video start a sequence of their own.
+  useCamera.getState().newSequence(rig.id);
   await rec.chain;
 }
 
@@ -245,7 +253,7 @@ export async function importImages(files: File[], at?: GridCursor, ordered = fal
   if (!media || useEditor.getState().filmId !== filmId) return;
   const from = at ?? cursor;
   // Each picture named after its file.
-  const clips = clipsFrom(from, media, captureStep, "").map((c, i) => ({ ...c, name: images[i]!.name.replace(/\.[^.]+$/, "") }));
+  const clips = clipsFrom(from, media, captureStep, "", undefined, media.length > 1 ? newId() : undefined).map((c, i) => ({ ...c, name: images[i]!.name.replace(/\.[^.]+$/, "") }));
   const label = `Importar ${media.length} ${media.length === 1 ? "imagen" : "imágenes"}`;
   useEditor.getState().commit([{ type: "clip.place", clips, label }], label, {
     cursor: { track: from.track, cell: clipEnd(clips.at(-1)!) },
@@ -280,7 +288,7 @@ export async function importVideoStills(video: HTMLVideoElement, times: number[]
   }
   // Each picture lasts as long as it lasted in the video, in cells of the film.
   const length = Math.max(1, Math.round(state.film.settings.fps / fps));
-  const clips = clipsFrom({ track, cell: state.cursor.cell }, media, length, title);
+  const clips = clipsFrom({ track, cell: state.cursor.cell }, media, length, title, undefined, newId());
   ops.push({ type: "clip.place", clips, label: `Video "${title}"` });
   state.commit(ops, `Video "${title}" (${media.length} imágenes)`, { cursor: { track, cell: clipEnd(clips.at(-1)!) }, selection: [] });
   if (newTrack) useLayers.getState().select(track);
@@ -390,8 +398,11 @@ export function duplicateSelected() {
   if (!clips.length) return;
   const start = Math.min(...clips.map((c) => c.start));
   const span = Math.max(...clips.map(clipEnd)) - start;
-  const copies = clips.map((c) => ({ ...c, id: newId(), start: c.start + span }));
-  useEditor.getState().commit([{ type: "clip.place", clips: copies, label: copies.length === 1 ? "Repetir imagen" : "Repetir imágenes" }], undefined, {
+  // The copies and the originals make a sequence (the one they were in, if they share it).
+  const shared = clips.every((c) => c.seq && c.seq === clips[0]!.seq) ? clips[0]!.seq! : newId();
+  const copies = clips.map((c) => ({ ...c, id: newId(), start: c.start + span, seq: shared }));
+  const joining = clips.filter((c) => c.seq !== shared).map((c) => c.id);
+  useEditor.getState().commit([...setSequenceOps(joining, shared), { type: "clip.place", clips: copies, label: copies.length === 1 ? "Repetir imagen" : "Repetir imágenes" }], copies.length === 1 ? "Repetir imagen" : "Repetir imágenes", {
     selection: copies.map((c) => c.id),
     cursor: { track: useEditor.getState().cursor.track, cell: start + span },
   });

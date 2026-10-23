@@ -1,4 +1,4 @@
-import { type Clip, type ClipPatch, IDENTITY_TRANSFORM, PHOTO_TRACK, type Track } from "@gepetta/core";
+import { type Clip, type ClipPatch, IDENTITY_TRANSFORM, PHOTO_TRACK, type Track, newId, setSequenceOps } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
@@ -6,6 +6,7 @@ import { commitShot, shotOf, useShotPreview } from "../state/shot";
 import { FrameInfo } from "./FrameInfo";
 import { ShotEditor } from "./ShotEditor";
 import { StrokesPanel } from "./StrokesPanel";
+import { SequenceLink, SequencePanel } from "./SequencePanel";
 import { Icon } from "./Icon";
 
 /** Slider that shows changes live and records one history step when released. */
@@ -142,6 +143,7 @@ function ClipDetails({ clip }: { clip: Clip }) {
           Track: <strong>{track.name}</strong> →
         </button>
       )}
+      {clip.seq && <SequenceLink seq={clip.seq} />}
       <p className="hint">
         Celdas {clip.start + 1}–{clip.start + clip.length} · desde {seconds(clip.start)} s, dura {seconds(clip.length)} s
       </p>
@@ -233,7 +235,7 @@ function fadeSequence(ids: string[], how: "in" | "out", n: number) {
   if (ops.length) commit(ops, how === "in" ? `Fundido de entrada en ${ops.length} imágenes` : `Fundido de salida en ${ops.length} imágenes`);
 }
 
-function SequenceFade({ ids }: { ids: string[] }) {
+export function SequenceFade({ ids }: { ids: string[] }) {
   const [n, setN] = useState(Math.min(6, ids.length));
   return (
     <>
@@ -256,13 +258,32 @@ function SequenceFade({ ids }: { ids: string[] }) {
 function ManyDetails() {
   const selection = useEditor((s) => s.selection);
   const first = useEditor((s) => s.film?.clips[s.selection[0]!]);
+  const film = useEditor((s) => s.film);
   const commit = useEditor.getState().commit;
+  // The sequence they all are in, if one.
+  const seq = first?.seq;
+  const shared = seq && film && selection.every((id) => film.clips[id]?.seq === seq) ? seq : null;
   if (!first) return null;
   return (
     <div className="layer-details">
       <p className="hint">
         <strong>{selection.length} imágenes</strong> elegidas. Moverlas o alargarlas se hace en la línea de tiempo.
       </p>
+      {shared ? (
+        <SequenceLink seq={shared} />
+      ) : (
+        <button
+          className="btn small"
+          onClick={() => {
+            const seq = newId();
+            commit(setSequenceOps(selection, seq), `Secuencia de ${selection.length} imágenes`);
+            useLayers.getState().showSequence(seq);
+          }}
+          title="Para cambiarlas juntas desde su panel"
+        >
+          Hacer una secuencia con estas imágenes
+        </button>
+      )}
       <ShotEditor
         mixed
         value={shotOf(first)}
@@ -284,6 +305,7 @@ function ManyDetails() {
 export function DetailPanel() {
   const trackId = useLayers((s) => s.trackId);
   const detail = useLayers((s) => s.detail);
+  const seqId = useLayers((s) => s.seq);
   const track = useEditor((s) => s.film?.tracks.find((t) => t.id === trackId) ?? null);
   const clip = useEditor((s) => (s.selection.length === 1 ? (s.film?.clips[s.selection[0]!] ?? null) : null));
   const many = useEditor((s) => s.selection.length > 1);
@@ -293,6 +315,14 @@ export function DetailPanel() {
     if (trackId && !track) useLayers.getState().select(null);
   }, [trackId, track]);
 
+  if (detail === "sequence" && seqId) {
+    return (
+      <div className="layers-panel">
+        <h3>Secuencia</h3>
+        <SequencePanel key={seqId} seq={seqId} />
+      </div>
+    );
+  }
   if (detail === "clip" && many) {
     return (
       <div className="layers-panel">

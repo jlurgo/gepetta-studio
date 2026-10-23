@@ -2260,3 +2260,47 @@ input[type="range"] {
   white-space: nowrap;
 }
 
+/* Sequences: a bar of their color under their pictures in the timeline. */
+.tl-seq {
+  position: absolute;
+  left: -1px;
+  right: -2px;
+  bottom: 0;
+  height: 3px;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.tl-seq.shown {
+  height: 5px;
+  opacity: 1;
+}
+
+.seq-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--seq);
+  vertical-align: middle;
+}
+
+.seq-link {
+  border-left: 3px solid var(--seq);
+}
+
+.sequence-panel .seq-title {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sequence-panel h4 {
+  margin: 8px 0 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+

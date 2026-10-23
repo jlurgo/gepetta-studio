@@ -6,6 +6,7 @@ import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
 import { type Rig, rigColor, shotOn, useCamera } from "../state/camera";
 import { Icon } from "./Icon";
+import { sequenceColor } from "./SequencePanel";
 import { capturePointer } from "./pointer";
 import { OpacitySlider } from "./TrackPanel";
 
@@ -82,6 +83,7 @@ export function Timeline() {
   const rigs = useCamera((s) => s.rigs);
   const activeRig = useCamera((s) => s.activeRig);
   const picking = useCamera((s) => s.picking);
+  const shownSeq = useLayers((s) => (s.detail === "sequence" ? s.seq : null));
   /** While picking a camera's cell: the cell under the pointer. */
   const [hover, setHover] = useState<{ track: string; cell: number; v: number } | null>(null);
   const [cw, setCw] = useState(loadZoom);
@@ -680,6 +682,14 @@ export function Timeline() {
                       </div>
                     ))}
                     {length > 1 && cw * length >= 40 && <span className="tl-len">×{length}</span>}
+                    {/* Pictures of one sequence: a bar of its color under them, joined from one to the next. */}
+                    {c.seq && (
+                      <span
+                        className={`tl-seq${shownSeq === c.seq ? " shown" : ""}`}
+                        style={{ background: sequenceColor(c.seq) }}
+                        title="Parte de una secuencia"
+                      />
+                    )}
                     <span className="tl-edge" data-edge="1" />
                   </div>
                 );

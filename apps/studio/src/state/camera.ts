@@ -42,6 +42,8 @@ export interface Rig {
   recording: { cells: number } | null;
   /** How its pictures go into the film; seen live, and kept by each photo (changeable later). */
   shot: Shot;
+  /** The sequence its photos go into; a new one each time its cell is picked. */
+  seq: string;
 }
 
 /** A camera's settings for its pictures: what each photo or recorded picture starts with. */
@@ -81,6 +83,8 @@ interface CameraState {
   pick(target: GridCursor): void;
   cancelPicking(): void;
   setEnabled(rigId: string, enabled: boolean): void;
+  /** The camera's next photos start a sequence of their own. */
+  newSequence(rigId: string): void;
   /** Changes a camera's settings for its pictures (remembered for that camera). */
   setShot(rigId: string, shot: Partial<Shot>): void;
 
@@ -219,6 +223,7 @@ function newRig(deviceId: string | null, target: GridCursor): Rig {
     enabled: true,
     recording: null,
     shot: PLAIN_SHOT,
+    seq: newId(),
   };
 }
 
@@ -438,7 +443,8 @@ export const useCamera = create<CameraState>((set, get) => {
       const rigId = get().picking;
       set({ picking: null });
       if (!rigId || !rig(rigId)) return;
-      patch(rigId, { target });
+      // Picking a cell starts a new sequence of photos.
+      patch(rigId, { target, seq: newId() });
       useEditor.getState().moveTo(target.cell, target.track);
     },
 
@@ -448,6 +454,10 @@ export const useCamera = create<CameraState>((set, get) => {
 
     setEnabled(rigId, enabled) {
       patch(rigId, { enabled });
+    },
+
+    newSequence(rigId) {
+      patch(rigId, { seq: newId() });
     },
 
     setShot(rigId, changes) {

@@ -39,6 +39,7 @@
 - [x] Editar los puntos de un trazo (arrastrándolos) y esculpir trazos: empujar, suavizar, engrosar, afinar
 - [x] Cámaras como herramientas en la barra, con sus propiedades en el panel de detalle; botón grande en modo foto o video con todas las cámaras habilitadas
 - [x] Ajustes de imagen sin tocar la foto (tamaño, recorte, giro, espejo, transparencia, mezcla, brillo/contraste/saturación): en vivo, en cada foto y cuadro grabado, editables en uno o varios
+- [x] Secuencias (video grabado, fotos seguidas de una cámara, imágenes o video importados, copias): enlace desde cada imagen y panel propio con tiempo, orden, movimiento de la primera a la última, fundidos, ajustes, separar y borrar
 - [x] Fundido en el tiempo: una imagen que dura varias celdas, o varias imágenes seguidas
 - [x] Columnas del resultado: ⇧ extiende, ⌘/Ctrl suma partes sueltas; Supr las elimina en todos los tracks y lo que sigue se corre; la celda de una cámara en vivo también se elige y al borrarla la cámara va después del último cuadro
 - [x] Herramienta «Imágenes y videos»: varias imágenes en una lista para ordenar y poner en celdas seguidas; video cuadro por cuadro o en un track para calcar; imagen fija; «+ Track» agrega un track vacío directo

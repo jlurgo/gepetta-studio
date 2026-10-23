@@ -1,16 +1,26 @@
-import type { ClipId, Track, TrackId, Transform2D } from "@gepetta/core";
+import type { Clip, ClipId, Op, Track, TrackId, Transform2D } from "@gepetta/core";
 import { create } from "zustand";
 import { useCamera } from "./camera";
 import { useEditor } from "./editor";
 
-/** What the stage handles move: a whole track, one picture, or a camera's live picture (its shot settings). */
-export type HandleTarget = { kind: "track"; id: TrackId } | { kind: "clip"; id: ClipId } | { kind: "rig"; id: string };
+/**
+ * What the stage handles move: a whole track, one picture, a camera's live
+ * picture (its shot settings), or a whole sequence (through its picture `ref`).
+ */
+export type HandleTarget =
+  | { kind: "track"; id: TrackId }
+  | { kind: "clip"; id: ClipId }
+  | { kind: "rig"; id: string }
+  | { kind: "sequence"; id: string; ref: ClipId };
 
 interface LayersState {
   /** Track picked in the timeline (by its name, or as the track of the picture shown). */
   trackId: TrackId | null;
-  /** What the detail panel shows: the selected picture, or its track. */
-  detail: "clip" | "track";
+  /** What the detail panel shows: the selected picture, its track, or its sequence. */
+  detail: "clip" | "track" | "sequence";
+  /** The sequence shown, and whether the handles move all of it or just the picture at the cursor. */
+  seq: string | null;
+  seqHandles: "all" | "one";
   /** What the detail panel shows: the tool in use, or what is selected (picture, pictures, track). */
   panel: "tool" | "detail";
   /** Transform shown while a handle is dragged; committed to the history on release. */
@@ -20,17 +30,40 @@ interface LayersState {
   /** Shows the selected picture's settings (its track is remembered to go there). */
   showClip(trackId: TrackId): void;
   setPreview(preview: LayersState["preview"]): void;
+  /** Shows a sequence's settings. */
+  showSequence(seq: string): void;
 }
 
 export const useLayers = create<LayersState>((set) => ({
   trackId: null,
   detail: "track",
+  seq: null,
+  seqHandles: "all",
   panel: "tool",
   preview: null,
   select: (trackId) => set({ trackId, detail: "track", preview: null, panel: trackId ? "detail" : "tool" }),
   showClip: (trackId) => set({ trackId, detail: "clip", preview: null, panel: "detail" }),
   setPreview: (preview) => set({ preview }),
+  showSequence: (seq) => set({ seq, detail: "sequence", preview: null, panel: "detail" }),
 }));
+
+/** A sequence's pictures moved as the handles move `ref` to `transform`: the same move, turn and scaling for each. */
+export function sequenceMoved(clips: Record<ClipId, Clip>, seq: string, ref: ClipId, transform: Transform2D): Record<ClipId, Clip> {
+  const r = clips[ref];
+  if (!r) return clips;
+  const t0 = r.transform;
+  const dx = transform.x - t0.x;
+  const dy = transform.y - t0.y;
+  const k = transform.scale / (t0.scale || 1);
+  const dr = transform.rotation - t0.rotation;
+  const out = { ...clips };
+  for (const c of Object.values(clips)) {
+    if (c.seq !== seq) continue;
+    const t = c.transform;
+    out[c.id] = { ...c, transform: { x: t.x + dx, y: t.y + dy, scale: t.scale * k, rotation: t.rotation + dr } };
+  }
+  return out;
+}
 
 // Picking several pictures shows them (their settings change together).
 useEditor.subscribe((state, prev) => {
@@ -60,7 +93,15 @@ export function updateTrack(trackId: TrackId, patch: Partial<Track>) {
 
 /** Commits a dragged transform as one history step. */
 export function commitTransform(target: HandleTarget, transform: Transform2D) {
-  if (target.kind === "rig") useCamera.getState().setShot(target.id, { transform });
+  if (target.kind === "sequence") {
+    const film = useEditor.getState().film;
+    if (!film) return;
+    const moved = sequenceMoved(film.clips, target.id, target.ref, transform);
+    const ops: Op[] = Object.values(moved)
+      .filter((c) => c.seq === target.id)
+      .map((c) => ({ type: "clip.update", id: c.id, patch: { transform: c.transform } }));
+    useEditor.getState().commit(ops, "Mover la secuencia");
+  } else if (target.kind === "rig") useCamera.getState().setShot(target.id, { transform });
   else if (target.kind === "track") updateTrack(target.id, { transform });
   else useEditor.getState().commit([{ type: "clip.update", id: target.id, patch: { transform } }]);
 }

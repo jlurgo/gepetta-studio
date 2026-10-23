@@ -119,6 +119,12 @@ hace, y todo se puede cambiar después.
   posición, tamaño, giro, transparencia y `look`), que se ven en vivo y se copian
   a cada foto o cuadro grabado; se recuerdan por cámara.
 
+Las imágenes hechas juntas forman una **secuencia** (`Clip.seq`): un video
+grabado o importado, las fotos que una cámara saca seguidas (hasta que se le
+elige otra celda), imágenes importadas juntas, copias. Su panel cambia todas a
+la vez (`relayOps`, `interpolateOps` en core; las manijas mueven toda la
+secuencia con `sequenceMoved`).
+
 Una película puede ser un **loop** (`settings.loop`, op `film.setLoop`): después
 de la última celda viene la primera. La reproducción no termina, el papel de
 cebolla de las primeras celdas muestra las últimas (`previousClips`, `wrapCell`)

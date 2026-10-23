@@ -39,7 +39,7 @@ export type Op =
   /** Moves a track to `index` in the stack (0 = bottom). */
   | { type: "track.move"; trackId: TrackId; index: number };
 
-export type ClipPatch = Partial<Pick<Clip, "name" | "visible" | "opacity" | "transform" | "length" | "media" | "look" | "fade">>;
+export type ClipPatch = Partial<Pick<Clip, "name" | "visible" | "opacity" | "transform" | "length" | "media" | "look" | "fade" | "seq">>;
 export type StrokePatch = Partial<Omit<Stroke, "id" | "tool" | "layer">>;
 export type TrackPatch = Partial<Pick<Track, "name" | "visible" | "opacity" | "transform" | "exported">>;
 export type OpType = Op["type"];
@@ -229,6 +229,8 @@ function describePatch(patch: ClipPatch | TrackPatch, what: string): string {
       return `Ajustes de ${what}`;
     case "fade":
       return `Fundido de ${what}`;
+    case "seq":
+      return (patch as ClipPatch).seq ? `Poner ${what} en una secuencia` : `Sacar ${what} de su secuencia`;
     case "media":
       return `Dibujar en ${what}`;
     case "exported":

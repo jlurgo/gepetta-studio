@@ -27,7 +27,7 @@ import type { LiveFrame } from "../capture/types";
 import { type Drawable, type Size, containScale, drawStack, pictureMatrix } from "../render/frame";
 import { objectsAt, pickedStrokes, selectStrokes, strokesBounds, transformStrokes, updateStrokes, useStrokePreview, useStrokes, withStrokePreview } from "../state/strokes";
 import { type CropSide, type HandleKind, dragCrop, drawHandles, dragTransform, hitHandle } from "../render/handles";
-import { type HandleTarget, commitTransform, selectedClipId, useLayers } from "../state/layers";
+import { type HandleTarget, commitTransform, selectedClipId, sequenceMoved, useLayers } from "../state/layers";
 import { shotOn, useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
 import { playbackCell, useEditor } from "../state/editor";
@@ -74,6 +74,7 @@ function withPreview(raw: FilmState): FilmState {
   const preview = useLayers.getState().preview;
   if (!preview) return film;
   const { target, transform } = preview;
+  if (target.kind === "sequence") return { ...film, clips: sequenceMoved(film.clips, target.id, target.ref, transform) };
   if (target.kind === "track") return { ...film, tracks: film.tracks.map((t) => (t.id === target.id ? { ...t, transform } : t)) };
   const clip = film.clips[target.id];
   return clip ? { ...film, clips: { ...film.clips, [clip.id]: { ...clip, transform } } } : film;
@@ -338,6 +339,21 @@ function targetOnStage(): OnStage | null {
       target: { kind: "rig", id: rig.id },
       stored: (composite) => relativeTransform(track.transform, composite),
       crop: { media, look: rig.shot.look },
+    };
+  }
+  // A sequence shown: its picture at the cursor, moving all of the sequence (or just that picture).
+  if (layers.detail === "sequence" && layers.seq) {
+    const clip = Object.values(film.clips).find((c) => c.seq === layers.seq && cursor.cell >= c.start && cursor.cell < c.start + c.length);
+    const track = clip && film.tracks.find((t) => t.id === clip.track);
+    if (!clip || !track?.visible) return null;
+    const transform = composeTransforms(track.transform, clip.transform);
+    const one = layers.seqHandles === "one";
+    return {
+      corners: shownCorners(clip.media, clip.look, transform, film.settings),
+      transform,
+      target: one ? { kind: "clip", id: clip.id } : { kind: "sequence", id: layers.seq, ref: clip.id },
+      stored: (composite) => relativeTransform(track.transform, composite),
+      ...(one && { crop: { media: clip.media, look: clip.look ?? {} } }),
     };
   }
   // The picture picked in the timeline: its handles change just that picture.

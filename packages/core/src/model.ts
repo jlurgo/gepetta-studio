@@ -84,6 +84,12 @@ export interface Clip {
   strokes?: Stroke[];
   /** Fading in over its first `in` cells and out over its last `out` cells. */
   fade?: { in?: number; out?: number };
+  /**
+   * The sequence it belongs to: pictures made together (a recorded video,
+   * photos shot one after another, images imported at once, copies of a
+   * drawing), changed together from the sequence's details.
+   */
+  seq?: string;
 }
 
 export type StrokeTool = "draw" | "erase" | "tint" | "shape" | "fill" | "clone";
