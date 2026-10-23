@@ -31,6 +31,45 @@ useEditor.subscribe((state, prev) => {
   if (clip && !(state.selection.length === 1 && state.selection[0] === clip)) selectStrokes(null, []);
 });
 
+/** Strokes being moved, scaled or turned on the stage, shown before they are kept. */
+export const useStrokePreview = create<{ preview: { clip: ClipId; strokes: Stroke[] } | null }>(() => ({ preview: null }));
+
+/** The film with the strokes being moved, for showing. */
+export function withStrokePreview<F extends { clips: Record<ClipId, Clip> }>(film: F): F {
+  const { preview } = useStrokePreview.getState();
+  const clip = preview && film.clips[preview.clip];
+  return clip ? { ...film, clips: { ...film.clips, [clip.id]: { ...clip, strokes: preview.strokes } } } : film;
+}
+
+/** Bounds of line and shape strokes, with their width, in picture pixels (null: none of them has points). */
+export function strokesBounds(strokes: readonly Stroke[]): { x0: number; y0: number; x1: number; y1: number } | null {
+  let b: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  for (const s of strokes) {
+    for (const [x, y, w] of s.points ?? []) {
+      const r = w / 2;
+      b = b
+        ? { x0: Math.min(b.x0, x - r), y0: Math.min(b.y0, y - r), x1: Math.max(b.x1, x + r), y1: Math.max(b.y1, y + r) }
+        : { x0: x - r, y0: y - r, x1: x + r, y1: y + r };
+    }
+  }
+  return b;
+}
+
+/** The strokes `ids` with their points taken through `m` (picture pixels to picture pixels) and widths scaled. */
+export function transformStrokes(strokes: readonly Stroke[], ids: readonly string[], m: DOMMatrix, widthScale: number): Stroke[] {
+  const round = (v: number) => Math.round(v * 100) / 100;
+  return strokes.map((s) => {
+    if (!ids.includes(s.id) || !s.points) return s;
+    return {
+      ...s,
+      points: s.points.map(([x, y, w, p]) => {
+        const q = m.transformPoint(new DOMPoint(x, y));
+        return [round(q.x), round(q.y), round(w * widthScale), p] as [number, number, number, number];
+      }),
+    };
+  });
+}
+
 /** Changes strokes of a picture as one history step. */
 export function updateStrokes(clip: ClipId, patches: { id: string; patch: StrokePatch }[], label?: string) {
   const ops: Op[] = patches.map(({ id, patch }) => ({ type: "stroke.update", clip, id, patch }));

@@ -35,7 +35,8 @@
 - [x] Barra de herramientas en la pantalla grande: mover, pincel y borrador (pintan en la celda del cursor; presión del lápiz)
 - [x] Herramientas al estilo Grease Pencil (Blender 2D): pinceles lápiz/tinta/marcador/aerógrafo con fuerza y suavizado, borrar, rellenar, teñir, formas (línea, rectángulo, elipse), sello de clonar (también desde otra celda) y cuentagotas
 - [x] Trazos como objetos: cada trazo se elige (en la imagen o en la lista), se cambia (color, grosor, fuerza, pincel), se oculta o se borra
-- [ ] Editar los puntos de un trazo, moverlo, esculpirlo (modo edición de Grease Pencil)
+- [x] Mover, agrandar y girar los trazos elegidos con manijas en la imagen
+- [ ] Editar los puntos de un trazo, esculpirlo (modo edición de Grease Pencil)
 - [x] Cámaras como herramientas en la barra, con sus propiedades en el panel de detalle; botón grande en modo foto o video con todas las cámaras habilitadas
 - [x] Ajustes de imagen sin tocar la foto (tamaño, recorte, giro, espejo, transparencia, mezcla, brillo/contraste/saturación): en vivo, en cada foto y cuadro grabado, editables en uno o varios
 - [ ] Fundido en el tiempo (aparecer/desaparecer en varios cuadros)
