@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { CameraControl } from "@gepetta/protocol";
 import {
+  MSG_DISCONNECTED,
   READ_NAMES,
   SETTABLE_NAMES,
   ZOOM_STEPS,
@@ -51,6 +52,8 @@ const INSTALL_HINT = IS_WINDOWS
   : "Para usar cámaras réflex instalá gphoto2: abrí la Terminal y escribí  brew install gphoto2";
 
 const FRAME_INTERVAL_MS = 50; // ≤ 20 fps to the renderer
+/** Live-view frames failing in a row before the camera counts as gone. */
+const LIVE_FAILURES = 3;
 const AF_SETTLE_MS = 2500;
 /** Fine focus steps ("Near 2"/"Far 2") sent per queued task, so live view keeps updating while the lens moves. */
 const FOCUS_CHUNK = 4;
@@ -146,6 +149,8 @@ export class Gphoto2Shell {
   private out = "";
   private pending: { resolve(out: string): void; reject(e: Error): void; timer: NodeJS.Timeout } | null = null;
   private exited = false;
+  /** Ended on purpose (close or kill), not by the camera going away. */
+  private closing = false;
   /** The camera answered at least once: later I/O errors mean "disconnected". */
   worked = false;
   onExit: ((err: DslrError) => void) | null = null;
@@ -159,10 +164,13 @@ export class Gphoto2Shell {
     proc.once("close", (code, signal) => {
       this.exited = true;
       const { code: kind, message } = classifyGphotoError(this.out, this.worked);
+      // gphoto2 ending on its own after the camera had answered: it was turned off or unplugged.
       const err =
-        kind === "failed"
-          ? new DslrError("Se cortó la conexión con la cámara.", "failed", `${this.out.slice(-2000)}\n(exit ${code ?? signal})`)
-          : new DslrError(message, kind, this.out.slice(-2000));
+        kind !== "failed"
+          ? new DslrError(message, kind, this.out.slice(-2000))
+          : this.worked && !this.closing
+            ? new DslrError(MSG_DISCONNECTED, "disconnected", `${this.out.slice(-2000)}\n(exit ${code ?? signal})`)
+            : new DslrError("Se cortó la conexión con la cámara.", "failed", `${this.out.slice(-2000)}\n(exit ${code ?? signal})`);
       this.settle(null, err);
       this.onExit?.(err);
     });
@@ -228,7 +236,15 @@ export class Gphoto2Shell {
   }
 
   /** Leaves live view (mirror down) and ends the process. */
+  /** Ends gphoto2 at once (it may be stuck waiting for a camera that is gone). */
+  kill() {
+    this.closing = true;
+    if (!this.exited) this.proc.kill("SIGKILL");
+    void rm(this.dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+
   async close() {
+    this.closing = true;
     if (!this.exited) {
       await this.exec("set-config viewfinder=0", TIMEOUT.exit).catch(() => undefined);
       this.proc.stdin!.end("exit\n");
@@ -337,16 +353,25 @@ export function createGphoto2Driver(): DslrDriver {
   async function liveLoop(s: CameraSession) {
     if (s.loopRunning) return;
     s.loopRunning = true;
+    let failures = 0;
     try {
       while (s.wantLive) {
         const started = Date.now();
         try {
           await preview(s);
+          failures = 0;
         } catch (err) {
           if (!s.wantLive) break;
-          const e = err instanceof DslrError ? err : new DslrError("Se cortó la vista en vivo de la cámara.", "failed");
+          let e = err instanceof DslrError ? err : new DslrError("Se cortó la vista en vivo de la cámara.", "failed");
+          // Several in a row: the camera is most likely off (gphoto2 may hang instead of saying so).
+          if (e.code === "failed" && ++failures >= LIVE_FAILURES) e = new DslrError(MSG_DISCONNECTED, "disconnected");
+          if (e.code !== "failed") {
+            // busy / disconnected: drop this gphoto2 so the next open starts afresh (the app looks for the camera again).
+            dropShell(s);
+            s.onError?.(e.message, e.code);
+            break;
+          }
           s.onError?.(e.message, e.code);
-          if (e.code !== "failed") break; // busy / disconnected: wait for the user to retry
           await new Promise((r) => setTimeout(r, 1000));
         }
         const wait = FRAME_INTERVAL_MS - (Date.now() - started);
@@ -355,6 +380,13 @@ export function createGphoto2Driver(): DslrDriver {
     } finally {
       s.loopRunning = false;
     }
+  }
+
+  /** Kills the session's gphoto2 (the camera went away). */
+  function dropShell(s: CameraSession) {
+    const shell = s.shell;
+    s.shell = null;
+    shell?.kill();
   }
 
   /** Drops one open() lease; the last one stops live view and ends the shell. */

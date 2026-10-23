@@ -47,15 +47,32 @@ export async function listDslrs(): Promise<SourceOption[]> {
   return cameras.map((c) => ({ id: `dslr:${c.id}`, kind: "dslr" as const, label: dslrLabel(c.model) }));
 }
 
+/**
+ * Opens a DSLR's live view. `onError` hears what goes wrong while it is open;
+ * `onRecover`, that frames came again after a passing failure.
+ */
 export async function openDslr(
   port: string,
   onError: (message: string, code: DslrErrorCode) => void,
+  onRecover: () => void = () => undefined,
 ): Promise<CameraSource> {
   const native = window.gepetta!;
   const frames = new FrameSlot();
   const listeners = new Listeners();
-  const offFrame = native.dslr.onFrame((id, jpeg) => id === port && frames.push(jpeg.slice(), () => listeners.emit()));
-  const offError = native.dslr.onError((id, message, code) => id === port && onError(message, code));
+  let failing = false;
+  const offFrame = native.dslr.onFrame((id, jpeg) => {
+    if (id !== port) return;
+    if (failing) {
+      failing = false;
+      onRecover();
+    }
+    frames.push(jpeg.slice(), () => listeners.emit());
+  });
+  const offError = native.dslr.onError((id, message, code) => {
+    if (id !== port) return;
+    failing = true;
+    onError(message, code);
+  });
   let controls: CameraControl[] = [];
   try {
     await native.dslr.open(port);

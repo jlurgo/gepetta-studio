@@ -279,11 +279,17 @@ export const useCamera = create<CameraState>((set, get) => {
     if (kind === "phone") return openPhone(ref);
     if (kind === "dslr") {
       const port = await resolveDslrPort(ref);
-      return openDslr(port, (message, code) => {
-        if (rig(rigId)?.source?.id !== `dslr:${port}`) return;
-        patch(rigId, { error: { message, code } });
-        if (code === "disconnected") reconnect();
-      });
+      const mine = () => rig(rigId)?.source?.id === `dslr:${port}`;
+      return openDslr(
+        port,
+        (message, code) => {
+          if (!mine()) return;
+          patch(rigId, { error: { message, code } });
+          // Turned off, unplugged or taken by the system: look for it until it is back.
+          if (code !== "failed") reconnect();
+        },
+        () => mine() && patch(rigId, { error: null }),
+      );
     }
     const res = RESOLUTIONS.find((r) => r.id === get().resolutionId) ?? RESOLUTIONS[1]!;
     try {
@@ -338,19 +344,31 @@ export const useCamera = create<CameraState>((set, get) => {
     return match.id.slice("dslr:".length);
   }
 
-  /** While a DSLR is gone (asleep, unplugged), look for it again every few seconds. */
+  /**
+   * While a DSLR is gone (asleep, turned off, unplugged), look for it again
+   * every few seconds and open it as soon as it is back, as it was.
+   */
   function reconnect() {
     if (reconnectTimer) return;
+    let searching = false;
     reconnectTimer = setInterval(async () => {
-      const lost = get().rigs.filter((r) => r.deviceId?.startsWith("dslr:") && (r.error || !r.source) && !r.opening);
+      const lost = get().rigs.filter((r) => r.deviceId?.startsWith("dslr:") && !r.opening && (!r.source || (r.error && r.error.code !== "failed")));
       if (lost.length === 0) {
         clearInterval(reconnectTimer);
         reconnectTimer = undefined;
         return;
       }
-      const dslrs = await listDslrs().catch(() => []);
-      if (dslrs.length === 0) return;
-      for (const r of lost) void open(r.id);
+      if (searching) return;
+      searching = true;
+      try {
+        const dslrs = await listDslrs().catch(() => []);
+        if (dslrs.length === 0) return;
+        // On a Mac the system takes a camera that is turned on (ptpcamerad): let it go, as «Liberar cámara» does.
+        if (window.gepetta?.platform === "darwin") await window.gepetta.dslr.releaseUsb().catch(() => undefined);
+        await Promise.all(lost.map((r) => open(r.id)));
+      } finally {
+        searching = false;
+      }
     }, RECONNECT_MS);
   }
 
