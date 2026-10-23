@@ -80,6 +80,35 @@ export interface Clip {
   transform: Transform2D;
   /** Crop, mirror, mixing and effects; absent = shown as it is. */
   look?: Look;
+  /** Drawing tools' strokes on the picture, bottom to top. */
+  strokes?: Stroke[];
+}
+
+export type StrokeTool = "draw" | "erase" | "tint" | "shape" | "fill" | "clone";
+
+/**
+ * A stroke of a drawing tool on a picture, kept as what was done (so it can be
+ * picked, changed or removed later). The picture shows its image with its
+ * strokes on top, in order.
+ *
+ * Coordinates and widths are in the picture's own pixels (MediaRef width ×
+ * height), so the stroke follows the picture wherever it goes.
+ */
+export interface Stroke {
+  id: string;
+  tool: StrokeTool;
+  /** Lines and shapes: [x, y, width, pen pressure 0–1] along the stroke (a shape: its two corners). */
+  points?: [number, number, number, number][];
+  brush?: "pencil" | "ink" | "marker" | "airbrush";
+  shape?: "line" | "box" | "ellipse";
+  /** Shapes: filled with the color too. */
+  filled?: boolean;
+  color?: string;
+  /** How strongly it is laid on, 0–1. */
+  strength: number;
+  /** Fill and clone stamp: the stroke's own pixels, an image the size of the picture. */
+  layer?: AssetId;
+  hidden?: boolean;
 }
 
 /** The track every photo goes to by default. Films always have it (it can be hidden or moved, not removed). */

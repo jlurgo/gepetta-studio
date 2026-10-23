@@ -310,6 +310,7 @@ export function Timeline() {
     opacity: c.opacity,
     transform: composeTransforms(track.transform, c.transform),
     look: c.look,
+    strokes: c.strokes,
   });
   /** Cells of a clip that are on screen. */
   const cellsOf = (c: Clip, length: number): number[] => {
@@ -331,7 +332,7 @@ export function Timeline() {
       if (live) items.push(liveItem(live.id, t));
       else {
         const it = stack.find((i) => i.trackId === t.id);
-        if (it) items.push({ kind: "picture", media: it.media, opacity: it.opacity, transform: it.transform, look: it.look });
+        if (it) items.push({ kind: "picture", media: it.media, opacity: it.opacity, transform: it.transform, look: it.look, strokes: it.strokes });
       }
     }
     resultCells.push({ cell: c, items });

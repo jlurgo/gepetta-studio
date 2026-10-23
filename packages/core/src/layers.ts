@@ -1,4 +1,4 @@
-import { type Clip, type ClipId, type FilmState, type Look, type MediaRef, type TrackId, type Transform2D, clipEnd } from "./model";
+import { type Clip, type ClipId, type FilmState, type Look, type MediaRef, type Stroke, type TrackId, type Transform2D, clipEnd } from "./model";
 
 /** One picture to draw, bottom to top, with where it came from. */
 export interface StackItem {
@@ -7,6 +7,7 @@ export interface StackItem {
   opacity: number;
   transform: Transform2D;
   look?: Look;
+  strokes?: Stroke[];
   trackId: TrackId;
   clipId: ClipId;
 }
@@ -102,6 +103,7 @@ export function stackAt(film: FilmState, cell: number, options: StackOptions = {
       opacity: track.opacity * clip.opacity,
       transform: composeTransforms(track.transform, clip.transform),
       ...(clip.look && { look: clip.look }),
+      ...(clip.strokes?.length && { strokes: clip.strokes }),
       trackId: track.id,
       clipId: clip.id,
     });

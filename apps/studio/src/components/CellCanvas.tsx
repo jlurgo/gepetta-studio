@@ -1,7 +1,8 @@
-import type { Look, MediaRef, Transform2D } from "@gepetta/core";
+import type { Look, MediaRef, Stroke, Transform2D } from "@gepetta/core";
 import { memo, useEffect, useRef } from "react";
 import type { LiveFrame } from "../capture/types";
 import { thumbUrl } from "../media/cache";
+import { peekPicture, picture, strokesKey } from "../media/composed";
 import { type Size, drawStack } from "../render/frame";
 
 /**
@@ -10,7 +11,7 @@ import { type Size, drawStack } from "../render/frame";
  * made smaller shows smaller), and cameras live where they aim.
  */
 export type CellItem =
-  | { kind: "picture"; media: MediaRef; opacity: number; transform: Transform2D; look?: Look }
+  | { kind: "picture"; media: MediaRef; opacity: number; transform: Transform2D; look?: Look; strokes?: readonly Stroke[] }
   | { kind: "live"; frame: () => LiveFrame | null; opacity: number; transform: Transform2D; look?: Look };
 
 /** Decoded thumbnails, shared by every cell that shows them. */
@@ -66,7 +67,9 @@ function draw(canvas: HTMLCanvasElement, filmId: string, film: Size, items: Cell
   ctx.setTransform(s, 0, 0, s, ox, oy);
   for (const item of items) {
     if (item.kind === "picture") {
-      drawStack(ctx, [item], film, (m) => ready.get(`${filmId}/${m.thumb}`));
+      drawStack(ctx, [item], film, ({ media, strokes }) =>
+        strokes?.length ? peekPicture(filmId, media, strokes, "thumb") : ready.get(`${filmId}/${media.thumb}`),
+      );
     } else {
       const frame = item.frame();
       if (frame) {
@@ -82,14 +85,17 @@ export const CellCanvas = memo(function CellCanvas({ filmId, film, items }: { fi
   const ref = useRef<HTMLCanvasElement>(null);
   const live = items.some((i) => i.kind === "live");
   // Redraw only when what is drawn changes (live cells redraw on their own).
-  const key = JSON.stringify(items.map((i) => (i.kind === "picture" ? [i.media.thumb, i.opacity, i.transform, i.look] : ["live", i.opacity, i.transform, i.look])));
+  const key = JSON.stringify(items.map((i) => (i.kind === "picture" ? [i.media.thumb, i.opacity, i.transform, i.look, strokesKey(i.strokes)] : ["live", i.opacity, i.transform, i.look])));
 
   useEffect(() => {
     let alive = true;
     const canvas = ref.current;
     if (!canvas) return;
     const pictures = items.filter((i): i is Extract<CellItem, { kind: "picture" }> => i.kind === "picture");
-    void Promise.all(pictures.map((p) => thumbImage(filmId, p.media.thumb).catch(() => undefined))).then(() => {
+    const loads = pictures.map((p) =>
+      (p.strokes?.length ? picture(filmId, p.media, p.strokes, "thumb") : thumbImage(filmId, p.media.thumb)).catch(() => undefined),
+    );
+    void Promise.all(loads).then(() => {
       if (alive && !live) draw(canvas, filmId, film, items);
     });
     if (!live) {

@@ -5,6 +5,7 @@ import { updateTrack, useLayers } from "../state/layers";
 import { commitShot, shotOf, useShotPreview } from "../state/shot";
 import { FrameInfo } from "./FrameInfo";
 import { ShotEditor } from "./ShotEditor";
+import { StrokesPanel } from "./StrokesPanel";
 import { Icon } from "./Icon";
 
 /** Slider that shows changes live and records one history step when released. */
@@ -162,6 +163,7 @@ function ClipDetails({ clip }: { clip: Clip }) {
         <input type="checkbox" checked={clip.visible} onChange={(e) => update({ visible: e.target.checked })} />
         <span>Visible</span>
       </label>
+      <StrokesPanel clip={clip} />
       <h4>Imagen</h4>
       <p className="hint">Arrastrala sobre la imagen grande para moverla; las esquinas la agrandan y el círculo la gira (con ⇧, en pasos).</p>
       <ShotEditor value={shotOf(clip)} onPreview={(change) => useShotPreview.setState({ preview: { ids: [clip.id], change } })} onCommit={(change) => commitShot([clip.id], change)} />

@@ -1,4 +1,4 @@
-import { type Look, type MediaRef, type Transform2D, compositeOf, cropRect, effectsFilter, lookBox } from "@gepetta/core";
+import { type Look, type MediaRef, type Stroke, type Transform2D, compositeOf, cropRect, effectsFilter, lookBox } from "@gepetta/core";
 
 export interface Size {
   width: number;
@@ -16,6 +16,8 @@ export interface Drawable {
   opacity: number;
   transform: Transform2D;
   look?: Look;
+  /** Drawing strokes on the picture: `lookup` returns the picture with them. */
+  strokes?: readonly Stroke[];
 }
 
 /** Pixel size of a decoded image (it may be a smaller copy of the picture: proxy, thumbnail). */
@@ -54,11 +56,11 @@ export function drawStack(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
   items: readonly Drawable[],
   film: Size,
-  lookup: (media: MediaRef) => CanvasImageSource | undefined,
+  lookup: (item: Drawable) => CanvasImageSource | undefined,
   alpha = 1,
 ) {
   for (const item of items) {
-    const img = lookup(item.media);
+    const img = lookup(item);
     if (!img) continue;
     const look = item.look;
     // The crop, in the decoded image's own pixels.

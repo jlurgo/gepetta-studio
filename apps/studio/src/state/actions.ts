@@ -21,6 +21,7 @@ import { runTask, useBusy } from "./busy";
 import { PLAIN_SHOT, type Rig, type Shot, useCamera } from "./camera";
 import { type GridCursor, useEditor } from "./editor";
 import { useLayers } from "./layers";
+import { pickedStrokes, removeStrokes } from "./strokes";
 
 /** Clips for pictures placed one after another from `at`, each `length` cells long (with a camera's settings, if from one). */
 function clipsFrom(at: GridCursor, media: MediaRef[], length: number, name: string, shot: Shot = PLAIN_SHOT): Clip[] {
@@ -324,7 +325,13 @@ export function moveColumns(by: number) {
 }
 
 export function deleteSelected() {
-  const { columns, commit } = useEditor.getState();
+  const { columns, commit, film } = useEditor.getState();
+  // Picked strokes go first: the picture stays.
+  const picked = pickedStrokes(film);
+  if (picked) {
+    removeStrokes(picked.clip.id, picked.strokes.map((st) => st.id));
+    return;
+  }
   if (columns) {
     commit([{ type: "cells.clear", start: columns.start, length: columns.end - columns.start }]);
     return;

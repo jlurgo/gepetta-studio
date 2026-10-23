@@ -1,15 +1,15 @@
 import { type AssetId, type CaptureMeta, type MediaRef, readCaptureInfo } from "@gepetta/core";
 import { storage } from "../storage";
 
-const PROXY_MAX = 1920;
-const THUMB_MAX = 240;
+export const PROXY_MAX = 1920;
+export const THUMB_MAX = 240;
 
 async function sha256(blob: Blob): Promise<AssetId> {
   const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function storeBlob(filmId: string, blob: Blob): Promise<AssetId> {
+export async function storeBlob(filmId: string, blob: Blob): Promise<AssetId> {
   const id = await sha256(blob);
   if (!(await storage.hasAsset(filmId, id))) await storage.putAsset(filmId, id, blob);
   return id;

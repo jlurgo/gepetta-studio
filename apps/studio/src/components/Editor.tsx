@@ -16,6 +16,7 @@ import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
 import { useLayers } from "../state/layers";
+import { selectStrokes, useStrokes } from "../state/strokes";
 import { ToolPanel } from "./ToolPanel";
 import { GuidesControl } from "./GuidesControl";
 import { DetailPanel } from "./TrackPanel";
@@ -76,6 +77,7 @@ function useShortcuts() {
         const guides = useGuides.getState();
         guides.update(s.filmId, { visible: !guides.get(s.filmId).visible });
       }
+      else if (e.key === "Escape" && useStrokes.getState().ids.length) selectStrokes(null, []);
       else if (e.key === "Escape" && (s.selection.length || s.columns)) {
         s.setSelection([]);
         s.setColumns(null);

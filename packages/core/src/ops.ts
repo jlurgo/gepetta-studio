@@ -1,4 +1,4 @@
-import type { Clip, ClipId, FilmState, Track, TrackId } from "./model";
+import type { Clip, ClipId, FilmState, Stroke, Track, TrackId } from "./model";
 import { PHOTO_TRACK, clipEnd } from "./model";
 
 /**
@@ -20,6 +20,10 @@ export type Op =
   /** Moves clips to new cells and tracks, together. */
   | { type: "clip.move"; moves: { id: ClipId; track: TrackId; start: number }[] }
   | { type: "clip.update"; id: ClipId; patch: ClipPatch }
+  /** Strokes of a drawing tool on a picture: added on top, changed, or removed. */
+  | { type: "stroke.add"; clip: ClipId; stroke: Stroke; label?: string }
+  | { type: "stroke.update"; clip: ClipId; id: string; patch: StrokePatch }
+  | { type: "stroke.remove"; clip: ClipId; ids: string[] }
   /**
    * Moves a column of cells [start, start + length) of every track (or of
    * `tracks`) to start at `to`. Pictures that reach outside the column are
@@ -35,6 +39,7 @@ export type Op =
   | { type: "track.move"; trackId: TrackId; index: number };
 
 export type ClipPatch = Partial<Pick<Clip, "name" | "visible" | "opacity" | "transform" | "length" | "media" | "look">>;
+export type StrokePatch = Partial<Omit<Stroke, "id" | "tool" | "layer">>;
 export type TrackPatch = Partial<Pick<Track, "name" | "visible" | "opacity" | "transform" | "exported">>;
 export type OpType = Op["type"];
 
@@ -124,6 +129,10 @@ function lift(film: FilmState, start: number, end: number, tracks?: TrackId[]): 
   return { film: { ...film, clips }, pieces };
 }
 
+function withClip(film: FilmState, clip: Clip): FilmState {
+  return { ...film, clips: { ...film.clips, [clip.id]: clip } };
+}
+
 /** Pure: returns a new state, or throws OpError when the op no longer applies. */
 export function applyOp(film: FilmState, op: Op): FilmState {
   switch (op.type) {
@@ -153,6 +162,22 @@ export function applyOp(film: FilmState, op: Op): FilmState {
       const clip = { ...requireClip(film, op.id), ...op.patch };
       // A longer clip overwrites the cells it grows into.
       return op.patch.length !== undefined ? place(film, [clip]) : { ...film, clips: { ...film.clips, [clip.id]: clip } };
+    }
+    case "stroke.add": {
+      const clip = requireClip(film, op.clip);
+      if (clip.strokes?.some((s) => s.id === op.stroke.id)) throw new OpError("El trazo ya existe");
+      return withClip(film, { ...clip, strokes: [...(clip.strokes ?? []), op.stroke] });
+    }
+    case "stroke.update": {
+      const clip = requireClip(film, op.clip);
+      if (!clip.strokes?.some((s) => s.id === op.id)) throw new OpError("El trazo ya no existe");
+      return withClip(film, { ...clip, strokes: clip.strokes.map((s) => (s.id === op.id ? { ...s, ...op.patch } : s)) });
+    }
+    case "stroke.remove": {
+      const clip = requireClip(film, op.clip);
+      const gone = new Set(op.ids);
+      if (!op.ids.every((id) => clip.strokes?.some((s) => s.id === id))) throw new OpError("El trazo ya no existe");
+      return withClip(film, { ...clip, strokes: clip.strokes!.filter((s) => !gone.has(s.id)) });
     }
     case "cells.move": {
       if (!Number.isInteger(op.to) || op.to < 0) throw new OpError("Posición inválida");
@@ -227,6 +252,16 @@ export function describeOp(op: Op): string {
       return op.moves.length === 1 ? "Mover imagen" : `Mover ${op.moves.length} imágenes`;
     case "clip.update":
       return describePatch(op.patch, "la imagen");
+    case "stroke.add":
+      return op.label ?? "Trazo";
+    case "stroke.update": {
+      const keys = Object.keys(op.patch);
+      if (keys.length === 1 && keys[0] === "hidden") return op.patch.hidden ? "Ocultar trazo" : "Mostrar trazo";
+      if (keys.length === 1 && keys[0] === "color") return "Color del trazo";
+      return "Cambiar trazo";
+    }
+    case "stroke.remove":
+      return op.ids.length === 1 ? "Borrar trazo" : `Borrar ${op.ids.length} trazos`;
     case "cells.move":
       return op.length === 1 ? "Mover columna" : `Mover ${op.length} columnas`;
     case "cells.clear":

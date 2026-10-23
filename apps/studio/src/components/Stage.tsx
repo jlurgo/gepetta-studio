@@ -19,8 +19,10 @@ import {
 } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { proxyCache } from "../media/cache";
+import { peekPicture } from "../media/composed";
 import type { LiveFrame } from "../capture/types";
-import { type Drawable, type Size, containScale, drawStack } from "../render/frame";
+import { type Drawable, type Size, containScale, drawStack, pictureMatrix } from "../render/frame";
+import { pickedStrokes, selectStrokes, strokeAt, useStrokes } from "../state/strokes";
 import { drawHandles, dragTransform, hitHandle, type HandleKind } from "../render/handles";
 import { type HandleTarget, commitTransform, selectedClipId, useLayers } from "../state/layers";
 import { shotOn, useCamera } from "../state/camera";
@@ -43,11 +45,11 @@ function drawProxies(ctx: CanvasRenderingContext2D, filmId: string, film: FilmSt
     ctx,
     items,
     film.settings,
-    (media) => {
-      const bmp = proxyCache.peek(filmId, media.proxy);
+    ({ media, strokes }) => {
+      const bmp = strokes?.length ? peekPicture(filmId, media, strokes, "proxy") : proxyCache.peek(filmId, media.proxy);
       if (!bmp) {
         complete = false;
-        void proxyCache.load(filmId, media.proxy);
+        if (!strokes?.length) void proxyCache.load(filmId, media.proxy);
       }
       return bmp;
     },
@@ -430,6 +432,72 @@ function usePaintPointer(filmRect: React.RefObject<FilmRect | null>, canvasRef: 
   return { onPointerDown, onPointerMove, onPointerUp };
 }
 
+/** With the move tool, a click (not a drag) on a stroke picks it, and its picture. */
+function useStrokePick(filmRect: React.RefObject<FilmRect | null>) {
+  const down = useRef<{ x: number; y: number } | null>(null);
+  const onPointerDown = (e: React.PointerEvent) => {
+    down.current = usePaint.getState().tool === "move" && e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    const d = down.current;
+    down.current = null;
+    const r = filmRect.current;
+    const { film, cursor } = useEditor.getState();
+    if (!d || !r || !film || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const p = { x: (e.clientX - box.left - r.x) / r.s, y: (e.clientY - box.top - r.y) / r.s };
+    void strokeAt(film, cursor.cell, p, 6 / r.s).then((hit) => {
+      if (!hit) {
+        if (useStrokes.getState().ids.length) selectStrokes(null, []);
+        return;
+      }
+      const add = e.shiftKey && useStrokes.getState().clip === hit.clip.id;
+      const ids = useStrokes.getState().ids;
+      useEditor.getState().setSelection([hit.clip.id]);
+      useLayers.getState().showClip(hit.clip.track);
+      selectStrokes(hit.clip.id, add ? (ids.includes(hit.stroke.id) ? ids.filter((i) => i !== hit.stroke.id) : [...ids, hit.stroke.id]) : [hit.stroke.id]);
+    });
+  };
+  return { onPointerDown, onPointerUp };
+}
+
+/** Outlines the picked strokes, over the picture. */
+function drawPickedStrokes(ctx: CanvasRenderingContext2D, film: FilmState, px: number) {
+  const picked = pickedStrokes(film);
+  const { cursor } = useEditor.getState();
+  if (!picked || cursor.cell < picked.clip.start || cursor.cell >= picked.clip.start + picked.clip.length) return;
+  const track = film.tracks.find((t) => t.id === picked.clip.track);
+  if (!track) return;
+  const { clip } = picked;
+  const m = pictureMatrix({ media: clip.media, transform: composeTransforms(track.transform, clip.transform), look: clip.look }, film.settings, clip.media);
+  ctx.save();
+  ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
+  const k = 1 / (Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1);
+  for (const s of picked.strokes) {
+    const pts = s.points;
+    ctx.beginPath();
+    if (pts?.length) {
+      if (s.tool === "shape" && s.shape !== "line") {
+        const [a, b] = [pts[0]!, pts[pts.length - 1]!];
+        if (s.shape === "box") ctx.rect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+        else ctx.ellipse((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, Math.abs(b[0] - a[0]) / 2, Math.abs(b[1] - a[1]) / 2, 0, 0, Math.PI * 2);
+      } else pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    } else {
+      // Fill and clone: the picture's frame (their pixels are not traced).
+      ctx.rect(0, 0, clip.media.width, clip.media.height);
+    }
+    ctx.lineCap = ctx.lineJoin = "round";
+    ctx.setLineDash([6 * px * k, 4 * px * k]);
+    ctx.lineWidth = 3 * px * k;
+    ctx.strokeStyle = "rgb(0 0 0 / 0.7)";
+    ctx.stroke();
+    ctx.lineWidth = 1.5 * px * k;
+    ctx.strokeStyle = "#ff7a45";
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 export function Stage() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const liveRect = useRef<Rect | null>(null);
@@ -439,6 +507,7 @@ export function Stage() {
   const layerDrag = useLayerDrag(filmRect);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const paintPointer = usePaintPointer(filmRect, canvasRef);
+  const strokePick = useStrokePick(filmRect);
   const painting = usePaint((s) => isPainting(s.tool));
   const layerHandles = useRef(targetOnStage);
   const guideEditing = useGuides((s) => s.editing);
@@ -601,7 +670,7 @@ export function Stage() {
         const transform = composeTransforms(focus.track.transform, focus.clip.transform);
         const painted = surfaceAt(film, focus.track.id, cursor.cell);
         if (painted) drawPainted(painted, state.focusOpacity, transform, focus.clip.look);
-        else drawProxies(ctx, filmId, film, [{ media: focus.clip.media, opacity: state.focusOpacity, transform, look: focus.clip.look }]);
+        else drawProxies(ctx, filmId, film, [{ media: focus.clip.media, opacity: state.focusOpacity, transform, look: focus.clip.look, strokes: focus.clip.strokes }]);
       }
 
       // Onion skin: the previous pictures of the track being worked on. Looking at
@@ -615,7 +684,7 @@ export function Stage() {
         // Farthest first so the nearest one ends on top.
         skins.reverse().forEach((clip, i) => {
           const distance = skins.length - i - 1;
-          const item = { media: clip.media, opacity: 1, transform: composeTransforms(track.transform, clip.transform), look: clip.look };
+          const item = { media: clip.media, opacity: 1, transform: composeTransforms(track.transform, clip.transform), look: clip.look, strokes: clip.strokes };
           drawProxies(ctx, filmId, film, [item], onion.opacity * (1 - distance / (onion.count + 1)));
         });
       }
@@ -623,6 +692,7 @@ export function Stage() {
       if (showGuides) drawGuides(ctx, guides, size, dpr / s, placing);
       const handles = layerHandles.current();
       if (handles && !placing && !isPainting(tool)) drawHandles(ctx, handles.box, handles.transform, size, dpr / s);
+      if (tool === "move") drawPickedStrokes(ctx, shown, dpr / s);
       const outline = brushOutline();
       if (outline) {
         // The brush's size where it would paint, visible over light and dark.
@@ -662,6 +732,7 @@ export function Stage() {
       className={`stage${guideEditing ? " guides-editing" : ""}${painting ? " painting" : hasSource && pointerTool !== "none" ? " tool-focus" : ""}${hasSource && magnified ? " magnified" : ""}`}
       ref={wrapRef}
       onPointerDown={(e) => {
+        if (!playing) strokePick.onPointerDown(e);
         if (playing || guideDrag.onPointerDown(e) || paintPointer.onPointerDown(e) || layerDrag.onPointerDown(e)) return;
         if (hasSource) handlers.onPointerDown(e);
       }}
@@ -670,6 +741,7 @@ export function Stage() {
         if (hasSource) handlers.onPointerMove(e);
       }}
       onPointerUp={(e) => {
+        if (!playing) strokePick.onPointerUp(e);
         if (playing || guideDrag.onPointerUp() || paintPointer.onPointerUp() || layerDrag.onPointerUp()) return;
         if (hasSource) handlers.onPointerUp(e);
       }}
