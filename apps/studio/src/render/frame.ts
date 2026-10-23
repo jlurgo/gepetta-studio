@@ -1,4 +1,4 @@
-import type { MediaRef, Transform2D } from "@gepetta/core";
+import { type Look, type MediaRef, type Transform2D, compositeOf, cropRect, effectsFilter, lookBox } from "@gepetta/core";
 
 export interface Size {
   width: number;
@@ -10,26 +10,45 @@ export function containScale(src: Size, dst: Size): number {
   return Math.min(dst.width / src.width, dst.height / src.height);
 }
 
-/** Draws a source centered and letterboxed inside a film-sized area at the origin. */
-export function drawContained(ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, img: CanvasImageSource, src: Size, film: Size) {
-  const s = containScale(src, film);
-  const w = src.width * s;
-  const h = src.height * s;
-  ctx.drawImage(img, (film.width - w) / 2, (film.height - h) / 2, w, h);
-}
-
 /** A picture to draw: a frame's layer or a channel's current picture. */
 export interface Drawable {
   media: MediaRef;
   opacity: number;
   transform: Transform2D;
+  look?: Look;
+}
+
+/** Pixel size of a decoded image (it may be a smaller copy of the picture: proxy, thumbnail). */
+export function imageSize(img: CanvasImageSource, fallback: Size): Size {
+  if (img instanceof HTMLVideoElement) return { width: img.videoWidth, height: img.videoHeight };
+  if (img instanceof HTMLImageElement) return { width: img.naturalWidth, height: img.naturalHeight };
+  if ("width" in img && typeof img.width === "number" && img.width > 0) return { width: img.width, height: img.height as number };
+  return fallback;
 }
 
 /**
- * Draws pictures bottom to top in film coordinates. Each is fitted inside the
- * film, then moved/rotated/scaled about the film's center. `lookup` returns the
- * decoded image (proxy on screen, original on export), or undefined while it
- * is still loading.
+ * Where a picture's pixels land in the film: from an image of `real` size (the
+ * picture, or a copy of it at another size) to film coordinates.
+ */
+export function pictureMatrix(item: Omit<Drawable, "opacity">, film: Size, real: Size): DOMMatrix {
+  const { x, y, rotation, scale } = item.transform;
+  const box = lookBox(item.media, item.look, film);
+  const r = cropRect(real, item.look);
+  return new DOMMatrix()
+    .translate(film.width / 2 + x, film.height / 2 + y)
+    .rotate((rotation * 180) / Math.PI)
+    .scale(scale * (item.look?.flipX ? -1 : 1), scale * (item.look?.flipY ? -1 : 1))
+    .translate(-box.width / 2, -box.height / 2)
+    .scale(box.width / r.width, box.height / r.height)
+    .translate(-r.x, -r.y);
+}
+
+/**
+ * Draws pictures bottom to top in film coordinates. Each is cropped and fitted
+ * to the film as its look says (inside it by default), then moved, rotated,
+ * scaled and mirrored about the film's center, and mixed with what is under it.
+ * `lookup` returns the decoded image (proxy on screen, original on export), or
+ * undefined while it is still loading.
  */
 export function drawStack(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
@@ -41,14 +60,20 @@ export function drawStack(
   for (const item of items) {
     const img = lookup(item.media);
     if (!img) continue;
-    const { x, y, rotation, scale } = item.transform;
+    const look = item.look;
+    // The crop, in the decoded image's own pixels.
+    const real = imageSize(img, item.media);
+    const r = cropRect(real, look);
     ctx.save();
     ctx.globalAlpha = alpha * item.opacity;
-    ctx.translate(film.width / 2 + x, film.height / 2 + y);
-    ctx.rotate(rotation);
-    ctx.scale(scale, scale);
-    ctx.translate(-film.width / 2, -film.height / 2);
-    drawContained(ctx, img, item.media, film);
+    if (look?.blend) ctx.globalCompositeOperation = compositeOf(look.blend);
+    if (look?.effects) ctx.filter = effectsFilter(look.effects);
+    ctx.transform(...matrixArgs(pictureMatrix(item, film, real)));
+    ctx.drawImage(img, r.x, r.y, r.width, r.height, r.x, r.y, r.width, r.height);
     ctx.restore();
   }
+}
+
+function matrixArgs(m: DOMMatrix): [number, number, number, number, number, number] {
+  return [m.a, m.b, m.c, m.d, m.e, m.f];
 }

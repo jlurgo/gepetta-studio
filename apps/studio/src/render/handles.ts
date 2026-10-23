@@ -1,10 +1,10 @@
-import type { MediaRef, Point, Transform2D } from "@gepetta/core";
-import { type Size, containScale } from "./frame";
+import type { Point, Transform2D } from "@gepetta/core";
+import type { Size } from "./frame";
 
 /**
  * Move / scale / rotate handles for one layer, in film coordinates. A layer
- * is its picture fitted inside the film, then moved, rotated and scaled about
- * the film's center (see drawStack).
+ * is its picture drawn at `box` (its size in the film, see lookBox), then
+ * moved, rotated and scaled about the film's center (see drawStack).
  */
 
 export type HandleKind = "move" | "scale" | "rotate";
@@ -14,10 +14,9 @@ const CORNER = 7;
 const KNOB_GAP = 28;
 
 /** The four corners of the drawn picture, clockwise from top-left. */
-export function layerCorners(media: MediaRef, t: Transform2D, film: Size): Point[] {
-  const s = containScale(media, film);
-  const hw = (media.width * s) / 2;
-  const hh = (media.height * s) / 2;
+export function layerCorners(box: Size, t: Transform2D, film: Size): Point[] {
+  const hw = box.width / 2;
+  const hh = box.height / 2;
   const cos = Math.cos(t.rotation) * t.scale;
   const sin = Math.sin(t.rotation) * t.scale;
   const cx = film.width / 2 + t.x;
@@ -39,8 +38,8 @@ function knob(corners: Point[], px: number): Point {
   return { x: mid.x + (up.x / len) * KNOB_GAP * px, y: mid.y + (up.y / len) * KNOB_GAP * px };
 }
 
-export function drawHandles(ctx: CanvasRenderingContext2D, media: MediaRef, t: Transform2D, film: Size, px: number) {
-  const corners = layerCorners(media, t, film);
+export function drawHandles(ctx: CanvasRenderingContext2D, box: Size, t: Transform2D, film: Size, px: number) {
+  const corners = layerCorners(box, t, film);
   const k = knob(corners, px);
   const [a, b] = corners as [Point, Point];
   ctx.save();
@@ -79,8 +78,8 @@ function insidePolygon(p: Point, poly: Point[]): boolean {
 }
 
 /** Which handle (if any) is under `p`. Handles win over the body. */
-export function hitHandle(media: MediaRef, t: Transform2D, film: Size, p: Point, px: number): HandleKind | null {
-  const corners = layerCorners(media, t, film);
+export function hitHandle(box: Size, t: Transform2D, film: Size, p: Point, px: number): HandleKind | null {
+  const corners = layerCorners(box, t, film);
   const reach = (CORNER + 5) * px;
   const k = knob(corners, px);
   if (Math.hypot(p.x - k.x, p.y - k.y) <= reach) return "rotate";

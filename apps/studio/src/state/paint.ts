@@ -14,7 +14,7 @@ import {
 } from "@gepetta/core";
 import { create } from "zustand";
 import { ingestImage } from "../media/ingest";
-import { type Size, containScale, drawStack } from "../render/frame";
+import { drawStack, pictureMatrix } from "../render/frame";
 import { storage } from "../storage";
 import { useBusy } from "./busy";
 import { useEditor } from "./editor";
@@ -29,7 +29,8 @@ import { useEditor } from "./editor";
  * at the tool's strength when it ends (so a marker does not darken where it
  * crosses itself); meanwhile the stage shows the two together.
  */
-export type StageTool = "move" | "draw" | "erase" | "fill" | "tint" | "shape" | "clone" | "picker";
+/** "camera": the active camera (see useCamera), as a tool among the others; "addCamera": choosing one more. */
+export type StageTool = "move" | "camera" | "addCamera" | "draw" | "erase" | "fill" | "tint" | "shape" | "clone" | "picker";
 export type BrushKind = "pencil" | "ink" | "marker" | "airbrush";
 export type ShapeKind = "line" | "box" | "ellipse";
 
@@ -134,7 +135,7 @@ export const usePaint = create<PaintState>((set, get) => ({
   fillTolerance: remembered("fillTolerance", 15),
   cloneSource: null,
   setTool: (tool) => {
-    if (tool === "move") dropSurface();
+    if (!isPainting(tool)) dropSurface();
     set({ tool, lastTool: tool === "picker" ? get().lastTool : tool });
   },
   set: (patch) => {
@@ -155,9 +156,9 @@ export const usePaint = create<PaintState>((set, get) => ({
   },
 }));
 
-/** Every tool but "move" works on the cell at the cursor (and hides the handles). */
-export function isPainting(tool: StageTool): boolean {
-  return tool !== "move";
+/** The drawing tools work on the cell at the cursor (and hide the handles). */
+export function isPainting(tool: StageTool): tool is Exclude<StageTool, "move" | "camera" | "addCamera"> {
+  return tool !== "move" && tool !== "camera" && tool !== "addCamera";
 }
 
 /** Whether the tool has a width and a strength. */
@@ -256,18 +257,11 @@ function ensureSurface(): Promise<Surface | null> {
 function filmToSurface(film: FilmState, s: Surface): DOMMatrix {
   const track = film.tracks.find((t) => t.id === s.track);
   const clip = s.clipId ? film.clips[s.clipId] : undefined;
-  const t = composeTransforms(track?.transform ?? IDENTITY_TRANSFORM, clip?.transform ?? IDENTITY_TRANSFORM);
-  const { width: W, height: H } = film.settings;
-  const media: Size = { width: s.canvas.width, height: s.canvas.height };
-  const c = containScale(media, film.settings);
-  return new DOMMatrix()
-    .translate(W / 2 + t.x, H / 2 + t.y)
-    .rotate((t.rotation * 180) / Math.PI)
-    .scale(t.scale)
-    .translate(-W / 2, -H / 2)
-    .translate((W - media.width * c) / 2, (H - media.height * c) / 2)
-    .scale(c)
-    .inverse();
+  const transform = composeTransforms(track?.transform ?? IDENTITY_TRANSFORM, clip?.transform ?? IDENTITY_TRANSFORM);
+  const real = { width: s.canvas.width, height: s.canvas.height };
+  // A new drawing is the film's size; a picture keeps its own proportions (the surface may be a reduced copy).
+  const media = clip?.media ?? real;
+  return pictureMatrix({ media: media as Clip["media"], transform, look: clip?.look }, film.settings, real).inverse();
 }
 
 interface StrokePoint extends Point {
@@ -487,7 +481,7 @@ async function pictureInFilm(film: FilmState, track: TrackId, cell: number): Pro
   const ctx = out.getContext("2d")!;
   ctx.imageSmoothingQuality = "high";
   const size = painted ? { width: painted.width, height: painted.height } : clip.media;
-  drawStack(ctx, [{ media: { ...clip.media, ...size }, opacity: 1, transform: composeTransforms(t.transform, clip.transform) }], film.settings, () => image);
+  drawStack(ctx, [{ media: { ...clip.media, ...size }, opacity: 1, transform: composeTransforms(t.transform, clip.transform), look: clip.look }], film.settings, () => image);
   if (image instanceof ImageBitmap) image.close();
   return out;
 }
@@ -497,7 +491,7 @@ export function beginStroke(p: Point, pressure: number, pen: boolean, mods: { al
   const { film } = useEditor.getState();
   const paint = usePaint.getState();
   const tool = paint.tool;
-  if (!film || tool === "move" || tool === "picker") return false;
+  if (!film || !isPainting(tool) || tool === "picker") return false;
   const at = target(film);
   if (!at) return false;
   if (tool === "clone" && mods.alt) {

@@ -16,7 +16,7 @@ import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
 import { useLayers } from "../state/layers";
-import { CameraPanel } from "./CameraPanel";
+import { ToolPanel } from "./ToolPanel";
 import { GuidesControl } from "./GuidesControl";
 import { DetailPanel } from "./TrackPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -67,6 +67,7 @@ function useShortcuts() {
       else if (key === "o") s.setOnion({ enabled: !s.onion.enabled });
       else if (key === "l") s.set({ loop: !s.loop });
       else if (TOOLS.some((t) => t.key.toLowerCase() === key)) usePaint.getState().setTool(TOOLS.find((t) => t.key.toLowerCase() === key)!.id);
+      else if (key === "c" && useCamera.getState().activeRig) usePaint.getState().setTool("camera");
       else if ((e.key === "[" || e.key === "]") && hasSettings(usePaint.getState().tool)) {
         const { size } = currentSettings();
         usePaint.getState().setCurrent({ size: Math.min(300, Math.max(1, e.key === "]" ? Math.ceil(size * 1.25) : Math.floor(size / 1.25))) });
@@ -335,47 +336,35 @@ function Transport() {
   );
 }
 
-type SideTab = "camera" | "layers";
+type SideTab = "tool" | "layers";
 
 /** Right column: camera settings or layers. Both stay mounted so switching keeps their state. */
 function SidePanel() {
-  const [tab, setTab] = useState<SideTab>(() => {
-    try {
-      return localStorage.getItem("gepetta.sideTab") === "layers" ? "layers" : "camera";
-    } catch {
-      return "camera";
-    }
-  });
-  const choose = (t: SideTab) => {
-    setTab(t);
-    try {
-      localStorage.setItem("gepetta.sideTab", t);
-    } catch {
-      // Not remembered.
-    }
-  };
-  // Picking a track in the timeline shows its settings.
-  // Picking a picture or a track in the timeline shows its settings.
+  const [tab, setTab] = useState<SideTab>("tool");
+  // Choosing a tool shows its properties; picking a picture or a track shows its settings.
+  const tool = usePaint((s) => s.tool);
+  const activeRig = useCamera((s) => s.activeRig);
+  useEffect(() => setTab("tool"), [tool, activeRig]);
   const trackId = useLayers((s) => s.trackId);
   const detail = useLayers((s) => s.detail);
-  const picked = useEditor((s) => (s.selection.length === 1 ? s.selection[0] : null));
+  const selection = useEditor((s) => s.selection);
   useEffect(() => {
-    if (trackId || picked) setTab("layers");
-  }, [trackId, detail, picked]);
+    if (trackId || selection.length) setTab("layers");
+  }, [trackId, detail, selection]);
 
   return (
     <aside className="side-panel">
       <div className="side-tabs" role="tablist">
-        <button role="tab" aria-selected={tab === "camera"} className={tab === "camera" ? "active" : ""} onClick={() => choose("camera")}>
-          <Icon name="camera" size={16} /> Cámara
+        <button role="tab" aria-selected={tab === "tool"} className={tab === "tool" ? "active" : ""} onClick={() => setTab("tool")}>
+          <Icon name="brush" size={16} /> Herramienta
         </button>
-        <button role="tab" aria-selected={tab === "layers"} className={tab === "layers" ? "active" : ""} onClick={() => choose("layers")}>
+        <button role="tab" aria-selected={tab === "layers"} className={tab === "layers" ? "active" : ""} onClick={() => setTab("layers")}>
           <Icon name="layers" size={16} /> Detalle
         </button>
       </div>
-      <div className="side-body" hidden={tab !== "camera"}>
-        <ErrorBoundary label="el panel de cámara">
-          <CameraPanel />
+      <div className="side-body" hidden={tab !== "tool"}>
+        <ErrorBoundary label="el panel de la herramienta">
+          <ToolPanel />
         </ErrorBoundary>
       </div>
       <div className="side-body" hidden={tab !== "layers"}>

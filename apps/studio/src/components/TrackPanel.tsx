@@ -2,7 +2,9 @@ import { type Clip, type ClipPatch, IDENTITY_TRANSFORM, PHOTO_TRACK, type Track 
 import { useEffect, useRef, useState } from "react";
 import { useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
+import { commitShot, shotOf, useShotPreview } from "../state/shot";
 import { FrameInfo } from "./FrameInfo";
+import { ShotEditor } from "./ShotEditor";
 import { Icon } from "./Icon";
 
 /** Slider that shows changes live and records one history step when released. */
@@ -121,8 +123,6 @@ function ClipDetails({ clip }: { clip: Clip }) {
   useEffect(() => setName(clip.name), [clip.name]);
   const commit = useEditor.getState().commit;
   const update = (patch: ClipPatch) => commit([{ type: "clip.update", id: clip.id, patch }]);
-  const t = clip.transform;
-  const moved = t.x !== 0 || t.y !== 0 || t.rotation !== 0 || t.scale !== 1;
   const seconds = (cells: number) => (cells / fps).toFixed(2).replace(/\.?0+$/, "");
 
   return (
@@ -158,27 +158,43 @@ function ClipDetails({ clip }: { clip: Clip }) {
           </button>
         </span>
       </div>
-      <OpacitySlider value={clip.opacity} onCommit={(opacity) => update({ opacity })} />
       <label className="control toggle">
         <input type="checkbox" checked={clip.visible} onChange={(e) => update({ visible: e.target.checked })} />
         <span>Visible</span>
       </label>
-      <div className="control">
-        <span>Posición</span>
-        <p className="hint">
-          Arrastrala sobre la imagen grande para moverla; las esquinas la agrandan y el círculo la gira (con ⇧, en pasos).
-          {moved && ` Ahora: ${Math.round(t.scale * 100)} % · ${Math.round((t.rotation * 180) / Math.PI)}°.`}
-        </p>
-        <button className="btn small" onClick={() => update({ transform: IDENTITY_TRANSFORM })} disabled={!moved}>
-          Restablecer posición
-        </button>
-      </div>
+      <h4>Imagen</h4>
+      <p className="hint">Arrastrala sobre la imagen grande para moverla; las esquinas la agrandan y el círculo la gira (con ⇧, en pasos).</p>
+      <ShotEditor value={shotOf(clip)} onPreview={(change) => useShotPreview.setState({ preview: { ids: [clip.id], change } })} onCommit={(change) => commitShot([clip.id], change)} />
       <FrameInfo clip={clip} />
       <button
         className="btn small danger"
         onClick={() => commit([{ type: "clip.remove", ids: [clip.id] }], undefined, { selection: [] })}
       >
         <Icon name="trash" size={14} /> Borrar imagen
+      </button>
+    </div>
+  );
+}
+
+/** Several pictures picked (a recorded video, for one): their settings changed together. */
+function ManyDetails() {
+  const selection = useEditor((s) => s.selection);
+  const first = useEditor((s) => s.film?.clips[s.selection[0]!]);
+  const commit = useEditor.getState().commit;
+  if (!first) return null;
+  return (
+    <div className="layer-details">
+      <p className="hint">
+        <strong>{selection.length} imágenes</strong> elegidas. Moverlas o alargarlas se hace en la línea de tiempo.
+      </p>
+      <ShotEditor
+        mixed
+        value={shotOf(first)}
+        onPreview={(change) => useShotPreview.setState({ preview: { ids: selection, change } })}
+        onCommit={(change) => commitShot(selection, change)}
+      />
+      <button className="btn small danger" onClick={() => commit([{ type: "clip.remove", ids: selection }], undefined, { selection: [] })}>
+        <Icon name="trash" size={14} /> Borrar las {selection.length} imágenes
       </button>
     </div>
   );
@@ -200,6 +216,14 @@ export function DetailPanel() {
     if (trackId && !track) useLayers.getState().select(null);
   }, [trackId, track]);
 
+  if (detail === "clip" && many) {
+    return (
+      <div className="layers-panel">
+        <h3>Imágenes</h3>
+        <ManyDetails />
+      </div>
+    );
+  }
   if (detail === "clip" && clip) {
     return (
       <div className="layers-panel">
@@ -222,9 +246,7 @@ export function DetailPanel() {
         </>
       ) : (
         <p className="hint">
-          {many
-            ? "Hay varias imágenes seleccionadas: moverlas, alargarlas o borrarlas se hace desde la línea de tiempo y la barra de abajo."
-            : "Tocá una imagen o el nombre de un track en la línea de tiempo para ver sus ajustes. Con «+ Track» agregás una capa vacía, una imagen fija o un video para rotoscopia."}
+          Tocá una imagen o el nombre de un track en la línea de tiempo para ver sus ajustes. Con «+ Track» agregás una capa vacía, una imagen fija o un video para rotoscopia.
         </p>
       )}
     </div>

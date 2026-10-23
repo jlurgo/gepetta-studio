@@ -4,8 +4,7 @@ import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addImageTrack, addTrack, extendFilm, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
-import { type Rig, useCamera } from "../state/camera";
-import { RIG_COLORS } from "./CamerasList";
+import { type Rig, rigColor, shotOn, useCamera } from "../state/camera";
 import { Icon } from "./Icon";
 import { capturePointer } from "./pointer";
 import { OpacitySlider } from "./TrackPanel";
@@ -303,14 +302,14 @@ export function Timeline() {
       const rig = camera.rigs.find((r) => r.id === rigId);
       return rig ? camera.liveOf(rig) : null;
     },
-    opacity: track.opacity,
-    transform: track.transform,
+    ...shotOn(rigs.find((r) => r.id === rigId), track),
   });
   const clipItem = (track: Track, c: Clip): CellItem => ({
     kind: "picture",
     media: c.media,
     opacity: c.opacity,
     transform: composeTransforms(track.transform, c.transform),
+    look: c.look,
   });
   /** Cells of a clip that are on screen. */
   const cellsOf = (c: Clip, length: number): number[] => {
@@ -332,7 +331,7 @@ export function Timeline() {
       if (live) items.push(liveItem(live.id, t));
       else {
         const it = stack.find((i) => i.trackId === t.id);
-        if (it) items.push({ kind: "picture", media: it.media, opacity: it.opacity, transform: it.transform });
+        if (it) items.push({ kind: "picture", media: it.media, opacity: it.opacity, transform: it.transform, look: it.look });
       }
     }
     resultCells.push({ cell: c, items });
@@ -510,11 +509,11 @@ export function Timeline() {
   const cursorRow = Math.max(0, tracks.findIndex((t) => t.id === cursor.track));
 
   const pickIndex = rigs.findIndex((r) => r.id === picking);
-  const pickColor = RIG_COLORS[pickIndex % RIG_COLORS.length];
+  const pickColor = rigColor(pickIndex);
 
   return (
     <div className="timeline-wrap">
-      {picking && pickIndex >= 0 && <PickingBar index={pickIndex} rig={rigs[pickIndex]!} color={pickColor!} />}
+      {picking && pickIndex >= 0 && <PickingBar index={pickIndex} rig={rigs[pickIndex]!} color={pickColor} />}
       <div className={`timeline${picking ? " picking" : ""}`} style={{ ["--thumb-aspect" as string]: aspect, ...(picking && { ["--rig" as string]: pickColor }) }}>
         <div className="tl-heads" style={{ minHeight: height + 40 }}>
           <div className="tl-head ruler" style={{ height: RULER_H }}>
@@ -629,7 +628,7 @@ export function Timeline() {
               if (r.id === picking) return null;
               const row = tracks.findIndex((t) => t.id === r.target.track);
               if (row < 0) return null;
-              const color = RIG_COLORS[i % RIG_COLORS.length];
+              const color = rigColor(i);
               return (
                 <div key={r.id} className={`tl-rig${r.id === activeRig ? " active" : ""}`} style={{ left: r.target.cell * cw, width: cw, top: rowTop(row), height: TRACK_H, borderColor: color }}>
                   <span style={{ background: color }}>{i + 1}</span>

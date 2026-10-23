@@ -38,6 +38,31 @@ export interface Transform2D {
 
 export const IDENTITY_TRANSFORM: Transform2D = { x: 0, y: 0, rotation: 0, scale: 1 };
 
+/** How a picture mixes with what is under it (canvas composite modes). */
+export type BlendMode = "normal" | "multiply" | "screen" | "overlay" | "darken" | "lighten" | "difference";
+
+/** An adjustment of the picture's colors; `amount` goes from -1 to 1 (0 changes nothing). */
+export interface Effect {
+  kind: "brightness" | "contrast" | "saturation";
+  amount: number;
+}
+
+/**
+ * How a picture is shown, leaving the picture itself untouched (so it can be
+ * changed later): which part of it, which way, and how it mixes.
+ */
+export interface Look {
+  /** Part kept, in fractions of the picture (0–1). */
+  crop?: { x: number; y: number; width: number; height: number };
+  /** "contain": all of it inside the film (default); "cover": it fills the film, cut where it overflows. */
+  fit?: "contain" | "cover";
+  /** Mirrored left to right, and upside down. */
+  flipX?: boolean;
+  flipY?: boolean;
+  blend?: BlendMode;
+  effects?: Effect[];
+}
+
 /**
  * Time is a fixed grid: cell n shows from n/fps to (n+1)/fps. Each track is a
  * row of cells; a clip is a picture placed in a track from cell `start`,
@@ -53,6 +78,8 @@ export interface Clip {
   visible: boolean;
   opacity: number;
   transform: Transform2D;
+  /** Crop, mirror, mixing and effects; absent = shown as it is. */
+  look?: Look;
 }
 
 /** The track every photo goes to by default. Films always have it (it can be hidden or moved, not removed). */

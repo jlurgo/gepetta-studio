@@ -1,4 +1,4 @@
-import type { MediaRef, Transform2D } from "@gepetta/core";
+import type { Look, MediaRef, Transform2D } from "@gepetta/core";
 import { memo, useEffect, useRef } from "react";
 import type { LiveFrame } from "../capture/types";
 import { thumbUrl } from "../media/cache";
@@ -10,8 +10,8 @@ import { type Size, drawStack } from "../render/frame";
  * made smaller shows smaller), and cameras live where they aim.
  */
 export type CellItem =
-  | { kind: "picture"; media: MediaRef; opacity: number; transform: Transform2D }
-  | { kind: "live"; frame: () => LiveFrame | null; opacity: number; transform: Transform2D };
+  | { kind: "picture"; media: MediaRef; opacity: number; transform: Transform2D; look?: Look }
+  | { kind: "live"; frame: () => LiveFrame | null; opacity: number; transform: Transform2D; look?: Look };
 
 /** Decoded thumbnails, shared by every cell that shows them. */
 const loading = new Map<string, Promise<HTMLImageElement>>();
@@ -71,7 +71,7 @@ function draw(canvas: HTMLCanvasElement, filmId: string, film: Size, items: Cell
       const frame = item.frame();
       if (frame) {
         const media = { width: frame.width, height: frame.height } as MediaRef;
-        drawStack(ctx, [{ media, opacity: item.opacity, transform: item.transform }], film, () => frame.image);
+        drawStack(ctx, [{ media, opacity: item.opacity, transform: item.transform, look: item.look }], film, () => frame.image);
       }
     }
   }
@@ -82,7 +82,7 @@ export const CellCanvas = memo(function CellCanvas({ filmId, film, items }: { fi
   const ref = useRef<HTMLCanvasElement>(null);
   const live = items.some((i) => i.kind === "live");
   // Redraw only when what is drawn changes (live cells redraw on their own).
-  const key = JSON.stringify(items.map((i) => (i.kind === "picture" ? [i.media.thumb, i.opacity, i.transform] : ["live", i.opacity, i.transform])));
+  const key = JSON.stringify(items.map((i) => (i.kind === "picture" ? [i.media.thumb, i.opacity, i.transform, i.look] : ["live", i.opacity, i.transform, i.look])));
 
   useEffect(() => {
     let alive = true;

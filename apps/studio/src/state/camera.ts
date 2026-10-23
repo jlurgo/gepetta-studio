@@ -1,4 +1,4 @@
-import { newId } from "@gepetta/core";
+import { IDENTITY_TRANSFORM, type Look, type Track, type Transform2D, composeTransforms, newId } from "@gepetta/core";
 import type { CameraControl, ControlValue } from "@gepetta/protocol";
 import { create } from "zustand";
 import { dslrAvailable, listDslrs, openDslr } from "../capture/dslr";
@@ -40,6 +40,30 @@ export interface Rig {
   enabled: boolean;
   /** Video being recorded: pictures taken so far. */
   recording: { cells: number } | null;
+  /** How its pictures go into the film; seen live, and kept by each photo (changeable later). */
+  shot: Shot;
+}
+
+/** A camera's settings for its pictures: what each photo or recorded picture starts with. */
+export interface Shot {
+  transform: Transform2D;
+  opacity: number;
+  look: Look;
+}
+
+/** One color per camera, to tell them and their cells apart. */
+export const RIG_COLORS = ["#ff5b5b", "#5cc8b5", "#ffd84a", "#b98cff", "#ff9a3d"];
+
+export function rigColor(index: number): string {
+  return RIG_COLORS[Math.max(0, index) % RIG_COLORS.length]!;
+}
+
+export const PLAIN_SHOT: Shot = { transform: IDENTITY_TRANSFORM, opacity: 1, look: {} };
+
+/** How a camera's live picture shows in a track: the track's settings with the camera's on top. */
+export function shotOn(rig: Rig | undefined, track: Pick<Track, "transform" | "opacity">): { transform: Transform2D; opacity: number; look?: Look } {
+  const shot = rig?.shot ?? PLAIN_SHOT;
+  return { transform: composeTransforms(track.transform, shot.transform), opacity: track.opacity * shot.opacity, look: shot.look };
 }
 
 interface CameraState {
@@ -57,6 +81,8 @@ interface CameraState {
   pick(target: GridCursor): void;
   cancelPicking(): void;
   setEnabled(rigId: string, enabled: boolean): void;
+  /** Changes a camera's settings for its pictures (remembered for that camera). */
+  setShot(rigId: string, shot: Partial<Shot>): void;
 
   // The active camera, mirrored (see Rig).
   selectedId: string | null;
@@ -107,6 +133,7 @@ interface CameraState {
 const PREFS_KEY = "gepetta.camera";
 const MODEL_KEY = "gepetta.camera.dslrModel";
 const ROTATIONS_KEY = "gepetta.camera.rotations";
+const SHOTS_KEY = "gepetta.camera.shots";
 const RECONNECT_MS = 3000;
 
 interface Prefs {
@@ -150,6 +177,23 @@ function saveRotations(rotations: Record<string, "auto" | number>) {
   }
 }
 
+/** Each camera's settings for its pictures, by camera name. */
+function loadShots(): Record<string, Shot> {
+  try {
+    return JSON.parse(localStorage.getItem(SHOTS_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveShot(label: string, shot: Shot) {
+  try {
+    localStorage.setItem(SHOTS_KEY, JSON.stringify({ ...loadShots(), [label]: shot }));
+  } catch {
+    // Only a convenience.
+  }
+}
+
 function errorMessage(e: unknown): string {
   if (e instanceof DOMException) return describeMediaError(e);
   // Electron prefixes errors thrown in the main process.
@@ -174,6 +218,7 @@ function newRig(deviceId: string | null, target: GridCursor): Rig {
     target,
     enabled: true,
     recording: null,
+    shot: PLAIN_SHOT,
   };
 }
 
@@ -255,6 +300,8 @@ export const useCamera = create<CameraState>((set, get) => {
       const source = await openDevice(rigId, rig(rigId)?.deviceId ?? null);
       if (generations.get(rigId) !== gen || !rig(rigId)) return source.close();
       attach(rigId, source);
+      const shot = loadShots()[shotKey(source)];
+      if (shot) patch(rigId, { shot: { ...PLAIN_SHOT, ...shot } });
       if (source.kind === "dslr") {
         const label = get().dslrs.find((d) => d.id === source.id)?.label;
         if (label) localStorage.setItem(MODEL_KEY, label);
@@ -300,6 +347,11 @@ export const useCamera = create<CameraState>((set, get) => {
       if (dslrs.length === 0) return;
       for (const r of lost) void open(r.id);
     }, RECONNECT_MS);
+  }
+
+  /** What a camera's settings are remembered by: a webcam's id is stable; DSLR ports and phone sessions change, their names do not. */
+  function shotKey(source: CameraSource): string {
+    return source.kind === "webcam" ? source.id : (get().labelOf(source.id) ?? source.id);
   }
 
   /** The grid cursor goes to the new active camera's target, to see it live. */
@@ -394,6 +446,14 @@ export const useCamera = create<CameraState>((set, get) => {
 
     setEnabled(rigId, enabled) {
       patch(rigId, { enabled });
+    },
+
+    setShot(rigId, changes) {
+      const r = rig(rigId);
+      if (!r) return;
+      const shot = { ...r.shot, ...changes };
+      patch(rigId, { shot });
+      if (r.source) saveShot(shotKey(r.source), shot);
     },
 
     setPointerTool(tool) {

@@ -1,6 +1,7 @@
 import {
   type CellIndex,
   type FilmState,
+  type Look,
   type MediaRef,
   type Point,
   type Transform2D,
@@ -8,6 +9,7 @@ import {
   clipAt,
   IDENTITY_TRANSFORM,
   composeTransforms,
+  lookBox,
   moveVanishingPoint,
   outerTransform,
   relativeTransform,
@@ -18,10 +20,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { proxyCache } from "../media/cache";
 import type { LiveFrame } from "../capture/types";
-import { type Drawable, type Size, containScale, drawContained, drawStack } from "../render/frame";
+import { type Drawable, type Size, containScale, drawStack } from "../render/frame";
 import { drawHandles, dragTransform, hitHandle, type HandleKind } from "../render/handles";
 import { type HandleTarget, commitTransform, selectedClipId, useLayers } from "../state/layers";
-import { useCamera } from "../state/camera";
+import { shotOn, useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
 import { playbackCell, useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
@@ -30,6 +32,7 @@ import { drawGuides, hitVanishingPoint } from "../render/guides";
 import { magnifyControl } from "./MagnifyPanel";
 import { capturePointer } from "./pointer";
 import { StageTools } from "./StageTools";
+import { withShotPreview } from "../state/shot";
 
 const PREFETCH = 12;
 
@@ -59,7 +62,8 @@ function prefetch(filmId: string, film: FilmState, cell: number, index: CellInde
 }
 
 /** The film with the transform being dragged applied, so pictures follow the pointer before the change is committed. */
-function withPreview(film: FilmState): FilmState {
+function withPreview(raw: FilmState): FilmState {
+  const film = withShotPreview(raw);
   const preview = useLayers.getState().preview;
   if (!preview) return film;
   const { target, transform } = preview;
@@ -281,7 +285,7 @@ function liveRigAt(track: string, cell: number) {
  * transform it is drawn with), or null when nothing of it is on screen.
  * `trackTransform` is what dragging changes.
  */
-function targetOnStage(): { media: MediaRef; transform: Transform2D; target: HandleTarget; stored(composite: Transform2D): Transform2D } | null {
+function targetOnStage(): { box: Size; transform: Transform2D; target: HandleTarget; stored(composite: Transform2D): Transform2D } | null {
   const { film: raw, cursor, playback } = useEditor.getState();
   if (!raw || playback) return null;
   const film = withPreview(raw);
@@ -290,9 +294,24 @@ function targetOnStage(): { media: MediaRef; transform: Transform2D; target: Han
   if (focus) {
     const { clip, track } = focus;
     return {
-      media: clip.media,
+      box: lookBox(clip.media, clip.look, film.settings),
       transform: composeTransforms(track.transform, clip.transform),
       target: { kind: "clip", id: clip.id },
+      stored: (composite) => relativeTransform(track.transform, composite),
+    };
+  }
+  // The camera tool: the active camera's live picture, to place it.
+  if (usePaint.getState().tool === "camera") {
+    const camera = useCamera.getState();
+    const rig = camera.rigs.find((r) => r.id === camera.activeRig);
+    const live = rig ? camera.liveOf(rig) : null;
+    const track = rig && film.tracks.find((t) => t.id === rig.target.track);
+    const magnified = (magnifyControl(camera.controls)?.value ?? "1") !== "1";
+    if (!rig || !live || !track?.visible || rig.target.cell !== cursor.cell || camera.pointerTool !== "none" || magnified) return null;
+    return {
+      box: lookBox(live, rig.shot.look, film.settings),
+      transform: composeTransforms(track.transform, rig.shot.transform),
+      target: { kind: "rig", id: rig.id },
       stored: (composite) => relativeTransform(track.transform, composite),
     };
   }
@@ -302,7 +321,7 @@ function targetOnStage(): { media: MediaRef; transform: Transform2D; target: Han
   const clip = clipAt(film, track.id, cursor.cell);
   if (!clip) return null;
   return {
-    media: clip.media,
+    box: lookBox(clip.media, clip.look, film.settings),
     transform: composeTransforms(track.transform, clip.transform),
     target: { kind: "track", id: track.id },
     // Moving the track moves its pictures: the track's transform is what changes.
@@ -325,7 +344,7 @@ function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
     const shown = targetOnStage();
     if (!film || !shown || !filmRect.current) return false;
     const p = filmPoint(e);
-    const kind = hitHandle(shown.media, shown.transform, film.settings, p, 1 / filmRect.current.s);
+    const kind = hitHandle(shown.box, shown.transform, film.settings, p, 1 / filmRect.current.s);
     if (!kind) return false;
     capturePointer(e);
     drag.current = { kind, start: p, t0: shown.transform, target: shown.target, stored: shown.stored };
@@ -337,7 +356,9 @@ function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
     const { film } = useEditor.getState();
     if (!d || !film) return false;
     const composite = dragTransform(d.kind, d.t0, film.settings, d.start, filmPoint(e), e.shiftKey);
-    useLayers.getState().setPreview({ target: d.target, transform: d.stored(composite) });
+    // A camera changes live, outside the history.
+    if (d.target.kind === "rig") useCamera.getState().setShot(d.target.id, { transform: d.stored(composite) });
+    else useLayers.getState().setPreview({ target: d.target, transform: d.stored(composite) });
     return true;
   };
 
@@ -515,8 +536,8 @@ export function Stage() {
       let showOnion = onion.enabled;
       liveRect.current = null;
       const shown = withPreview(film);
-      const drawPainted = (canvas: OffscreenCanvas, opacity: number, transform: Transform2D) =>
-        drawStack(ctx, [{ media: { width: canvas.width, height: canvas.height } as MediaRef, opacity, transform }], size, () => canvas);
+      const drawPainted = (canvas: OffscreenCanvas, opacity: number, transform: Transform2D, look?: Look) =>
+        drawStack(ctx, [{ media: { width: canvas.width, height: canvas.height } as MediaRef, opacity, transform, look }], size, () => canvas);
       const tool = usePaint.getState().tool;
       {
         const camera = useCamera.getState();
@@ -525,12 +546,12 @@ export function Stage() {
         const magnified = magnify !== undefined && magnify.value !== "1";
         let activeLive: LiveFrame | null = null;
         /** Draws a camera's live picture as its track shows pictures (transparency, position). */
-        const drawLive = (live: LiveFrame, transform: Transform2D, opacity: number, isActive: boolean) => {
-          drawStack(ctx, [{ media: { width: live.width, height: live.height } as MediaRef, opacity, transform }], size, () => live.image);
+        const drawLive = (live: LiveFrame, transform: Transform2D, opacity: number, isActive: boolean, look?: Look) => {
+          drawStack(ctx, [{ media: { width: live.width, height: live.height } as MediaRef, opacity, transform, look }], size, () => live.image);
           if (!isActive) return;
           activeLive = live;
-          // Where the picture landed, in CSS pixels of the stage, for pointer interactions (rotation aside).
-          const c = containScale(live, size) * transform.scale;
+          // Where the picture landed, in CSS pixels of the stage, for pointer interactions (rotation and crop aside).
+          const c = (lookBox(live, look, size).width / live.width) * transform.scale;
           const lx = ox + (size.width / 2 + transform.x - (live.width * c) / 2) * s;
           const ly = oy + (size.height / 2 + transform.y - (live.height * c) / 2) * s;
           liveRect.current = { x: lx / dpr, y: ly / dpr, w: (live.width * c * s) / dpr, h: (live.height * c * s) / dpr };
@@ -544,7 +565,8 @@ export function Stage() {
         } else {
           // The film at the cursor, bottom to top; every camera aimed at this cell shows
           // live in its track, with the track's transparency and position.
-          const items = stackAt(shown, cursor.cell, { index });
+          // While a change is previewed the index (built from the film) has the old pictures.
+          const items = stackAt(shown, cursor.cell, shown === film ? { index } : {});
           const here = camera.rigs.filter((r) => r.source && camera.targetOf(r).cell === cursor.cell);
           for (const t of shown.tracks) {
             // While drawing, the cell drawn on shows its drawing, not the camera aimed there.
@@ -552,7 +574,10 @@ export function Stage() {
             const rig = drawingHere ? undefined : here.find((r) => camera.targetOf(r).track === t.id);
             if (rig) {
               const live = t.visible ? camera.liveOf(rig) : null;
-              if (live) drawLive(live, t.transform, t.opacity, rig.id === camera.activeRig);
+              if (live) {
+                const shot = shotOn(rig, t);
+                drawLive(live, shot.transform, shot.opacity, rig.id === camera.activeRig, shot.look);
+              }
               continue;
             }
             const item = items.find((i) => i.trackId === t.id);
@@ -560,7 +585,7 @@ export function Stage() {
             if (painted) {
               // The picture being painted, as it is right now.
               const clip = clipAt(shown, t.id, cursor.cell);
-              drawPainted(painted, t.opacity * (clip?.opacity ?? 1), composeTransforms(t.transform, clip?.transform ?? IDENTITY_TRANSFORM));
+              drawPainted(painted, t.opacity * (clip?.opacity ?? 1), composeTransforms(t.transform, clip?.transform ?? IDENTITY_TRANSFORM), clip?.look);
             } else if (item) drawProxies(ctx, filmId, film, [item]);
           }
         }
@@ -575,8 +600,8 @@ export function Stage() {
       if (focus) {
         const transform = composeTransforms(focus.track.transform, focus.clip.transform);
         const painted = surfaceAt(film, focus.track.id, cursor.cell);
-        if (painted) drawPainted(painted, state.focusOpacity, transform);
-        else drawProxies(ctx, filmId, film, [{ media: focus.clip.media, opacity: state.focusOpacity, transform }]);
+        if (painted) drawPainted(painted, state.focusOpacity, transform, focus.clip.look);
+        else drawProxies(ctx, filmId, film, [{ media: focus.clip.media, opacity: state.focusOpacity, transform, look: focus.clip.look }]);
       }
 
       // Onion skin: the previous pictures of the track being worked on. Looking at
@@ -590,14 +615,14 @@ export function Stage() {
         // Farthest first so the nearest one ends on top.
         skins.reverse().forEach((clip, i) => {
           const distance = skins.length - i - 1;
-          const item = { media: clip.media, opacity: 1, transform: composeTransforms(track.transform, clip.transform) };
+          const item = { media: clip.media, opacity: 1, transform: composeTransforms(track.transform, clip.transform), look: clip.look };
           drawProxies(ctx, filmId, film, [item], onion.opacity * (1 - distance / (onion.count + 1)));
         });
       }
       ctx.restore();
       if (showGuides) drawGuides(ctx, guides, size, dpr / s, placing);
       const handles = layerHandles.current();
-      if (handles && !placing && !isPainting(tool)) drawHandles(ctx, handles.media, handles.transform, size, dpr / s);
+      if (handles && !placing && !isPainting(tool)) drawHandles(ctx, handles.box, handles.transform, size, dpr / s);
       const outline = brushOutline();
       if (outline) {
         // The brush's size where it would paint, visible over light and dark.

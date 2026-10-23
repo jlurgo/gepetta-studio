@@ -1562,39 +1562,6 @@ input[type="range"] {
 
 /* Cameras in use */
 
-.rigs {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.rig-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 2px 4px 2px 2px;
-}
-
-.rig-row.active {
-  border-color: var(--teal);
-  background: color-mix(in srgb, var(--teal) 10%, transparent);
-}
-
-.rig-name {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: none;
-  background: transparent;
-  padding: 4px;
-  text-align: left;
-  cursor: pointer;
-}
-
 .rig-dot {
   flex-shrink: 0;
   width: 20px;
@@ -1605,28 +1572,6 @@ input[type="range"] {
   font-size: 11px;
   font-weight: 700;
   color: var(--accent-text);
-}
-
-.rig-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.rig-text strong,
-.rig-text small {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.rig-text strong {
-  font-size: 12px;
-}
-
-.rig-text small {
-  font-size: 11px;
-  color: var(--muted);
 }
 
 .icon-btn.recording {
@@ -1699,17 +1644,6 @@ input[type="range"] {
   border-radius: 6px;
   background: color-mix(in srgb, var(--rig) 35%, transparent);
   color: #fff;
-}
-
-.rig-row.picking {
-  border-color: var(--rig);
-  background: color-mix(in srgb, var(--rig) 18%, transparent);
-  animation: blink 1.2s steps(2) infinite;
-}
-
-.rig-enabled {
-  margin: 0 2px 0 4px;
-  accent-color: var(--rig);
 }
 
 .tl-rig span {
@@ -1914,14 +1848,7 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 200px;
-  max-height: 100%;
-  overflow-y: auto;
-  padding: 10px;
-  border-radius: var(--radius);
-  background: rgb(0 0 0 / 0.72);
   font-size: 12px;
-  cursor: default;
 }
 
 .tool-options .hint {
@@ -2016,3 +1943,147 @@ input[type="range"] {
 .tool-options > * {
   flex-shrink: 0;
 }
+
+/* Cameras in the toolbar: each with its color and number. */
+.tool-buttons .tool-sep {
+  height: 1px;
+  margin: 2px 4px;
+  background: rgb(255 255 255 / 0.2);
+}
+
+.tool-buttons .camera-tool {
+  position: relative;
+  color: var(--rig, var(--text));
+}
+
+.tool-buttons .camera-tool.active {
+  background: var(--rig, var(--accent));
+  color: var(--accent-text);
+}
+
+.tool-buttons .camera-tool.picking {
+  animation: blink 1.2s steps(2) infinite;
+}
+
+.tool-buttons .camera-tool.off {
+  opacity: 0.45;
+}
+
+.tool-buttons .camera-tool.recording {
+  box-shadow: inset 0 0 0 2px var(--danger);
+}
+
+.tool-buttons .camera-tool.error::after {
+  content: "!";
+  position: absolute;
+  top: 0;
+  left: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+.tool-buttons .camera-tool.add {
+  color: var(--muted);
+}
+
+.camera-tool-badge {
+  position: absolute;
+  right: 1px;
+  bottom: 0;
+  min-width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 13px;
+  text-align: center;
+  color: var(--accent-text);
+  background: var(--rig, var(--muted));
+}
+
+.camera-tool.active .camera-tool-badge {
+  background: var(--accent-text);
+  color: var(--rig, var(--accent));
+}
+
+/* The tool's properties, in the side panel. */
+.tool-panel h3 {
+  margin-top: 0;
+}
+
+.tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 4px;
+}
+
+.camera-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.camera-target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--rig);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--rig) 12%, transparent);
+}
+
+.camera-target .btn.active {
+  border-color: var(--rig);
+  animation: blink 1.2s steps(2) infinite;
+}
+
+.btn.recording {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.free-cameras {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.free-cameras .btn {
+  justify-content: flex-start;
+}
+
+.shot-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.shot-editor h4 {
+  margin: 6px 0 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.shot-editor .tool-size > span:first-child {
+  width: 72px;
+  flex-shrink: 0;
+}
+
+.shot-editor .tool-size > span:last-child {
+  width: 44px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.shot-editor .btn.active {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+

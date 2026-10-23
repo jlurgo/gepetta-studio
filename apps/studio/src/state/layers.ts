@@ -1,9 +1,10 @@
 import type { ClipId, Track, TrackId, Transform2D } from "@gepetta/core";
 import { create } from "zustand";
+import { useCamera } from "./camera";
 import { useEditor } from "./editor";
 
-/** What the stage handles move: a whole track, or one picture. */
-export type HandleTarget = { kind: "track"; id: TrackId } | { kind: "clip"; id: ClipId };
+/** What the stage handles move: a whole track, one picture, or a camera's live picture (its shot settings). */
+export type HandleTarget = { kind: "track"; id: TrackId } | { kind: "clip"; id: ClipId } | { kind: "rig"; id: string };
 
 interface LayersState {
   /** Track picked in the timeline (by its name, or as the track of the picture shown). */
@@ -28,6 +29,11 @@ export const useLayers = create<LayersState>((set) => ({
   setPreview: (preview) => set({ preview }),
 }));
 
+// Picking several pictures shows them (their settings change together).
+useEditor.subscribe((state, prev) => {
+  if (state.selection !== prev.selection && state.selection.length > 1) useLayers.setState({ detail: "clip" });
+});
+
 /** The selected track, if it still exists (undo may have removed it). */
 export function selectedTrack(): Track | null {
   const { trackId } = useLayers.getState();
@@ -47,7 +53,8 @@ export function updateTrack(trackId: TrackId, patch: Partial<Track>) {
 
 /** Commits a dragged transform as one history step. */
 export function commitTransform(target: HandleTarget, transform: Transform2D) {
-  if (target.kind === "track") updateTrack(target.id, { transform });
+  if (target.kind === "rig") useCamera.getState().setShot(target.id, { transform });
+  else if (target.kind === "track") updateTrack(target.id, { transform });
   else useEditor.getState().commit([{ type: "clip.update", id: target.id, patch: { transform } }]);
 }
 

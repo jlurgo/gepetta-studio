@@ -34,7 +34,7 @@ export type Op =
   /** Moves a track to `index` in the stack (0 = bottom). */
   | { type: "track.move"; trackId: TrackId; index: number };
 
-export type ClipPatch = Partial<Pick<Clip, "name" | "visible" | "opacity" | "transform" | "length" | "media">>;
+export type ClipPatch = Partial<Pick<Clip, "name" | "visible" | "opacity" | "transform" | "length" | "media" | "look">>;
 export type TrackPatch = Partial<Pick<Track, "name" | "visible" | "opacity" | "transform" | "exported">>;
 export type OpType = Op["type"];
 
@@ -197,6 +197,8 @@ function describePatch(patch: ClipPatch | TrackPatch, what: string): string {
       return `Renombrar ${what}`;
     case "length":
       return `Duración: ${(patch as ClipPatch).length} ${(patch as ClipPatch).length === 1 ? "celda" : "celdas"}`;
+    case "look":
+      return `Ajustes de ${what}`;
     case "media":
       return `Dibujar en ${what}`;
     case "exported":

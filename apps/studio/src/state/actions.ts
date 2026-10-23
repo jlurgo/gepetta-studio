@@ -4,6 +4,7 @@ import {
   type ClipId,
   type FilmState,
   IDENTITY_TRANSFORM,
+  isPlainLook,
   type MediaRef,
   type Op,
   type Track,
@@ -17,12 +18,12 @@ import { rotateBlob } from "../capture/types";
 import { ingestImage, isImageFile, sortFiles } from "../media/ingest";
 import { grabStill } from "../media/video";
 import { runTask, useBusy } from "./busy";
-import { type Rig, useCamera } from "./camera";
+import { PLAIN_SHOT, type Rig, type Shot, useCamera } from "./camera";
 import { type GridCursor, useEditor } from "./editor";
 import { useLayers } from "./layers";
 
-/** Clips for pictures placed one after another from `at`, each `length` cells long. */
-function clipsFrom(at: GridCursor, media: MediaRef[], length: number, name: string): Clip[] {
+/** Clips for pictures placed one after another from `at`, each `length` cells long (with a camera's settings, if from one). */
+function clipsFrom(at: GridCursor, media: MediaRef[], length: number, name: string, shot: Shot = PLAIN_SHOT): Clip[] {
   return media.map((m, i) => ({
     id: newId(),
     track: at.track,
@@ -31,8 +32,9 @@ function clipsFrom(at: GridCursor, media: MediaRef[], length: number, name: stri
     media: m,
     name,
     visible: true,
-    opacity: 1,
-    transform: IDENTITY_TRANSFORM,
+    opacity: shot.opacity,
+    transform: shot.transform,
+    ...(!isPlainLook(shot.look) && { look: shot.look }),
   }));
 }
 
@@ -51,7 +53,7 @@ function rigFor(rigId?: string): Rig | undefined {
  * Puts a photo at the camera's target (replacing what was in that cell) and
  * moves the target past it, ready for the next one.
  */
-function placeStill(rigId: string | null, image: Blob, raw: Blob | null, label: string, meta?: CaptureMeta): Promise<void> {
+function placeStill(rigId: string | null, image: Blob, raw: Blob | null, label: string, meta?: CaptureMeta, shot?: Shot): Promise<void> {
   const run = async () => {
     const { filmId } = useEditor.getState();
     if (!filmId) return;
@@ -60,7 +62,7 @@ function placeStill(rigId: string | null, image: Blob, raw: Blob | null, label: 
     if (state.filmId !== filmId) return;
     const rig = rigId ? rigFor(rigId) : undefined;
     const target = rig ? useCamera.getState().targetOf(rig) : state.cursor;
-    const [clip] = clipsFrom(target, [media], state.captureStep, label);
+    const [clip] = clipsFrom(target, [media], state.captureStep, label, shot ?? rig?.shot);
     state.commit([{ type: "clip.place", clips: [clip!], label }], undefined, { selection: [] });
     const next = { track: clip!.track, cell: clipEnd(clip!) };
     if (rig) useCamera.getState().setTarget(rig.id, next);
@@ -87,8 +89,10 @@ export async function capture(rigId?: string) {
       meta.focusOrigin = focus.origin;
     }
     const rotation = useCamera.getState().rotationOf(rig);
+    // The settings as seen when the shot is taken.
+    const shot = rig.shot;
     const still = await source.capture(captureAverage);
-    await placeStill(rig.id, await rotateBlob(still.image, rotation), still.raw?.blob ?? null, "Foto", meta);
+    await placeStill(rig.id, await rotateBlob(still.image, rotation), still.raw?.blob ?? null, "Foto", meta, shot);
   } catch (e) {
     useBusy.getState().notify(e instanceof Error ? e.message : "No se pudo sacar la foto", "error");
   } finally {
@@ -164,12 +168,13 @@ export function startRecording(rigId?: string) {
     const canvas = new OffscreenCanvas(live.width, live.height);
     canvas.getContext("2d")!.drawImage(live.image, 0, 0, live.width, live.height);
     const encoded = canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 });
+    const shot = current!.shot;
     rec.chain = rec.chain
       .then(async () => {
         const media = await ingestImage(filmId, await encoded, null, rec.meta);
         const state = useEditor.getState();
         if (state.filmId !== filmId) return;
-        const [clip] = clipsFrom(rec.next, [media], 1, name);
+        const [clip] = clipsFrom(rec.next, [media], 1, name, shot);
         rec.step = state.commit([{ type: "clip.place", clips: [clip!], label: "Video grabado" }], `Video grabado (${rec.cells + 1} imágenes)`, {
           amend: rec.step ?? undefined,
         });
