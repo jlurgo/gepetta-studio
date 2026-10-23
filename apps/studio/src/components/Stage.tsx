@@ -25,7 +25,7 @@ import { proxyCache } from "../media/cache";
 import { peekPicture } from "../media/composed";
 import type { LiveFrame } from "../capture/types";
 import { type Drawable, type Size, containScale, drawStack, pictureMatrix } from "../render/frame";
-import { pickedStrokes, selectStrokes, strokeAt, strokesBounds, transformStrokes, updateStrokes, useStrokePreview, useStrokes, withStrokePreview } from "../state/strokes";
+import { objectsAt, pickedStrokes, selectStrokes, strokesBounds, transformStrokes, updateStrokes, useStrokePreview, useStrokes, withStrokePreview } from "../state/strokes";
 import { type CropSide, type HandleKind, dragCrop, drawHandles, dragTransform, hitHandle } from "../render/handles";
 import { type HandleTarget, commitTransform, selectedClipId, useLayers } from "../state/layers";
 import { shotOn, useCamera } from "../state/camera";
@@ -486,9 +486,15 @@ function usePaintPointer(filmRect: React.RefObject<FilmRect | null>, canvasRef: 
   return { onPointerDown, onPointerMove, onPointerUp };
 }
 
-/** With the move tool, a click (not a drag) on a stroke picks it, and its picture. */
-function useStrokePick(filmRect: React.RefObject<FilmRect | null>) {
+/**
+ * The pick tool: a click (not a drag) picks what is under the pointer at the
+ * cell, topmost first: a stroke or a picture. Clicking the same spot again
+ * picks the next one down, to reach what is under. ⇧ adds strokes of the same
+ * picture. A click on nothing lets go.
+ */
+function usePick(filmRect: React.RefObject<FilmRect | null>) {
   const down = useRef<{ x: number; y: number } | null>(null);
+  const last = useRef<{ x: number; y: number } | null>(null);
   const onPointerDown = (e: React.PointerEvent) => {
     down.current = usePaint.getState().tool === "move" && e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
   };
@@ -500,16 +506,34 @@ function useStrokePick(filmRect: React.RefObject<FilmRect | null>) {
     if (!d || !r || !film || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
     const box = e.currentTarget.getBoundingClientRect();
     const p = { x: (e.clientX - box.left - r.x) / r.s, y: (e.clientY - box.top - r.y) / r.s };
-    void strokeAt(film, cursor.cell, p, 6 / r.s).then((hit) => {
-      if (!hit) {
-        if (useStrokes.getState().ids.length) selectStrokes(null, []);
+    const again = last.current && Math.hypot(e.clientX - last.current.x, e.clientY - last.current.y) <= 4;
+    last.current = { x: e.clientX, y: e.clientY };
+    const shift = e.shiftKey;
+    void objectsAt(film, cursor.cell, p, 6 / r.s).then((found) => {
+      const editor = useEditor.getState();
+      const picked = useStrokes.getState();
+      if (!found.length) {
+        selectStrokes(null, []);
+        editor.setSelection([]);
         return;
       }
-      const add = e.shiftKey && useStrokes.getState().clip === hit.clip.id;
-      const ids = useStrokes.getState().ids;
-      useEditor.getState().setSelection([hit.clip.id]);
-      useLayers.getState().showClip(hit.clip.track);
-      selectStrokes(hit.clip.id, add ? (ids.includes(hit.stroke.id) ? ids.filter((i) => i !== hit.stroke.id) : [...ids, hit.stroke.id]) : [hit.stroke.id]);
+      if (shift && picked.clip) {
+        // Adding (or taking out) a stroke of the picture already picked.
+        const hit = found.find((o) => o.stroke && o.clip.id === picked.clip);
+        if (hit) {
+          const id = hit.stroke!.id;
+          selectStrokes(picked.clip, picked.ids.includes(id) ? picked.ids.filter((i) => i !== id) : [...picked.ids, id]);
+          return;
+        }
+      }
+      // What is picked now, among what is here: the next one down, on a second click.
+      const current = found.findIndex((o) =>
+        o.stroke ? picked.clip === o.clip.id && picked.ids.includes(o.stroke.id) : !picked.ids.length && editor.selection.length === 1 && editor.selection[0] === o.clip.id,
+      );
+      const next = found[again && current >= 0 ? (current + 1) % found.length : 0]!;
+      editor.setSelection([next.clip.id]);
+      useLayers.getState().showClip(next.clip.track);
+      selectStrokes(next.stroke ? next.clip.id : null, next.stroke ? [next.stroke.id] : []);
     });
   };
   return { onPointerDown, onPointerUp };
@@ -661,7 +685,7 @@ export function Stage() {
   const layerDrag = useLayerDrag(filmRect);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const paintPointer = usePaintPointer(filmRect, canvasRef);
-  const strokePick = useStrokePick(filmRect);
+  const strokePick = usePick(filmRect);
   const strokeDrag = useStrokeDrag(filmRect);
   const painting = usePaint((s) => isPainting(s.tool));
   const layerHandles = useRef(targetOnStage);

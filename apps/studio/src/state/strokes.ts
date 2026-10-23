@@ -1,5 +1,6 @@
-import { type Clip, type ClipId, type FilmState, type Op, type Stroke, type StrokePatch, composeTransforms } from "@gepetta/core";
+import { type Clip, type ClipId, type FilmState, type Op, type Stroke, type StrokePatch, composeTransforms, cropRect } from "@gepetta/core";
 import { create } from "zustand";
+import { proxyCache } from "../media/cache";
 import { type Size, pictureMatrix } from "../render/frame";
 import { storage } from "../storage";
 import { useEditor } from "./editor";
@@ -136,28 +137,58 @@ async function paintedAt(filmId: string, stroke: Stroke, picture: Size, x: numbe
   return ctx.getImageData(0, 0, 1, 1).data[3]! > 16;
 }
 
+/** Whether a picture's own image is painted (not see-through) at a point of its pixels, and inside its crop. */
+async function pictureAt(filmId: string, clip: Clip, x: number, y: number): Promise<boolean> {
+  const r = cropRect(clip.media, clip.look);
+  if (x < r.x || y < r.y || x >= r.x + r.width || y >= r.y + r.height) return false;
+  const bmp = await proxyCache.load(filmId, clip.media.proxy);
+  const c = new OffscreenCanvas(1, 1);
+  const ctx = c.getContext("2d")!;
+  ctx.drawImage(bmp, Math.floor((x / clip.media.width) * bmp.width), Math.floor((y / clip.media.height) * bmp.height), 1, 1, 0, 0, 1, 1);
+  return ctx.getImageData(0, 0, 1, 1).data[3]! > 16;
+}
+
+/** Something on the stage that can be picked: a picture, or one of its strokes. */
+export interface StageObject {
+  clip: Clip;
+  stroke?: Stroke;
+}
+
 /**
- * The topmost stroke under a film point at a cell: the picture and stroke, or
- * null. `reach` is how near counts, in film pixels.
+ * Everything under a film point at a cell, topmost first: each picture's
+ * strokes there, then the picture itself (where it is not see-through, or
+ * where one of its strokes is). `reach` is how near counts, in film pixels.
  */
-export async function strokeAt(film: FilmState, cell: number, p: { x: number; y: number }, reach: number): Promise<{ clip: Clip; stroke: Stroke } | null> {
+export async function objectsAt(film: FilmState, cell: number, p: { x: number; y: number }, reach: number): Promise<StageObject[]> {
   const { filmId } = useEditor.getState();
-  if (!filmId) return null;
+  if (!filmId) return [];
+  const out: StageObject[] = [];
   for (const track of [...film.tracks].reverse()) {
     if (!track.visible) continue;
     const clip = Object.values(film.clips).find((c) => c.track === track.id && c.visible && cell >= c.start && cell < c.start + c.length);
-    if (!clip?.strokes?.length) continue;
+    if (!clip) continue;
     const transform = composeTransforms(track.transform, clip.transform);
     const m = pictureMatrix({ media: clip.media, transform, look: clip.look }, film.settings, clip.media);
     const q = m.inverse().transformPoint(new DOMPoint(p.x, p.y));
     const scale = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1;
-    for (const stroke of [...clip.strokes].reverse()) {
+    let touched = false;
+    for (const stroke of [...(clip.strokes ?? [])].reverse()) {
       if (stroke.hidden || stroke.tool === "erase") continue;
       const hit = stroke.layer ? await paintedAt(filmId, stroke, clip.media, q.x, q.y) : touchesStroke(stroke, q.x, q.y, reach / scale);
-      if (hit) return { clip, stroke };
+      if (hit) {
+        out.push({ clip, stroke });
+        touched = true;
+      }
     }
+    if (touched || (await pictureAt(filmId, clip, q.x, q.y).catch(() => false))) out.push({ clip });
   }
-  return null;
+  return out;
+}
+
+/** The topmost stroke under a film point at a cell, or null. */
+export async function strokeAt(film: FilmState, cell: number, p: { x: number; y: number }, reach: number): Promise<{ clip: Clip; stroke: Stroke } | null> {
+  const hit = (await objectsAt(film, cell, p, reach)).find((o) => o.stroke);
+  return hit ? { clip: hit.clip, stroke: hit.stroke! } : null;
 }
 
 /** Strokes as shown in a picture's list: name of the tool used. */
