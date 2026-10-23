@@ -4,7 +4,7 @@ import type { DslrStatus } from "../native";
 import { addTrack, capture, startRecording, stopRecording } from "../state/actions";
 import { type Rig, rigColor, useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
-import { BRUSHES, type BrushKind, PAINT_COLORS, SHAPES, type ShapeKind, type StageTool, currentSettings, hasSettings, usePaint } from "../state/paint";
+import { BRUSHES, type BrushKind, PAINT_COLORS, SCULPT_MODES, SHAPES, type SculptMode, type ShapeKind, type StageTool, currentSettings, hasSettings, usePaint } from "../state/paint";
 import { CameraControls } from "./CameraControls";
 import { FocusMeterPanel } from "./FocusMeterPanel";
 import { FOCUS_KEYS, FocusPanel } from "./FocusPanel";
@@ -24,6 +24,7 @@ const HINTS: Partial<Record<StageTool, string>> = {
   shape: "Arrastrá. ⇧ hace cuadrados, círculos y líneas a 45°.",
   clone: "⌥/Alt+clic elige de dónde copiar; puede ser otra celda (por ejemplo la foto anterior, para borrar un soporte).",
   picker: "Clic en la imagen para tomar su color.",
+  sculpt: "Pasá el pincel por los trazos del dibujo de esta celda. Empujar los arrastra (más en el centro del círculo); Suavizar alisa el pulso; Engrosar y Afinar cambian el grosor. Cada arrastre es un paso.",
 };
 
 function Choice<T extends string>({ value, options, onChange }: { value: T; options: Record<T, string>; onChange(v: T): void }) {
@@ -64,6 +65,7 @@ function PaintOptions() {
   return (
     <div className="tool-options">
       {tool === "draw" && <Choice value={p.brush} options={BRUSH_LABELS} onChange={(brush) => p.set({ brush })} />}
+      {tool === "sculpt" && <Choice value={p.sculpt} options={SCULPT_MODES} onChange={(sculpt: SculptMode) => p.set({ sculpt })} />}
       {tool === "shape" && (
         <>
           <Choice value={p.shape} options={SHAPES} onChange={(shape: ShapeKind) => p.set({ shape })} />
@@ -98,7 +100,7 @@ function PaintOptions() {
           </label>
         </>
       )}
-      {tool !== "shape" && hasSettings(tool) && (
+      {tool !== "shape" && tool !== "sculpt" && hasSettings(tool) && (
         <label className="tool-size" title="Estabiliza el pulso">
           <span>Suavizado</span>
           <input type="range" min={0} max={1} step={0.05} value={p.smooth} onChange={(e) => p.set({ smooth: Number(e.target.value) })} />
@@ -129,7 +131,7 @@ function PaintOptions() {
           <strong>{track.name}</strong>, celda {cell + 1}
         </p>
       )}
-      {tool !== "picker" && (
+      {tool !== "picker" && tool !== "sculpt" && (
         <button className="btn small" onClick={() => addTrack(`Dibujo ${useEditor.getState().film?.tracks.length ?? 0}`)}>
           <Icon name="plus" size={14} /> Capa de dibujo nueva
         </button>

@@ -32,11 +32,13 @@ import { shotOn, useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
 import { playbackCell, useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
-import { beginStroke, brushOutline, cloneMarker, endStroke, isPainting, leaveStage, moveStroke, surfaceAt, usePaint } from "../state/paint";
+import { beginStroke, brushOutline, cloneMarker, currentSettings, endStroke, isPainting, leaveStage, moveStroke, surfaceAt, usePaint } from "../state/paint";
 import { drawGuides, hitVanishingPoint } from "../render/guides";
 import { magnifyControl } from "./MagnifyPanel";
 import { capturePointer } from "./pointer";
 import { StageTools } from "./StageTools";
+import { beginSculpt, endSculpt, moveSculpt, sculpting } from "../state/sculpt";
+import { useBusy } from "../state/busy";
 import { type ShotChange, commitShot, useShotPreview, withShotPreview } from "../state/shot";
 
 const PREFETCH = 12;
@@ -539,6 +541,40 @@ function usePick(filmRect: React.RefObject<FilmRect | null>) {
   return { onPointerDown, onPointerUp };
 }
 
+/** Where the sculpt brush is over the film, to draw its circle. */
+let sculptHover: Point | null = null;
+
+/** The sculpt tool on the strokes of the picture at the cursor. */
+function useSculptPointer(filmRect: React.RefObject<FilmRect | null>) {
+  const filmPoint = (e: React.PointerEvent): Point | null => {
+    const r = filmRect.current;
+    if (!r) return null;
+    const box = e.currentTarget.getBoundingClientRect();
+    return { x: (e.clientX - box.left - r.x) / r.s, y: (e.clientY - box.top - r.y) / r.s };
+  };
+  const onPointerDown = (e: React.PointerEvent): boolean => {
+    if (usePaint.getState().tool !== "sculpt" || e.button !== 0) return false;
+    const p = filmPoint(e);
+    if (!p) return true;
+    if (beginSculpt(p)) capturePointer(e);
+    else useBusy.getState().notify("Acá no hay trazos para esculpir: elegí en la línea de tiempo la celda de un dibujo.");
+    return true;
+  };
+  const onPointerMove = (e: React.PointerEvent): boolean => {
+    if (usePaint.getState().tool !== "sculpt") return false;
+    const p = filmPoint(e);
+    sculptHover = p;
+    if (p && sculpting()) moveSculpt(p);
+    return true;
+  };
+  const onPointerUp = (): boolean => {
+    if (usePaint.getState().tool !== "sculpt") return false;
+    endSculpt();
+    return true;
+  };
+  return { onPointerDown, onPointerMove, onPointerUp };
+}
+
 /** The picked strokes as the handles move them: their corners on the stage, and the picture's mapping. */
 function strokesOnStage(): { corners: Point[]; matrix: DOMMatrix; clip: string; ids: string[] } | null {
   const { film: raw, cursor, playback } = useEditor.getState();
@@ -563,6 +599,41 @@ function strokesOnStage(): { corners: Point[]; matrix: DOMMatrix; clip: string; 
   return { corners, matrix, clip: clip.id, ids: lines.map((st) => st.id) };
 }
 
+/** The point of the one picked stroke under `p` (film coordinates), if any. */
+function pointAt(on: NonNullable<ReturnType<typeof strokesOnStage>>, strokes: readonly Stroke[], p: Point, reach: number): number | null {
+  if (on.ids.length !== 1) return null;
+  const pts = strokes.find((st) => st.id === on.ids[0])?.points ?? [];
+  let best: number | null = null;
+  let bestD = reach;
+  pts.forEach(([x, y], i) => {
+    const q = on.matrix.transformPoint(new DOMPoint(x, y));
+    const d = Math.hypot(q.x - p.x, q.y - p.y);
+    if (d <= bestD) {
+      best = i;
+      bestD = d;
+    }
+  });
+  return best;
+}
+
+/** The points of the one picked stroke, as dots to drag. */
+function drawStrokePoints(ctx: CanvasRenderingContext2D, film: FilmState, on: NonNullable<ReturnType<typeof strokesOnStage>>, px: number) {
+  if (on.ids.length !== 1) return;
+  const pts = film.clips[on.clip]?.strokes?.find((st) => st.id === on.ids[0])?.points ?? [];
+  ctx.save();
+  for (const [x, y] of pts) {
+    const q = on.matrix.transformPoint(new DOMPoint(x, y));
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, 3.5 * px, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.lineWidth = 1.5 * px;
+    ctx.strokeStyle = "#ff7a45";
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 /** The handles' corners as the strokes being dragged are now. */
 function withStrokePreviewCorners(on: NonNullable<ReturnType<typeof strokesOnStage>>): Point[] {
   const { preview } = useStrokePreview.getState();
@@ -581,7 +652,7 @@ function withStrokePreviewCorners(on: NonNullable<ReturnType<typeof strokesOnSta
 
 /** Moving, scaling and turning the picked strokes with their handles (Blender's edit mode). */
 function useStrokeDrag(filmRect: React.RefObject<FilmRect | null>) {
-  const drag = useRef<{ kind: HandleKind; start: Point; center: Point; matrix: DOMMatrix; clip: string; ids: string[]; base: Stroke[] } | null>(null);
+  const drag = useRef<{ kind: HandleKind | "point"; start: Point; center: Point; matrix: DOMMatrix; clip: string; ids: string[]; base: Stroke[]; point?: number } | null>(null);
   const filmPoint = (e: React.PointerEvent): Point => {
     const r = filmRect.current!;
     const box = e.currentTarget.getBoundingClientRect();
@@ -593,11 +664,19 @@ function useStrokeDrag(filmRect: React.RefObject<FilmRect | null>) {
     const clip = on && useEditor.getState().film?.clips[on.clip];
     if (!on || !clip || !filmRect.current) return false;
     const p = filmPoint(e);
+    const [a, , c] = on.corners as [Point, Point, Point];
+    const center = { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 };
+    // One stroke: its points can be dragged one by one (they win over the handles).
+    const point = pointAt(on, clip.strokes ?? [], p, 8 / filmRect.current.s);
+    if (point !== null) {
+      capturePointer(e);
+      drag.current = { kind: "point", point, start: p, center, matrix: on.matrix, clip: on.clip, ids: on.ids, base: clip.strokes ?? [] };
+      return true;
+    }
     const kind = hitHandle(on.corners, p, 1 / filmRect.current.s, false);
     if (!kind) return false;
     capturePointer(e);
-    const [a, , c] = on.corners as [Point, Point, Point];
-    drag.current = { kind, start: p, center: { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, matrix: on.matrix, clip: on.clip, ids: on.ids, base: clip.strokes ?? [] };
+    drag.current = { kind, start: p, center, matrix: on.matrix, clip: on.clip, ids: on.ids, base: clip.strokes ?? [] };
     return true;
   };
 
@@ -606,6 +685,15 @@ function useStrokeDrag(filmRect: React.RefObject<FilmRect | null>) {
     if (!d) return false;
     const p = filmPoint(e);
     const { center: c, start } = d;
+    if (d.kind === "point") {
+      const q = d.matrix.inverse().transformPoint(new DOMPoint(p.x, p.y));
+      const id = d.ids[0]!;
+      const strokes = d.base.map((st) =>
+        st.id !== id || !st.points ? st : { ...st, points: st.points.map((pt, i): [number, number, number, number] => (i === d.point ? [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, pt[2], pt[3]] : pt)) },
+      );
+      useStrokePreview.setState({ preview: { clip: d.clip, strokes } });
+      return true;
+    }
     // The change, in film coordinates, then taken to the picture's pixels.
     let f = new DOMMatrix();
     if (d.kind === "move") f = f.translate(p.x - start.x, p.y - start.y);
@@ -632,7 +720,7 @@ function useStrokeDrag(filmRect: React.RefObject<FilmRect | null>) {
     useStrokePreview.setState({ preview: null });
     if (!preview) return true;
     const patches = preview.strokes.filter((st) => d.ids.includes(st.id)).map((st) => ({ id: st.id, patch: { points: st.points } }));
-    updateStrokes(d.clip, patches, d.ids.length === 1 ? "Transformar trazo" : `Transformar ${d.ids.length} trazos`);
+    updateStrokes(d.clip, patches, d.kind === "point" ? "Mover un punto del trazo" : d.ids.length === 1 ? "Transformar trazo" : `Transformar ${d.ids.length} trazos`);
     return true;
   };
 
@@ -687,6 +775,7 @@ export function Stage() {
   const paintPointer = usePaintPointer(filmRect, canvasRef);
   const strokePick = usePick(filmRect);
   const strokeDrag = useStrokeDrag(filmRect);
+  const sculptPointer = useSculptPointer(filmRect);
   const painting = usePaint((s) => isPainting(s.tool));
   const layerHandles = useRef(targetOnStage);
   const guideEditing = useGuides((s) => s.editing);
@@ -875,7 +964,21 @@ export function Stage() {
       // Picked strokes have their own handles, instead of their picture's.
       const strokeHandles = strokesOnStage();
       if (tool === "move") drawPickedStrokes(ctx, shown, dpr / s);
-      if (strokeHandles && !placing) drawHandles(ctx, withStrokePreviewCorners(strokeHandles), dpr / s, false);
+      if (strokeHandles && !placing) {
+        drawHandles(ctx, withStrokePreviewCorners(strokeHandles), dpr / s, false);
+        drawStrokePoints(ctx, shown, strokeHandles, dpr / s);
+      }
+      if (tool === "sculpt" && sculptHover) {
+        // The sculpt brush's size, visible over light and dark.
+        ctx.beginPath();
+        ctx.arc(sculptHover.x, sculptHover.y, Math.max(currentSettings().size / 2, 1), 0, Math.PI * 2);
+        ctx.lineWidth = (3 * dpr) / s;
+        ctx.strokeStyle = "rgb(0 0 0 / 0.6)";
+        ctx.stroke();
+        ctx.lineWidth = (1.2 * dpr) / s;
+        ctx.strokeStyle = "#5cc8b5";
+        ctx.stroke();
+      }
       else if (handles && !placing && !isPainting(tool)) drawHandles(ctx, handles.corners, dpr / s, !!handles.crop);
       const outline = brushOutline();
       if (outline) {
@@ -917,20 +1020,23 @@ export function Stage() {
       ref={wrapRef}
       onPointerDown={(e) => {
         if (!playing) strokePick.onPointerDown(e);
-        if (playing || guideDrag.onPointerDown(e) || paintPointer.onPointerDown(e) || strokeDrag.onPointerDown(e) || layerDrag.onPointerDown(e)) return;
+        if (playing || guideDrag.onPointerDown(e) || paintPointer.onPointerDown(e) || sculptPointer.onPointerDown(e) || strokeDrag.onPointerDown(e) || layerDrag.onPointerDown(e)) return;
         if (hasSource) handlers.onPointerDown(e);
       }}
       onPointerMove={(e) => {
-        if (playing || guideDrag.onPointerMove(e) || paintPointer.onPointerMove(e) || strokeDrag.onPointerMove(e) || layerDrag.onPointerMove(e)) return;
+        if (playing || guideDrag.onPointerMove(e) || paintPointer.onPointerMove(e) || sculptPointer.onPointerMove(e) || strokeDrag.onPointerMove(e) || layerDrag.onPointerMove(e)) return;
         if (hasSource) handlers.onPointerMove(e);
       }}
       onPointerUp={(e) => {
         if (!playing) strokePick.onPointerUp(e);
-        if (playing || guideDrag.onPointerUp() || paintPointer.onPointerUp() || strokeDrag.onPointerUp() || layerDrag.onPointerUp()) return;
+        if (playing || guideDrag.onPointerUp() || paintPointer.onPointerUp() || sculptPointer.onPointerUp() || strokeDrag.onPointerUp() || layerDrag.onPointerUp()) return;
         if (hasSource) handlers.onPointerUp(e);
       }}
       onPointerCancel={() => paintPointer.onPointerUp()}
-      onPointerLeave={leaveStage}
+      onPointerLeave={() => {
+        leaveStage();
+        sculptHover = null;
+      }}
     >
       <canvas ref={canvasRef} />
       {!playing && <StageTools />}

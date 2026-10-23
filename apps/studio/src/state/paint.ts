@@ -38,8 +38,8 @@ import { useEditor } from "./editor";
  * not darken where it crosses itself); meanwhile the stage shows the two together.
  */
 /** "camera": the active camera (see useCamera), as a tool among the others; "addCamera": choosing one more;
- * "import": putting images and videos into cells. */
-export type StageTool = "move" | "camera" | "addCamera" | "import" | "draw" | "erase" | "fill" | "tint" | "shape" | "clone" | "picker";
+ * "import": putting images and videos into cells; "sculpt": reshaping the strokes of the picture at the cursor. */
+export type StageTool = "move" | "camera" | "addCamera" | "import" | "sculpt" | "draw" | "erase" | "fill" | "tint" | "shape" | "clone" | "picker";
 export type BrushKind = "pencil" | "ink" | "marker" | "airbrush";
 export type ShapeKind = "line" | "box" | "ellipse";
 
@@ -52,8 +52,12 @@ export const BRUSHES: Record<BrushKind, { label: string; size: number; strength:
 
 export const SHAPES: Record<ShapeKind, string> = { line: "Línea", box: "Rectángulo", ellipse: "Elipse" };
 
+/** What the sculpt tool does to the strokes under it (Blender's sculpt mode). */
+export type SculptMode = "push" | "smooth" | "thicken" | "thin";
+export const SCULPT_MODES: Record<SculptMode, string> = { push: "Empujar", smooth: "Suavizar", thicken: "Engrosar", thin: "Afinar" };
+
 /** Each brush and tool keeps its own width (film pixels) and strength (0–1). */
-type SettingsKey = BrushKind | "erase" | "tint" | "shape" | "clone";
+type SettingsKey = BrushKind | "erase" | "tint" | "shape" | "clone" | "sculpt";
 type ToolSettings = Record<SettingsKey, { size: number; strength: number }>;
 
 const DEFAULT_SETTINGS: ToolSettings = {
@@ -65,6 +69,7 @@ const DEFAULT_SETTINGS: ToolSettings = {
   tint: { size: 60, strength: 0.3 },
   shape: { size: 6, strength: 1 },
   clone: { size: 40, strength: 1 },
+  sculpt: { size: 80, strength: 0.6 },
 };
 
 /** Where the clone stamp copies from: a point of a track's picture at a cell (it can be another cell). */
@@ -93,8 +98,9 @@ interface PaintState {
   /** Paint bucket: how different a color may be and still be filled, 0–100. */
   fillTolerance: number;
   cloneSource: CloneSource | null;
+  sculpt: SculptMode;
   setTool(tool: StageTool): void;
-  set(patch: Partial<Pick<PaintState, "brush" | "shape" | "shapeFill" | "color" | "smooth" | "fillTolerance">>): void;
+  set(patch: Partial<Pick<PaintState, "brush" | "shape" | "shapeFill" | "color" | "smooth" | "fillTolerance" | "sculpt">>): void;
   /** Width and strength of the tool in use. */
   setCurrent(patch: Partial<{ size: number; strength: number }>): void;
   setCloneSource(source: CloneSource | null): void;
@@ -126,6 +132,7 @@ function settingsKey(p: Pick<PaintState, "tool" | "brush">): SettingsKey {
     case "tint":
     case "shape":
     case "clone":
+    case "sculpt":
       return p.tool;
     default:
       return p.brush;
@@ -143,6 +150,7 @@ export const usePaint = create<PaintState>((set, get) => ({
   smooth: remembered("smooth", 0.3),
   fillTolerance: remembered("fillTolerance", 15),
   cloneSource: null,
+  sculpt: remembered("sculpt", "push"),
   setTool: (tool) => {
     if (!isPainting(tool)) dropSurface();
     set({ tool, lastTool: tool === "picker" ? get().lastTool : tool });
@@ -166,13 +174,13 @@ export const usePaint = create<PaintState>((set, get) => ({
 }));
 
 /** The drawing tools work on the cell at the cursor (and hide the handles). */
-export function isPainting(tool: StageTool): tool is Exclude<StageTool, "move" | "camera" | "addCamera" | "import"> {
-  return tool !== "move" && tool !== "camera" && tool !== "addCamera" && tool !== "import";
+export function isPainting(tool: StageTool): tool is Exclude<StageTool, "move" | "camera" | "addCamera" | "import" | "sculpt"> {
+  return tool !== "move" && tool !== "camera" && tool !== "addCamera" && tool !== "import" && tool !== "sculpt";
 }
 
 /** Whether the tool has a width and a strength. */
 export function hasSettings(tool: StageTool): boolean {
-  return tool === "draw" || tool === "erase" || tool === "tint" || tool === "shape" || tool === "clone";
+  return tool === "draw" || tool === "erase" || tool === "tint" || tool === "shape" || tool === "clone" || tool === "sculpt";
 }
 
 /** Width and strength of the tool in use. */

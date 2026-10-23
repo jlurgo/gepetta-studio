@@ -36,10 +36,10 @@
 - [x] Herramientas al estilo Grease Pencil (Blender 2D): pinceles lápiz/tinta/marcador/aerógrafo con fuerza y suavizado, borrar, rellenar, teñir, formas (línea, rectángulo, elipse), sello de clonar (también desde otra celda) y cuentagotas
 - [x] Trazos como objetos: cada trazo se elige (en la imagen o en la lista), se cambia (color, grosor, fuerza, pincel), se oculta o se borra
 - [x] Mover, agrandar y girar los trazos elegidos con manijas en la imagen
-- [ ] Editar los puntos de un trazo, esculpirlo (modo edición de Grease Pencil)
+- [x] Editar los puntos de un trazo (arrastrándolos) y esculpir trazos: empujar, suavizar, engrosar, afinar
 - [x] Cámaras como herramientas en la barra, con sus propiedades en el panel de detalle; botón grande en modo foto o video con todas las cámaras habilitadas
 - [x] Ajustes de imagen sin tocar la foto (tamaño, recorte, giro, espejo, transparencia, mezcla, brillo/contraste/saturación): en vivo, en cada foto y cuadro grabado, editables en uno o varios
-- [ ] Fundido en el tiempo (aparecer/desaparecer en varios cuadros)
+- [x] Fundido en el tiempo: una imagen que dura varias celdas, o varias imágenes seguidas
 - [x] Columnas del resultado: ⇧ extiende, ⌘/Ctrl suma partes sueltas; Supr las elimina en todos los tracks y lo que sigue se corre; la celda de una cámara en vivo también se elige y al borrarla la cámara va después del último cuadro
 - [x] Herramienta «Imágenes y videos»: varias imágenes en una lista para ordenar y poner en celdas seguidas; video cuadro por cuadro o en un track para calcar; imagen fija; «+ Track» agrega un track vacío directo
 - [ ] Selección y transformación de una parte de la imagen (lazo/rectángulo)
@@ -53,7 +53,8 @@
 
 ## Fase 4 — Loops y dispositivos
 - [x] Película en loop: el primer cuadro sigue al último, línea de tiempo como tambor que gira, largo elegido arrastrando ↻, cebolla que da la vuelta
-- Ping-pong, herramientas para caminatas
+- [x] Ping-pong (ida y vuelta, también al exportar)
+- Herramientas para caminatas
 - Zootropo: simulación de tambor + export imprimible
 - Fenakitoscopio: distribución configurable en el círculo, ranuras, simulación,
   impresión en papel + SVG/DXF/STL
