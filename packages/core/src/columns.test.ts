@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellAfterRemoving, extendColumns, removeColumnsOps, toggleColumns } from "./columns";
+import { cellAfterRemoving, extendColumns, insertColumnsOps, removeColumnsOps, toggleColumns } from "./columns";
 import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, emptyFilm } from "./model";
 import { applyOp } from "./ops";
 
@@ -66,6 +66,27 @@ describe("removing columns", () => {
       [2, 1],
     ]);
     expect(f.length).toBe(3);
+  });
+
+  it("puts empty cells in, moving what comes after", () => {
+    let f = film();
+    for (const op of insertColumnsOps(f, 2, 3)) f = applyOp(f, op);
+    expect(order(f)).toEqual(["a@0", "b@1", "c@5", "d@6", "e@7", "f@8"]);
+    expect(f.length).toBe(9);
+    let g = film();
+    for (const op of insertColumnsOps(g, 6, 2)) g = applyOp(g, op);
+    expect(order(g)).toEqual(order(film()));
+    expect(g.length).toBe(8);
+  });
+
+  it("splits a picture held across where cells go in", () => {
+    let f = applyOp(emptyFilm({ name: "t", fps: 12, width: 160, height: 90 }), { type: "clip.place", clips: [pic("a", 0, 4)] });
+    for (const op of insertColumnsOps(f, 2, 1)) f = applyOp(f, op);
+    expect(Object.values(f.clips).map((c) => [c.start, c.length]).sort()).toEqual([
+      [0, 2],
+      [3, 2],
+    ]);
+    expect(f.length).toBe(5);
   });
 
   it("says where a cell goes", () => {

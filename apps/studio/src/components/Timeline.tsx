@@ -1,7 +1,7 @@
 import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
-import { addTrack, extendFilm, setLoopLength, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
+import { addTrack, extendFilm, resizeDrum, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
 import { type Rig, rigColor, shotOn, useCamera } from "../state/camera";
@@ -103,9 +103,9 @@ type Gesture =
   | { kind: "resize"; x0: number; id: ClipId; length0: number; dx: number }
   | { kind: "band"; x0: number; y0: number; x1: number; y1: number; add: boolean; base: ClipId[] }
   | { kind: "columns"; x0: number; dx: number; moved: boolean }
-  /** A loop film: turning the drum (dragging the ruler), or its length (dragging where it starts again). */
+  /** A loop film: turning the drum (dragging the ruler), or its length (dragging the mark where the drum ends). */
   | { kind: "turn"; cx0: number; rot0: number; moved: boolean }
-  | { kind: "length"; x0: number; seam: number; dx: number };
+  | { kind: "length"; x0: number; dx: number };
 
 function loadZoom(): number {
   try {
@@ -296,7 +296,9 @@ export function Timeline() {
   const whole = loop && period < viewCells;
   const cells = loop ? period : film.length + TAIL_SECONDS * fps;
   const firstCell = loop ? r : Math.max(0, Math.floor(scroll.left / cw) - 1);
-  const lastCell = loop ? r + Math.min(period, viewCells + 1) : Math.min(cells, Math.ceil((scroll.left + scroll.width) / cw) + 1);
+  /** Cells of the drum on screen: all of it, or as many whole ones as fit. Its end is a fixed mark after them. */
+  const shown = loop ? (whole ? period : Math.max(1, Math.min(period, Math.floor(scroll.width / cw)))) : 0;
+  const lastCell = loop ? r + shown : Math.min(cells, Math.ceil((scroll.left + scroll.width) / cw) + 1);
   /** How far the drum is turned, in pixels. */
   const shiftX = r * cw;
   /** The laps on screen (just one, the film, when it is not a loop), and where each starts. */
@@ -424,6 +426,25 @@ export function Timeline() {
   const visibleClips = (track: Track, lap: number): Clip[] =>
     (index.get(track.id) ?? []).filter((c) => clipEnd(c) > firstCell - lap * period && c.start < lastCell - lap * period);
 
+  /**
+   * Adds (or takes out) cells where the drum ends on screen, keeping the drum
+   * turned so that it still starts with the same cell.
+   */
+  const resizeAtEnd = (delta: number) => {
+    const at = wrap(r + shown);
+    const end = at === 0 ? period : at;
+    let next = r;
+    if (delta > 0) next = end <= r ? r + delta : r;
+    else {
+      const k = Math.min(period - 1, -delta);
+      // Cells taken out before the first one shown move it back.
+      for (let i = 1; i <= k; i++) if (mod(end - i, period) < r) next--;
+    }
+    resizeDrum(at, delta);
+    rotRef.current = -1;
+    turn(next);
+  };
+
   // -- pointer gestures ------------------------------------------------------
 
   function onPointerDown(e: React.PointerEvent) {
@@ -439,8 +460,7 @@ export function Timeline() {
       if (loop) {
         // A loop: drag where it starts again to make it longer or shorter; drag the ruler to turn the drum.
         capturePointer(e);
-        const seam = (e.target as HTMLElement).closest<HTMLElement>("[data-seam]");
-        if (seam) setGesture({ kind: "length", x0: p.x, seam: Number(seam.dataset.seam), dx: 0 });
+        if ((e.target as HTMLElement).closest("[data-drum-end]")) setGesture({ kind: "length", x0: p.x, dx: 0 });
         else setGesture({ kind: "turn", cx0: e.clientX, rot0: r, moved: false });
         return;
       }
@@ -448,6 +468,8 @@ export function Timeline() {
       useEditor.getState().moveTo(p.cell, undefined);
       return;
     }
+    // Past where a drum ends there are no cells.
+    if (loop && p.v >= r + shown) return;
     if (p.y < rowsTop) {
       // Results: pick the column (the film as it comes out there); ⇧ extends, ⌘/Ctrl adds or takes out; drag one stretch to move it.
       const { setColumns, moveTo } = useEditor.getState();
@@ -524,7 +546,7 @@ export function Timeline() {
       return;
     }
     if (gesture.kind === "length") {
-      const dx = Math.max(1 - period, Math.round((p.x - gesture.x0) / cw));
+      const dx = Math.max(1 - shown, Math.round((p.x - gesture.x0) / cw));
       if (dx !== gesture.dx) setGesture({ ...gesture, dx });
       return;
     }
@@ -561,11 +583,11 @@ export function Timeline() {
     if (!g) return;
     const p = at(e);
     if (g.kind === "turn") {
-      if (!g.moved) useEditor.getState().moveTo(p.cell, undefined);
+      if (!g.moved && p.v < r + shown) useEditor.getState().moveTo(p.cell, undefined);
       return;
     }
     if (g.kind === "length") {
-      if (g.dx) setLoopLength(film!.length + g.dx);
+      if (g.dx) resizeAtEnd(g.dx);
       return;
     }
     if (g.kind === "move" && g.moved && (g.dx || g.dy)) {
@@ -662,7 +684,7 @@ export function Timeline() {
         <div className="tl-body" ref={scroller} onScroll={(e) => onScroll(e.currentTarget)}>
           <div
             className="tl-canvas"
-            style={{ width: loop ? (whole ? period * cw + 120 : scroll.width) : cells * cw + 120, height: height + 40 }}
+            style={{ width: loop ? scroll.width : cells * cw + 120, height: height + 40 }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -671,7 +693,18 @@ export function Timeline() {
             onDragOver={(e) => e.preventDefault()}
             onDrop={onDrop}
           >
-            <div className="tl-drum" style={loop ? { transform: `translateX(${-shiftX}px)` } : undefined}>
+            <div
+              className="tl-drum"
+              style={
+                loop
+                  ? {
+                      transform: `translateX(${-shiftX}px)`,
+                      // Only the drum's cells show: nothing past its end.
+                      clipPath: `polygon(${shiftX}px 0, ${shiftX + shown * cw}px 0, ${shiftX + shown * cw}px 100%, ${shiftX}px 100%)`,
+                    }
+                  : undefined
+              }
+            >
             <div className="tl-ruler" style={{ height: RULER_H }}>
               {ticks.map((v) => {
                 const c = wrap(v);
@@ -681,19 +714,6 @@ export function Timeline() {
                   </span>
                 );
               })}
-              {/* Where a loop starts again. */}
-              {loop &&
-                laps.map((l) => (
-                  <span
-                    key={`seam-${l}`}
-                    data-seam={l * period}
-                    className="tl-seam-label"
-                    style={{ left: lapX(l) }}
-                    title={`Acá la película vuelve a empezar (${period} celdas): arrastralo para alargarla o acortarla`}
-                  >
-                    ↻ {period}
-                  </span>
-                ))}
             </div>
 
             {resultCells.map(({ cell, items }) => (
@@ -806,12 +826,6 @@ export function Timeline() {
             {laps.map((l) => (
               <div key={l} className={`tl-selected${playing ? " playing" : ""}`} style={{ left: wrap(cursor.cell) * cw + lapX(l), width: cw, height }} />
             ))}
-            {loop && laps.map((l) => <div key={`seam-${l}`} className="tl-seam" style={{ left: lapX(l), height }} />)}
-            {gesture?.kind === "length" && (
-              <div className="tl-seam ghost" style={{ left: (gesture.seam + gesture.dx) * cw, height }}>
-                <span>{period + gesture.dx} celdas</span>
-              </div>
-            )}
             {playing && <div className="tl-play" ref={playRef} style={{ height }} />}
 
             {gesture?.kind === "band" && (
@@ -836,6 +850,21 @@ export function Timeline() {
               + 1 s
             </button>}
             </div>
+            {/* Where the drum ends: a fixed mark (it does not turn with the drum); drag it to add or take out cells there. */}
+            {loop && (
+              <div className={`tl-drum-end${gesture?.kind === "length" ? " dragging" : ""}`} style={{ left: shown * cw, height }}>
+                <span data-drum-end="1" title={`El loop tiene ${period} celdas: arrastrá para agregar celdas vacías acá o quitar las de antes`}>
+                  ↻ {period}
+                </span>
+              </div>
+            )}
+            {gesture?.kind === "length" && (
+              <div className="tl-seam ghost" style={{ left: Math.min(scroll.width - 2, (shown + gesture.dx) * cw), height }}>
+                <span>
+                  {period + gesture.dx} celdas ({gesture.dx > 0 ? `+${gesture.dx}` : gesture.dx})
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

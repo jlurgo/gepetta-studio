@@ -2258,6 +2258,34 @@ input[type="range"] {
   white-space: nowrap;
 }
 
+/* Where a loop's drum ends: fixed, after its last cell on screen. */
+.tl-drum-end {
+  position: absolute;
+  top: 0;
+  width: 0;
+  border-left: 2px solid var(--accent);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.tl-drum-end span {
+  position: absolute;
+  top: 0;
+  left: -2px;
+  padding: 0 6px;
+  border-radius: 0 4px 4px 0;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+.tl-drum-end.dragging {
+  opacity: 0.4;
+}
+
 .tl-seam.ghost {
   border-left-style: solid;
   border-left-color: var(--teal);

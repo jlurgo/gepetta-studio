@@ -68,6 +68,20 @@ export function removeColumnsOps(film: FilmState, ranges: readonly ColumnRange[]
   return ops;
 }
 
+/**
+ * Ops that put `count` empty cells in the film at `at`: what comes from there
+ * on moves later (a picture held across `at` is split there), so the film gets longer.
+ */
+export function insertColumnsOps(film: FilmState, at: number, count: number): Op[] {
+  const n = Math.max(0, Math.round(count));
+  const start = Math.max(0, Math.min(film.length, Math.round(at)));
+  if (!n) return [];
+  const ops: Op[] = [];
+  if (film.length > start) ops.push({ type: "cells.move", start, length: film.length - start, to: start + n });
+  ops.push({ type: "film.setLength", length: film.length + n });
+  return ops;
+}
+
 /** Where a cell ends up once the stretches are taken out (null: it was taken out). */
 export function cellAfterRemoving(ranges: readonly ColumnRange[], cell: number): number | null {
   let shift = 0;

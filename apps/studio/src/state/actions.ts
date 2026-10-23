@@ -9,6 +9,7 @@ import {
   cellAfterRemoving,
   cellsInColumns,
   removeColumnsOps,
+  insertColumnsOps,
   isPlainLook,
   setSequenceOps,
   wrapCell,
@@ -446,14 +447,27 @@ export function extendFilm(film: FilmState, seconds: number) {
 }
 
 /** A loop film's length in cells: longer adds empty cells; shorter cuts what is past the new end (one step, undoable). */
-export function setLoopLength(length: number) {
-  const { film, commit } = useEditor.getState();
-  if (!film) return;
-  const to = Math.max(1, Math.round(length));
-  if (to === film.length) return;
-  const label = `Largo del loop: ${to} ${to === 1 ? "celda" : "celdas"}`;
-  if (to > film.length) commit([{ type: "film.setLength", length: to }], label);
-  else commit([{ type: "cells.clear", start: to, length: film.length - to }, { type: "film.setLength", length: to }], label);
+/**
+ * A loop film made longer or shorter where its drum ends on screen (`at`, the
+ * cell the drum shows first after it): `delta` empty cells go in there, or the
+ * cells just before it go out (going round past the first cell if need be).
+ */
+export function resizeDrum(at: number, delta: number) {
+  const { film, commit, cursor } = useEditor.getState();
+  if (!film || !delta) return;
+  const period = film.length;
+  // In a loop the end and the start are the same place: put cells in at the end.
+  const end = at === 0 ? period : at;
+  if (delta < 0) {
+    const k = Math.min(period - 1, -delta);
+    const from = end - k;
+    removeColumns(from >= 0 ? [{ start: from, end }] : [{ start: 0, end }, { start: period + from, end: period }]);
+    return;
+  }
+  const moved = (cell: number) => (cell >= end ? cell + delta : cell);
+  commit(insertColumnsOps(film, end, delta), `Loop más largo: ${period + delta} celdas`, { cursor: { ...cursor, cell: moved(cursor.cell) } });
+  const camera = useCamera.getState();
+  for (const r of camera.rigs) if (moved(r.target.cell) !== r.target.cell) camera.setTarget(r.id, { ...r.target, cell: moved(r.target.cell) });
 }
 
 // App state lives here (open cameras, the film being edited): a hot update would
