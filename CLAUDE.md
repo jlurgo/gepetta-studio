@@ -50,3 +50,23 @@ Para depurar en esa PC: correr a mano en «MSYS2 UCRT64»
 y comparar con lo que hace la app (abrir las herramientas de desarrollo de la
 ventana con Ctrl+Shift+I y mirar la consola: los errores de cámara se registran
 como `[gepetta] camera`).
+
+### Pendiente: cambiar el driver de la cámara desde la app
+
+El usuario quiere pasar la Canon del driver original de Windows (MTP: se ve en
+el Explorador) a WinUSB (para gphoto2) y volver, sin Zadig a mano. Lo averiguado:
+
+- **Volver al original** se puede con lo que trae Windows: buscar el dispositivo
+  (`Get-PnpDevice` con `VID_04A9`, Canon), ver qué paquete de driver tiene
+  (`pnputil /enum-devices /connected /drivers`), borrar el que instaló Zadig/libwdi
+  (`pnputil /delete-driver oemNN.inf /uninstall /force`) y `pnputil /scan-devices`:
+  Windows le vuelve a poner el suyo. Requiere administrador.
+- **Pasar a WinUSB** sin la ventana de Zadig: `wdi-simple` de libwdi
+  (github.com/pbatard/libwdi, `examples/wdi-simple.c`) hace lo mismo por línea de
+  comandos: `wdi-simple -v 0x04A9 -p 0x<PID> -t 0 -n "Canon (Gepetta)"` (t 0 = WinUSB).
+  libwdi no publica ese .exe compilado (solo Zadig): hay que compilarlo en Windows.
+- Alternativa a probar: **UsbDk** (daynix) deja que libusb use el dispositivo sin
+  reemplazar el driver; no se sabe si el libusb de gphoto2 en MSYS2 lo usa.
+- Idea de interfaz: en el panel de la cámara (solo en Windows) «Driver: Original
+  / Gepetta», que corra el cambio con permiso de administrador (aviso de UAC) y
+  diga en qué estado está.
