@@ -1,4 +1,4 @@
-import { type Clip, type ClipId, type FilmState, type Look, type MediaRef, type Stroke, type TrackId, type Transform2D, clipEnd } from "./model";
+import { type Clip, type ClipId, type FilmState, type Look, type MediaRef, type Stroke, type TrackId, type Transform2D, clipEnd, fadeAt } from "./model";
 
 /** One picture to draw, bottom to top, with where it came from. */
 export interface StackItem {
@@ -100,7 +100,7 @@ export function stackAt(film: FilmState, cell: number, options: StackOptions = {
     out.push({
       key: clip.id,
       media: clip.media,
-      opacity: track.opacity * clip.opacity,
+      opacity: track.opacity * clip.opacity * fadeAt(clip, cell),
       transform: composeTransforms(track.transform, clip.transform),
       ...(clip.look && { look: clip.look }),
       ...(clip.strokes?.length && { strokes: clip.strokes }),

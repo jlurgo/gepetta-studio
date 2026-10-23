@@ -167,6 +167,7 @@ function ClipDetails({ clip }: { clip: Clip }) {
       <h4>Imagen</h4>
       <p className="hint">Arrastrala sobre la imagen grande para moverla; las esquinas la agrandan y el círculo la gira (con ⇧, en pasos).</p>
       <ShotEditor value={shotOf(clip)} onPreview={(change) => useShotPreview.setState({ preview: { ids: [clip.id], change } })} onCommit={(change) => commitShot([clip.id], change)} />
+      <FadeControls clip={clip} />
       <FrameInfo clip={clip} />
       <button
         className="btn small danger"
@@ -175,6 +176,79 @@ function ClipDetails({ clip }: { clip: Clip }) {
         <Icon name="trash" size={14} /> Borrar imagen
       </button>
     </div>
+  );
+}
+
+/** A number of cells, changed with − and +. */
+function CellCount({ label, value, max, onChange }: { label: string; value: number; max: number; onChange(v: number): void }) {
+  return (
+    <div className="control">
+      <span>{label}</span>
+      <span className="hold-control">
+        <button className="icon-btn small" onClick={() => onChange(Math.max(0, value - 1))} disabled={value <= 0}>
+          <Icon name="minus" size={14} />
+        </button>
+        <span>{value === 0 ? "no" : `${value} ${value === 1 ? "celda" : "celdas"}`}</span>
+        <button className="icon-btn small" onClick={() => onChange(Math.min(max, value + 1))} disabled={value >= max}>
+          <Icon name="plus" size={14} />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** A picture fading in over its first cells and out over its last ones (one that lasts several cells). */
+function FadeControls({ clip }: { clip: Clip }) {
+  const commit = useEditor.getState().commit;
+  const fade = clip.fade ?? {};
+  const set = (patch: { in?: number; out?: number }) => {
+    const next = { ...fade, ...patch };
+    commit([{ type: "clip.update", id: clip.id, patch: { fade: next.in || next.out ? next : undefined } }]);
+  };
+  return (
+    <>
+      <h4>Fundido</h4>
+      {clip.length < 2 ? (
+        <p className="hint">Dura una sola celda: para un fundido elegí varias imágenes seguidas (un video grabado, por ejemplo), o alargala.</p>
+      ) : (
+        <>
+          <CellCount label="Aparece en" value={fade.in ?? 0} max={clip.length - 1} onChange={(v) => set({ in: v })} />
+          <CellCount label="Desaparece en" value={fade.out ?? 0} max={clip.length - 1} onChange={(v) => set({ out: v })} />
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * Several pictures in a row fading: the first `n` appear little by little and
+ * the last `n` go away (each picture's transparency, changeable after).
+ */
+function fadeSequence(ids: string[], how: "in" | "out", n: number) {
+  const { film, commit } = useEditor.getState();
+  if (!film) return;
+  const clips = ids.map((id) => film.clips[id]!).filter(Boolean).sort((a, b) => a.start - b.start);
+  const ends = how === "in" ? clips.slice(0, n) : clips.slice(-n).reverse();
+  const ops = ends.map((c, i) => ({ type: "clip.update" as const, id: c.id, patch: { opacity: Math.round(((i + 1) / (n + 1)) * 100) / 100 } }));
+  if (ops.length) commit(ops, how === "in" ? `Fundido de entrada en ${ops.length} imágenes` : `Fundido de salida en ${ops.length} imágenes`);
+}
+
+function SequenceFade({ ids }: { ids: string[] }) {
+  const [n, setN] = useState(Math.min(6, ids.length));
+  return (
+    <>
+      <h4>Fundido</h4>
+      <CellCount label="En" value={n} max={ids.length} onChange={(v) => setN(Math.max(1, v))} />
+      <div className="action-row">
+        <button className="btn small" onClick={() => fadeSequence(ids, "in", n)}>
+          Aparecer al principio
+        </button>
+        <button className="btn small" onClick={() => fadeSequence(ids, "out", n)}>
+          Desaparecer al final
+        </button>
+      </div>
+      <p className="hint">Cambia la transparencia de las primeras o últimas imágenes, de a poco.</p>
+    </>
   );
 }
 
@@ -195,6 +269,7 @@ function ManyDetails() {
         onPreview={(change) => useShotPreview.setState({ preview: { ids: selection, change } })}
         onCommit={(change) => commitShot(selection, change)}
       />
+      <SequenceFade ids={selection} />
       <button className="btn small danger" onClick={() => commit([{ type: "clip.remove", ids: selection }], undefined, { selection: [] })}>
         <Icon name="trash" size={14} /> Borrar las {selection.length} imágenes
       </button>

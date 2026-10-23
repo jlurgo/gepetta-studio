@@ -1,4 +1,4 @@
-import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, columnsContain, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
+import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addTrack, extendFilm, setLoopLength, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
@@ -331,10 +331,10 @@ export function Timeline() {
     },
     ...shotOn(rigs.find((r) => r.id === rigId), track),
   });
-  const clipItem = (track: Track, c: Clip): CellItem => ({
+  const clipItem = (track: Track, c: Clip, cell: number): CellItem => ({
     kind: "picture",
     media: c.media,
-    opacity: c.opacity,
+    opacity: c.opacity * fadeAt(c, cell),
     transform: composeTransforms(track.transform, c.transform),
     look: c.look,
     strokes: c.strokes,
@@ -676,7 +676,7 @@ export function Timeline() {
                   >
                     {cellsOf(c, length, lap).map((cell) => (
                       <div key={cell} className="tl-clip-cell" style={{ left: (cell - c.start) * cw, width: cw - (cell === c.start + length - 1 ? 2 : 0) }}>
-                        <CellCanvas filmId={filmId} film={film.settings} items={[clipItem(t, c)]} />
+                        <CellCanvas filmId={filmId} film={film.settings} items={[clipItem(t, c, cell)]} />
                       </div>
                     ))}
                     {length > 1 && cw * length >= 40 && <span className="tl-len">×{length}</span>}

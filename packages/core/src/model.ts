@@ -82,6 +82,8 @@ export interface Clip {
   look?: Look;
   /** Drawing tools' strokes on the picture, bottom to top. */
   strokes?: Stroke[];
+  /** Fading in over its first `in` cells and out over its last `out` cells. */
+  fade?: { in?: number; out?: number };
 }
 
 export type StrokeTool = "draw" | "erase" | "tint" | "shape" | "fill" | "clone";
@@ -158,6 +160,16 @@ export function emptyFilm(settings: FilmSettings): FilmState {
 
 export function clipEnd(clip: Clip): number {
   return clip.start + clip.length;
+}
+
+/** How much a picture shows at a cell, from its fade (1 outside the fade). */
+export function fadeAt(clip: Pick<Clip, "start" | "length" | "fade">, cell: number): number {
+  const into = cell - clip.start;
+  const left = clip.start + clip.length - 1 - cell;
+  let k = 1;
+  if (clip.fade?.in && into < clip.fade.in) k = Math.min(k, (into + 1) / (clip.fade.in + 1));
+  if (clip.fade?.out && left < clip.fade.out) k = Math.min(k, (left + 1) / (clip.fade.out + 1));
+  return Math.max(0, k);
 }
 
 /** Clips of a track, in time order. */

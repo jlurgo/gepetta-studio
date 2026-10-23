@@ -130,3 +130,12 @@ describe("ping-pong", () => {
     expect(Array.from({ length: 6 }, (_, n) => playedCell(loop, n))).toEqual([0, 1, 2, 3, 0, 1]);
   });
 });
+
+describe("fades", () => {
+  it("shows a picture less at the start and end of its fade", async () => {
+    const { fadeAt } = await import("./model");
+    const clip = { start: 10, length: 8, fade: { in: 3, out: 1 } };
+    expect([10, 11, 12, 13, 16, 17].map((c) => fadeAt(clip, c))).toEqual([0.25, 0.5, 0.75, 1, 1, 0.5]);
+    expect(fadeAt({ start: 0, length: 3 }, 1)).toBe(1);
+  });
+});
