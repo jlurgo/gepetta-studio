@@ -51,6 +51,10 @@ y comparar con lo que hace la app (abrir las herramientas de desarrollo de la
 ventana con Ctrl+Shift+I y mirar la consola: los errores de cámara se registran
 como `[gepetta] camera`).
 
+El usuario pidió (2026-10-23) hacer en la PC con Windows: el cambio de driver
+desde la app (abajo) y empaquetar gphoto2 en el instalador para no depender de
+MSYS2 (ver `docs/ROADMAP.md`, Fase 2).
+
 ### Pendiente: cambiar el driver de la cámara desde la app
 
 El usuario quiere pasar la Canon del driver original de Windows (MTP: se ve en
