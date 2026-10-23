@@ -4,7 +4,7 @@ import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addImageTrack, addTrack, extendFilm, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
-import { useCamera } from "../state/camera";
+import { type Rig, useCamera } from "../state/camera";
 import { RIG_COLORS } from "./CamerasList";
 import { Icon } from "./Icon";
 import { capturePointer } from "./pointer";
@@ -126,6 +126,9 @@ export function Timeline() {
   const columns = useEditor((s) => s.columns);
   const rigs = useCamera((s) => s.rigs);
   const activeRig = useCamera((s) => s.activeRig);
+  const picking = useCamera((s) => s.picking);
+  /** While picking a camera's cell: the cell under the pointer. */
+  const [hover, setHover] = useState<{ track: string; cell: number } | null>(null);
   const [cw, setCw] = useState(loadZoom);
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ left: 0, width: 1200 });
@@ -313,7 +316,7 @@ export function Timeline() {
     return out;
   };
   // Results row: the film at each cell on screen, with every camera live where it aims.
-  const liveTargets = rigs.filter((r) => r.source).map((r) => ({ id: r.id, target: r.id === activeRig ? cursor : r.target }));
+  const liveTargets = rigs.filter((r) => r.source).map((r) => ({ id: r.id, target: r.target }));
   const resultCells: { cell: number; items: CellItem[] }[] = [];
   for (let c = firstCell; c < lastCell; c++) {
     const stack = c < film.length ? stackAt(film, c, { index }) : [];
@@ -339,6 +342,12 @@ export function Timeline() {
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
     const p = at(e);
+    if (picking) {
+      // Picking where a camera's photos go: this click only does that.
+      if (p.track) useCamera.getState().pick({ track: p.track.id, cell: p.cell });
+      setHover(null);
+      return;
+    }
     if (p.y < RULER_H) {
       // Ruler: pick the moment and show the film there.
       useEditor.getState().moveTo(p.cell, undefined);
@@ -393,6 +402,12 @@ export function Timeline() {
   }
 
   function onPointerMove(e: React.PointerEvent) {
+    if (picking) {
+      const p = at(e);
+      const next = p.track ? { track: p.track.id, cell: p.cell } : null;
+      if (next?.track !== hover?.track || next?.cell !== hover?.cell) setHover(next);
+      return;
+    }
     const gesture = gestureRef.current;
     if (!gesture) return;
     const p = at(e);
@@ -491,182 +506,213 @@ export function Timeline() {
   for (let c = firstCell - (firstCell % every); c < lastCell; c += every) ticks.push(c);
   const cursorRow = Math.max(0, tracks.findIndex((t) => t.id === cursor.track));
 
+  const pickIndex = rigs.findIndex((r) => r.id === picking);
+  const pickColor = RIG_COLORS[pickIndex % RIG_COLORS.length];
+
   return (
-    <div className="timeline" style={{ ["--thumb-aspect" as string]: aspect }}>
-      <div className="tl-heads" style={{ minHeight: height + 40 }}>
-        <div className="tl-head ruler" style={{ height: RULER_H }}>
-          <button className="icon-btn small" onClick={() => zoomBy(1 / 1.5)} title="Alejar (⌘ + rueda, o pellizcar en el pad)">
-            <Icon name="minus" size={14} />
-          </button>
-          <button className="icon-btn small" onClick={() => zoomBy(1.5)} title="Acercar (⌘ + rueda, o pellizcar en el pad)">
-            <Icon name="plus" size={14} />
-          </button>
-        </div>
-        <div className="tl-head main" style={{ height: RESULT_H }}>
-          Resultado
-        </div>
-        {tracks.map((t) => (
-          <TrackHead key={t.id} track={t} current={t.id === cursor.track} />
-        ))}
-        <AddTrackMenu onVideo={() => videoInput.current?.click()} />
-      </div>
-
-      <div className="tl-body" ref={scroller} onScroll={(e) => setScroll({ left: e.currentTarget.scrollLeft, width: e.currentTarget.clientWidth })}>
-        <div
-          className="tl-canvas"
-          style={{ width: cells * cw + 120, height: height + 40 }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onClick={onClick}
-          onDoubleClick={onDoubleClick}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDrop}
-        >
-          <div className="tl-ruler" style={{ height: RULER_H }}>
-            {ticks.map((c) => (
-              <span key={c} className={c % fps === 0 ? "sec" : ""} style={{ left: c * cw }}>
-                {c % fps === 0 ? `${c / fps}s` : c + 1}
-              </span>
-            ))}
+    <div className="timeline-wrap">
+      {picking && pickIndex >= 0 && <PickingBar index={pickIndex} rig={rigs[pickIndex]!} color={pickColor!} />}
+      <div className={`timeline${picking ? " picking" : ""}`} style={{ ["--thumb-aspect" as string]: aspect, ...(picking && { ["--rig" as string]: pickColor }) }}>
+        <div className="tl-heads" style={{ minHeight: height + 40 }}>
+          <div className="tl-head ruler" style={{ height: RULER_H }}>
+            <button className="icon-btn small" onClick={() => zoomBy(1 / 1.5)} title="Alejar (⌘ + rueda, o pellizcar en el pad)">
+              <Icon name="minus" size={14} />
+            </button>
+            <button className="icon-btn small" onClick={() => zoomBy(1.5)} title="Acercar (⌘ + rueda, o pellizcar en el pad)">
+              <Icon name="plus" size={14} />
+            </button>
           </div>
+          <div className="tl-head main" style={{ height: RESULT_H }}>
+            Resultado
+          </div>
+          {tracks.map((t) => (
+            <TrackHead key={t.id} track={t} current={t.id === cursor.track} />
+          ))}
+          <AddTrackMenu onVideo={() => videoInput.current?.click()} />
+        </div>
 
-          {resultCells.map(({ cell, items }) => (
-            <div key={cell} className="tl-result" style={{ left: cell * cw + 1, width: cw - 2, top: RULER_H + ROW_GAP, height: RESULT_H }}>
-              <CellCanvas filmId={filmId} film={film.settings} items={items} />
+        <div className="tl-body" ref={scroller} onScroll={(e) => setScroll({ left: e.currentTarget.scrollLeft, width: e.currentTarget.clientWidth })}>
+          <div
+            className="tl-canvas"
+            style={{ width: cells * cw + 120, height: height + 40 }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onClick={onClick}
+            onDoubleClick={onDoubleClick}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={onDrop}
+          >
+            <div className="tl-ruler" style={{ height: RULER_H }}>
+              {ticks.map((c) => (
+                <span key={c} className={c % fps === 0 ? "sec" : ""} style={{ left: c * cw }}>
+                  {c % fps === 0 ? `${c / fps}s` : c + 1}
+                </span>
+              ))}
             </div>
-          ))}
 
-          {tracks.map((t, i) => (
-            <div
-              key={t.id}
-              className={`tl-row${t.id === cursor.track ? " current" : ""}${t.visible ? "" : " off"}`}
-              style={{ top: rowTop(i), height: TRACK_H, backgroundSize: `${cw}px 100%` }}
-            />
-          ))}
+            {resultCells.map(({ cell, items }) => (
+              <div key={cell} className="tl-result" style={{ left: cell * cw + 1, width: cw - 2, top: RULER_H + ROW_GAP, height: RESULT_H }}>
+                <CellCanvas filmId={filmId} film={film.settings} items={items} />
+              </div>
+            ))}
 
-          {/* The cell where the camera (or the next import) puts its picture. */}
-          <div className={`tl-cursor-cell${activeRig && rigs.some((r) => r.id === activeRig && r.source) ? " live" : ""}`} style={{ left: cursor.cell * cw, width: cw, top: rowTop(cursorRow), height: TRACK_H }} />
+            {tracks.map((t, i) => (
+              <div
+                key={t.id}
+                className={`tl-row${t.id === cursor.track ? " current" : ""}${t.visible ? "" : " off"}`}
+                style={{ top: rowTop(i), height: TRACK_H, backgroundSize: `${cw}px 100%` }}
+              />
+            ))}
 
-          {tracks.map((t, row) =>
-            visibleClips(t).map((c) => {
-              const moving = shift(c);
-              const length = gesture?.kind === "resize" && gesture.id === c.id ? Math.max(1, gesture.length0 + gesture.dx) : c.length;
-              return (
+            {/* The cell looked at (where an import goes). */}
+            <div className="tl-cursor-cell" style={{ left: cursor.cell * cw, width: cw, top: rowTop(cursorRow), height: TRACK_H }} />
+
+            {tracks.map((t, row) =>
+              visibleClips(t).map((c) => {
+                const moving = shift(c);
+                const length = gesture?.kind === "resize" && gesture.id === c.id ? Math.max(1, gesture.length0 + gesture.dx) : c.length;
+                return (
+                  <div
+                    key={c.id}
+                    data-clip={c.id}
+                    className={`tl-clip${selected.has(c.id) ? " selected" : ""}${moving ? " moving" : ""}${c.visible ? "" : " off"}`}
+                    style={{ left: (moving?.left ?? c.start * cw) + 1, top: moving?.top ?? rowTop(row), width: length * cw - 2, height: TRACK_H }}
+                    title={`${c.name} · celdas ${c.start + 1}–${c.start + c.length}`}
+                  >
+                    {cellsOf(c, length).map((cell) => (
+                      <div key={cell} className="tl-clip-cell" style={{ left: (cell - c.start) * cw, width: cw - (cell === c.start + length - 1 ? 2 : 0) }}>
+                        <CellCanvas filmId={filmId} film={film.settings} items={[clipItem(t, c)]} />
+                      </div>
+                    ))}
+                    {length > 1 && cw * length >= 40 && <span className="tl-len">×{length}</span>}
+                    <span className="tl-edge" data-edge="1" />
+                  </div>
+                );
+              }),
+            )}
+
+            {columns && (
+              <>
                 <div
-                  key={c.id}
-                  data-clip={c.id}
-                  className={`tl-clip${selected.has(c.id) ? " selected" : ""}${moving ? " moving" : ""}${c.visible ? "" : " off"}`}
-                  style={{ left: (moving?.left ?? c.start * cw) + 1, top: moving?.top ?? rowTop(row), width: length * cw - 2, height: TRACK_H }}
-                  title={`${c.name} · celdas ${c.start + 1}–${c.start + c.length}`}
-                >
-                  {cellsOf(c, length).map((cell) => (
-                    <div key={cell} className="tl-clip-cell" style={{ left: (cell - c.start) * cw, width: cw - (cell === c.start + length - 1 ? 2 : 0) }}>
-                      <CellCanvas filmId={filmId} film={film.settings} items={[clipItem(t, c)]} />
-                    </div>
-                  ))}
-                  {length > 1 && cw * length >= 40 && <span className="tl-len">×{length}</span>}
-                  <span className="tl-edge" data-edge="1" />
+                  className={`tl-colsel${gesture?.kind === "columns" && gesture.moved ? " from" : ""}`}
+                  style={{ left: columns.start * cw, width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
+                />
+                {gesture?.kind === "columns" && gesture.moved && (
+                  <div
+                    className="tl-colsel ghost"
+                    style={{ left: Math.max(0, columns.start + gesture.dx) * cw, width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
+                  />
+                )}
+              </>
+            )}
+
+            {/* Each camera live in the cell it aims at. */}
+            {rigs.map((r) => {
+              if (!r.source) return null;
+              const target = r.target;
+              const row = tracks.findIndex((t) => t.id === target.track);
+              if (row < 0 || target.cell < firstCell || target.cell > lastCell) return null;
+              const track = tracks[row]!;
+              return (
+                <div key={`live-${r.id}`} className="tl-livecell" style={{ left: target.cell * cw + 1, width: cw - 2, top: rowTop(row), height: TRACK_H }}>
+                  <CellCanvas filmId={filmId} film={film.settings} items={[liveItem(r.id, { ...track, opacity: 1 })]} />
                 </div>
               );
-            }),
-          )}
+            })}
 
-          {columns && (
-            <>
+            {/* Where each camera puts its photos (not while its cell is being picked again). */}
+            {rigs.map((r, i) => {
+              if (r.id === picking) return null;
+              const row = tracks.findIndex((t) => t.id === r.target.track);
+              if (row < 0) return null;
+              const color = RIG_COLORS[i % RIG_COLORS.length];
+              return (
+                <div key={r.id} className={`tl-rig${r.id === activeRig ? " active" : ""}`} style={{ left: r.target.cell * cw, width: cw, top: rowTop(row), height: TRACK_H, borderColor: color }}>
+                  <span style={{ background: color }}>{i + 1}</span>
+                </div>
+              );
+            })}
+
+            {/* While picking a camera's cell: where it would go. */}
+            {picking && hover && (
+              <div className="tl-pick" style={{ left: hover.cell * cw, width: cw, top: rowTop(tracks.findIndex((t) => t.id === hover.track)), height: TRACK_H }}>
+                <Icon name="camera" size={Math.min(18, cw - 6)} />
+              </div>
+            )}
+
+            {/* The selected cell, across every row; it stays marked while playing. */}
+            <div className={`tl-selected${playing ? " playing" : ""}`} style={{ left: cursor.cell * cw, width: cw, height }} />
+            {playing && <div className="tl-play" ref={playRef} style={{ height }} />}
+
+            {gesture?.kind === "band" && (
               <div
-                className={`tl-colsel${gesture?.kind === "columns" && gesture.moved ? " from" : ""}`}
-                style={{ left: columns.start * cw, width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
+                className="tl-band"
+                style={{
+                  left: Math.min(gesture.x0, gesture.x1),
+                  top: Math.min(gesture.y0, gesture.y1),
+                  width: Math.abs(gesture.x1 - gesture.x0),
+                  height: Math.abs(gesture.y1 - gesture.y0),
+                }}
               />
-              {gesture?.kind === "columns" && gesture.moved && (
-                <div
-                  className="tl-colsel ghost"
-                  style={{ left: Math.max(0, columns.start + gesture.dx) * cw, width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
-                />
-              )}
-            </>
-          )}
+            )}
 
-          {/* Each camera live in the cell it aims at. */}
-          {rigs.map((r) => {
-            if (!r.source) return null;
-            const target = r.id === activeRig ? cursor : r.target;
-            const row = tracks.findIndex((t) => t.id === target.track);
-            if (row < 0 || target.cell < firstCell || target.cell > lastCell) return null;
-            const track = tracks[row]!;
-            return (
-              <div key={`live-${r.id}`} className="tl-livecell" style={{ left: target.cell * cw + 1, width: cw - 2, top: rowTop(row), height: TRACK_H }}>
-                <CellCanvas filmId={filmId} film={film.settings} items={[liveItem(r.id, { ...track, opacity: 1 })]} />
-              </div>
-            );
-          })}
-
-          {/* Where each of the other cameras puts its photos. */}
-          {rigs.map((r, i) => {
-            if (r.id === activeRig) return null;
-            const row = tracks.findIndex((t) => t.id === r.target.track);
-            if (row < 0) return null;
-            const color = RIG_COLORS[i % RIG_COLORS.length];
-            return (
-              <div key={r.id} className="tl-rig" style={{ left: r.target.cell * cw, width: cw, top: rowTop(row), height: TRACK_H, borderColor: color }}>
-                <span style={{ background: color }}>{i + 1}</span>
-              </div>
-            );
-          })}
-
-          {/* The selected cell, across every row; it stays marked while playing. */}
-          <div className={`tl-selected${playing ? " playing" : ""}`} style={{ left: cursor.cell * cw, width: cw, height }} />
-          {playing && <div className="tl-play" ref={playRef} style={{ height }} />}
-
-          {gesture?.kind === "band" && (
-            <div
-              className="tl-band"
-              style={{
-                left: Math.min(gesture.x0, gesture.x1),
-                top: Math.min(gesture.y0, gesture.y1),
-                width: Math.abs(gesture.x1 - gesture.x0),
-                height: Math.abs(gesture.y1 - gesture.y0),
-              }}
-            />
-          )}
-
-          <button
-            className="btn small ghost tl-extend"
-            style={{ left: cells * cw + 8, top: rowsTop }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => extendFilm(film, 1)}
-            title="Agregar un segundo de celdas vacías al final"
-          >
-            + 1 s
-          </button>
+            <button
+              className="btn small ghost tl-extend"
+              style={{ left: cells * cw + 8, top: rowsTop }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => extendFilm(film, 1)}
+              title="Agregar un segundo de celdas vacías al final"
+            >
+              + 1 s
+            </button>
+          </div>
         </div>
-      </div>
 
-      <input
-        ref={cellInput}
-        data-role="cell-image"
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f && pickAt.current) void setCellImage(f, pickAt.current);
-          e.target.value = "";
-        }}
-      />
-      <input
-        ref={videoInput}
-        data-role="video-track"
-        type="file"
-        accept="video/*"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) setVideo({ file: f, mode: "track" });
-          e.target.value = "";
-        }}
-      />
-      {video && <VideoImportDialog file={video.file} mode={video.mode} onClose={() => setVideo(null)} />}
+        <input
+          ref={cellInput}
+          data-role="cell-image"
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f && pickAt.current) void setCellImage(f, pickAt.current);
+            e.target.value = "";
+          }}
+        />
+        <input
+          ref={videoInput}
+          data-role="video-track"
+          type="file"
+          accept="video/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) setVideo({ file: f, mode: "track" });
+            e.target.value = "";
+          }}
+        />
+        {video && <VideoImportDialog file={video.file} mode={video.mode} onClose={() => setVideo(null)} />}
+      </div>
+    </div>
+  );
+}
+
+/** Says which camera's cell is being picked, until one is (or Esc). */
+function PickingBar({ index, rig, color }: { index: number; rig: Rig; color: string }) {
+  const label = useCamera((s) => s.labelOf(rig.source?.id ?? rig.deviceId)) ?? "la cámara";
+  return (
+    <div className="tl-picking-bar" style={{ ["--rig" as string]: color }}>
+      <span className="rig-dot" style={{ background: color }}>
+        {index + 1}
+      </span>
+      <span>
+        Tocá la celda donde van las fotos de <strong>{label}</strong>
+      </span>
+      <button className="btn small" onClick={() => useCamera.getState().cancelPicking()}>
+        Cancelar (Esc)
+      </button>
     </div>
   );
 }

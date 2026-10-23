@@ -96,6 +96,21 @@ export async function capture(rigId?: string) {
   }
 }
 
+/** The cameras the big camera button shoots with: enabled, open and not recording. */
+export function readyRigs(rigs: Rig[]): Rig[] {
+  return rigs.filter((r) => r.enabled && r.source && !r.recording);
+}
+
+/** Takes a photo with every enabled camera at once, each into its own target. */
+export async function captureAll() {
+  const rigs = readyRigs(useCamera.getState().rigs);
+  if (rigs.length === 0) {
+    useBusy.getState().notify("No hay ninguna cámara habilitada para sacar la foto.", "error");
+    return;
+  }
+  await Promise.all(rigs.map((r) => capture(r.id)));
+}
+
 // Photos shot from a phone (its own shutter or photo mode) go to that phone's target.
 onRemoteMessage((sessionId, header, payload) => {
   if (header.t !== "photo" || header.requestId !== null || !payload) return;

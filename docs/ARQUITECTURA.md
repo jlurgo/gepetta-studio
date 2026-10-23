@@ -54,7 +54,11 @@ docs/             Este documento, roadmap y decisiones.
   celda destino (`track` + `cell`); la foto dura `captureStep` celdas ("en unos",
   "en dos"…) y el destino avanza. Puede haber **varias cámaras abiertas a la vez**
   (`Rig` en `state/camera.ts`), cada una con su destino; la "elegida" maneja los
-  paneles y su destino es el cursor. La pantalla grande muestra siempre el
+  paneles. El destino **no es el cursor**: se elige a propósito tocando la cámara
+  (modo `picking`, la línea de tiempo solo elige esa celda hasta que se toca una o
+  Esc); el cursor la acompaña al avanzar solo si estaba mirándola. El botón grande
+  (y la barra espaciadora) saca con todas las cámaras **habilitadas** a la vez
+  (`captureAll`). La pantalla grande muestra siempre el
   resultado de la celda del cursor: cada cámara que apunta ahí se dibuja en vivo en
   su track, con la transparencia y posición del track (no hay modo "cámara" aparte).
   Cada cámara también graba video: una imagen por celda a la velocidad de la

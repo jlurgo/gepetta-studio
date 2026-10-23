@@ -4,12 +4,13 @@ import { type FilmState, clipAt } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { isVideoFile } from "../media/ingest";
 import {
-  capture,
+  captureAll,
   changeHold,
   deleteSelected,
   duplicateSelected,
   importImages,
   nudgeSelected,
+  readyRigs,
   selectRelative, stopAllRecordings } from "../state/actions";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
@@ -52,9 +53,10 @@ function useShortcuts() {
       if (mod && key === "z") s[e.shiftKey ? "redo" : "undo"]();
       else if (mod && key === "y") s.redo();
       else if (mod) return;
-      else if (e.key === " ") void capture();
+      else if (e.key === " ") void captureAll();
       else if (e.key === "Enter") (s.playback ? s.pause() : s.play());
       else if (key === "p") (s.playback ? s.stop() : s.play(true));
+      else if (e.key === "Escape" && useCamera.getState().picking) useCamera.getState().cancelPicking();
       else if (e.key === "Escape" && s.playback) s.stop();
       else if (e.key === "ArrowLeft") (e.altKey ? nudgeSelected(-1) : selectRelative(-1));
       else if (e.key === "ArrowRight") (e.altKey ? nudgeSelected(1) : selectRelative(1));
@@ -201,7 +203,7 @@ function Transport() {
   const loop = useEditor((s) => s.loop);
   const tailSeconds = useEditor((s) => s.tailSeconds);
   const captureStep = useEditor((s) => s.captureStep);
-  const hasSource = useCamera((s) => s.source !== null);
+  const ready = useCamera((s) => readyRigs(s.rigs).length);
   const { play, pause, stop, setOnion, set } = useEditor.getState();
   const atCursor = clipAt(film, cursor.track, cursor.cell);
   const target = selection.length ? film.clips[selection[0]!] : atCursor;
@@ -212,9 +214,9 @@ function Transport() {
       <div className="group">
         <button
           className="capture-btn"
-          onClick={() => void capture()}
-          disabled={!hasSource}
-          title={`Sacar foto en "${trackName}", celda ${cursor.cell + 1} (barra espaciadora)`}
+          onClick={() => void captureAll()}
+          disabled={ready === 0}
+          title={`${ready > 1 ? `Sacar foto con las ${ready} cámaras habilitadas a la vez, cada una en su celda` : "Sacar foto"} (barra espaciadora)`}
         >
           <Icon name="camera" size={28} />
         </button>

@@ -16,28 +16,41 @@ function RigRow({ rig, index }: { rig: Rig; index: number }) {
   const active = useCamera((s) => s.activeRig === rig.id);
   const label = useCamera((s) => s.labelOf(rig.source?.id ?? rig.deviceId)) ?? "Cámara";
   const many = useCamera((s) => s.rigs.length > 1);
-  const cursor = useEditor((s) => s.cursor);
+  const picking = useCamera((s) => s.picking === rig.id);
   const film = useEditor((s) => s.film);
-  const target = active ? cursor : rig.target;
+  const target = rig.target;
   const trackName = film?.tracks.find((t) => t.id === target.track)?.name ?? "";
   const color = RIG_COLORS[index % RIG_COLORS.length];
 
   return (
-    <div className={`rig-row${active ? " active" : ""}`}>
-      <button className="rig-name" onClick={() => useCamera.getState().activate(rig.id)} title="Usar esta cámara: el panel y el cursor pasan a ella">
+    <div className={`rig-row${active ? " active" : ""}${picking ? " picking" : ""}`} style={{ "--rig": color } as React.CSSProperties}>
+      <input
+        type="checkbox"
+        className="rig-enabled"
+        checked={rig.enabled}
+        onChange={(e) => useCamera.getState().setEnabled(rig.id, e.target.checked)}
+        title={rig.enabled ? "Habilitada: saca foto con el botón grande" : "Deshabilitada: no saca foto con el botón grande"}
+      />
+      <button
+        className="rig-name"
+        onClick={() => (picking ? useCamera.getState().cancelPicking() : useCamera.getState().startPicking(rig.id))}
+        title="Elegir en la línea de tiempo la celda donde van las fotos de esta cámara"
+      >
         <span className="rig-dot" style={{ background: color }}>
           {index + 1}
         </span>
         <span className="rig-text">
           <strong>{label}</strong>
           <small>
-            {rig.recording
-              ? `● grabando · ${rig.recording.cells} ${rig.recording.cells === 1 ? "imagen" : "imágenes"}`
-              : rig.error
-                ? rig.error.message
-                : rig.opening
-                  ? "abriendo…"
-                  : `${trackName} · celda ${target.cell + 1}`}
+            {picking
+              ? "Tocá la celda donde van sus fotos…"
+              : rig.recording
+                ? `● grabando · ${rig.recording.cells} ${rig.recording.cells === 1 ? "imagen" : "imágenes"}`
+                : rig.error
+                  ? rig.error.message
+                  : rig.opening
+                    ? "abriendo…"
+                    : `${trackName} · celda ${target.cell + 1}`}
           </small>
         </span>
       </button>
@@ -96,7 +109,9 @@ export function CamerasList() {
           ))}
         </select>
       )}
-      <p className="hint">Tocá una cámara para elegirla; después tocá en la línea de tiempo el track y la celda donde van sus fotos.</p>
+      <p className="hint">
+        Tocá una cámara y después, en la línea de tiempo, la celda donde van sus fotos. El botón grande saca con todas las habilitadas a la vez.
+      </p>
     </div>
   );
 }

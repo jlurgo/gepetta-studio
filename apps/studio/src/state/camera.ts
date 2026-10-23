@@ -15,10 +15,12 @@ import { useFocusProbes } from "./focusProbes";
  * Cameras in use. Each one is a tool with its own target (a track and a cell)
  * where its photos go; the target moves on after each photo. Several can be
  * open at once: every one whose target is the cell on screen shows live there.
+ * The grid cursor is only what is looked at: a target is chosen on purpose,
+ * by picking a cell for a camera (`picking`).
  *
- * One is "active": the panels (settings, focus, magnifier) act on it, and its
- * target is the grid cursor. The top-level fields (`source`, `controls`, …)
- * mirror the active camera, so those panels need not know about the others.
+ * One is "active": the panels (settings, focus, magnifier) act on it. The
+ * top-level fields (`source`, `controls`, …) mirror the active camera, so those
+ * panels need not know about the others.
  */
 export interface Rig {
   id: string;
@@ -32,8 +34,10 @@ export interface Rig {
   overview: string | null;
   /** What the device last said about its orientation (phones). */
   autoRotation: number | null;
-  /** Where its photos go while it is not the active one (the active one uses the grid cursor). */
+  /** Where its photos go. */
   target: GridCursor;
+  /** Shoots with the big camera button (with every other enabled camera). */
+  enabled: boolean;
   /** Video being recorded: pictures taken so far. */
   recording: { cells: number } | null;
 }
@@ -45,6 +49,14 @@ interface CameraState {
   rigs: Rig[];
   activeRig: string | null;
   resolutionId: string;
+  /** The camera whose target is being picked in the timeline. */
+  picking: string | null;
+  /** Makes a camera the active one and waits for a cell to be picked for it. */
+  startPicking(rigId: string): void;
+  /** Picks the cell for the camera being picked for, and stops picking. */
+  pick(target: GridCursor): void;
+  cancelPicking(): void;
+  setEnabled(rigId: string, enabled: boolean): void;
 
   // The active camera, mirrored (see Rig).
   selectedId: string | null;
@@ -73,6 +85,7 @@ interface CameraState {
   liveOf(rig: Rig): LiveFrame | null;
   /** Where a camera's photos go now. */
   targetOf(rig: Rig): GridCursor;
+  /** Moves a camera's target; the grid cursor goes along if it was looking at it. */
   setTarget(rigId: string, target: GridCursor): void;
 
   /** Opens the cameras used last time (or the default webcam). */
@@ -159,6 +172,7 @@ function newRig(deviceId: string | null, target: GridCursor): Rig {
     overview: null,
     autoRotation: null,
     target,
+    enabled: true,
     recording: null,
   };
 }
@@ -288,15 +302,14 @@ export const useCamera = create<CameraState>((set, get) => {
     }, RECONNECT_MS);
   }
 
-  /** The grid cursor follows the active camera's target. */
+  /** The grid cursor goes to the new active camera's target, to see it live. */
   function becomeActive(rigId: string) {
-    const prev = rig(get().activeRig ?? "");
-    if (prev && prev.id !== rigId) patch(prev.id, { target: useEditor.getState().cursor });
+    const prev = get().activeRig;
     set({ activeRig: rigId, pointerTool: "none" });
     useFocusProbes.getState().clear();
     mirror();
     const next = rig(rigId);
-    if (next && prev && prev.id !== rigId) useEditor.getState().moveTo(next.target.cell, next.target.track);
+    if (next && prev !== rigId) useEditor.getState().moveTo(next.target.cell, next.target.track);
   }
 
   return {
@@ -305,6 +318,7 @@ export const useCamera = create<CameraState>((set, get) => {
     rigs: [],
     activeRig: null,
     resolutionId: loadPrefs().resolutionId,
+    picking: null,
     selectedId: null,
     source: null,
     controls: [],
@@ -348,12 +362,38 @@ export const useCamera = create<CameraState>((set, get) => {
     },
 
     targetOf(r) {
-      return r.id === get().activeRig ? useEditor.getState().cursor : r.target;
+      return r.target;
     },
 
     setTarget(rigId, target) {
-      if (rigId === get().activeRig) useEditor.getState().moveTo(target.cell, target.track);
-      else patch(rigId, { target });
+      const r = rig(rigId);
+      if (!r) return;
+      const { cursor, moveTo } = useEditor.getState();
+      const watching = cursor.track === r.target.track && cursor.cell === r.target.cell;
+      patch(rigId, { target });
+      if (watching) moveTo(target.cell, target.track);
+    },
+
+    startPicking(rigId) {
+      if (!rig(rigId)) return;
+      becomeActive(rigId);
+      set({ picking: rigId });
+    },
+
+    pick(target) {
+      const rigId = get().picking;
+      set({ picking: null });
+      if (!rigId || !rig(rigId)) return;
+      patch(rigId, { target });
+      useEditor.getState().moveTo(target.cell, target.track);
+    },
+
+    cancelPicking() {
+      set({ picking: null });
+    },
+
+    setEnabled(rigId, enabled) {
+      patch(rigId, { enabled });
     },
 
     setPointerTool(tool) {
@@ -390,7 +430,7 @@ export const useCamera = create<CameraState>((set, get) => {
         detach(r.id);
       }
       // Targets belong to a film: the next one starts from its own cursor.
-      set({ rigs: [], activeRig: null, pointerTool: "none" });
+      set({ rigs: [], activeRig: null, pointerTool: "none", picking: null });
       mirror();
     },
 
@@ -408,7 +448,8 @@ export const useCamera = create<CameraState>((set, get) => {
     async addCamera(deviceId) {
       const r = newRig(deviceId, useEditor.getState().cursor);
       set({ rigs: [...get().rigs, r] });
-      becomeActive(r.id);
+      // A new camera asks where its photos go.
+      get().startPicking(r.id);
       savePrefs(get().rigs, get().resolutionId);
       await open(r.id);
     },
@@ -417,7 +458,7 @@ export const useCamera = create<CameraState>((set, get) => {
       generations.set(rigId, (generations.get(rigId) ?? 0) + 1);
       detach(rigId);
       const rigs = get().rigs.filter((r) => r.id !== rigId);
-      set({ rigs });
+      set({ rigs, picking: get().picking === rigId ? null : get().picking });
       if (get().activeRig === rigId) {
         set({ activeRig: null });
         if (rigs[0]) becomeActive(rigs[0].id);
