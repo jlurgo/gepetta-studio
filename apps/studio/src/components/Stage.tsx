@@ -523,6 +523,7 @@ export function Stage() {
   // Whether a camera shows live at the cell on screen (the chosen one always aims at the cursor).
   const liveHere = useCamera((s) => s.rigs.some((r) => r.source));
   const cameraError = useCamera((s) => s.error?.message ?? null);
+  const recording = useCamera((s) => s.rigs.some((r) => r.recording));
   const playing = useEditor((s) => s.playback !== null);
 
   useEffect(() => {
@@ -756,7 +757,7 @@ export function Stage() {
         <div className="stage-note">{cameraError ?? "Conectando la cámara…"}</div>
       )}
       {playing && <div className="stage-badge">▶ Reproduciendo</div>}
-      {!playing && liveHere && <div className="stage-badge live">● En vivo</div>}
+      {!playing && liveHere && <div className="stage-badge live">{recording ? "● Grabando · espacio o el botón grande para detener" : "● En vivo"}</div>}
       {!playing && focused && (
         <label className="focus-opacity" onPointerDown={(e) => e.stopPropagation()} title="Solo para ver lo que hay debajo: no cambia la película">
           <span>Imagen elegida</span>

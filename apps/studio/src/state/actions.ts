@@ -203,6 +203,16 @@ export async function stopRecording(rigId?: string) {
   useCamera.getState().setRecording(rig.id, null);
 }
 
+/** The big camera button (and the space bar): a photo with every enabled camera, or video (started, then stopped). */
+export function shoot() {
+  const rigs = useCamera.getState().rigs;
+  if (rigs.some((r) => r.recording)) return stopAllRecordings();
+  if (useEditor.getState().captureMode === "photo") return void captureAll();
+  const ready = readyRigs(rigs);
+  if (ready.length === 0) return useBusy.getState().notify("No hay ninguna cámara habilitada para grabar.", "error");
+  for (const r of ready) startRecording(r.id);
+}
+
 /** Stops every recording (e.g. when leaving the film). */
 export function stopAllRecordings() {
   for (const id of recorders.keys()) void stopRecording(id);

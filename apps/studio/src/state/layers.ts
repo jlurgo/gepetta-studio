@@ -11,6 +11,8 @@ interface LayersState {
   trackId: TrackId | null;
   /** What the detail panel shows: the selected picture, or its track. */
   detail: "clip" | "track";
+  /** What the detail panel shows: the tool in use, or what is selected (picture, pictures, track). */
+  panel: "tool" | "detail";
   /** Transform shown while a handle is dragged; committed to the history on release. */
   preview: { target: HandleTarget; transform: Transform2D } | null;
   /** Shows a track's settings. */
@@ -23,15 +25,20 @@ interface LayersState {
 export const useLayers = create<LayersState>((set) => ({
   trackId: null,
   detail: "track",
+  panel: "tool",
   preview: null,
-  select: (trackId) => set({ trackId, detail: "track", preview: null }),
-  showClip: (trackId) => set({ trackId, detail: "clip", preview: null }),
+  select: (trackId) => set({ trackId, detail: "track", preview: null, panel: trackId ? "detail" : "tool" }),
+  showClip: (trackId) => set({ trackId, detail: "clip", preview: null, panel: "detail" }),
   setPreview: (preview) => set({ preview }),
 }));
 
 // Picking several pictures shows them (their settings change together).
 useEditor.subscribe((state, prev) => {
-  if (state.selection !== prev.selection && state.selection.length > 1) useLayers.setState({ detail: "clip" });
+  if (state.selection === prev.selection || state.selection.join() === prev.selection.join()) return;
+  if (state.selection.length > 1) useLayers.setState({ detail: "clip", panel: "detail" });
+  else if (state.selection.length === 1) useLayers.setState({ panel: "detail" });
+  // Nothing picked any more: the panel goes back to the tool.
+  else if (useLayers.getState().detail === "clip") useLayers.setState({ panel: "tool" });
 });
 
 /** The selected track, if it still exists (undo may have removed it). */

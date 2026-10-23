@@ -4,7 +4,7 @@ import { type FilmState, clipAt } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { isVideoFile } from "../media/ingest";
 import {
-  captureAll,
+  shoot,
   changeHold,
   deleteSelected,
   duplicateSelected,
@@ -54,7 +54,7 @@ function useShortcuts() {
       if (mod && key === "z") s[e.shiftKey ? "redo" : "undo"]();
       else if (mod && key === "y") s.redo();
       else if (mod) return;
-      else if (e.key === " ") void captureAll();
+      else if (e.key === " ") shoot();
       else if (e.key === "Enter") (s.playback ? s.pause() : s.play());
       else if (key === "p") (s.playback ? s.stop() : s.play(true));
       else if (e.key === "Escape" && useCamera.getState().picking) useCamera.getState().cancelPicking();
@@ -207,6 +207,8 @@ function Transport() {
   const tailSeconds = useEditor((s) => s.tailSeconds);
   const captureStep = useEditor((s) => s.captureStep);
   const ready = useCamera((s) => readyRigs(s.rigs).length);
+  const recording = useCamera((s) => s.rigs.some((r) => r.recording));
+  const captureMode = useEditor((s) => s.captureMode);
   const { play, pause, stop, setOnion, set } = useEditor.getState();
   const atCursor = clipAt(film, cursor.track, cursor.cell);
   const target = selection.length ? film.clips[selection[0]!] : atCursor;
@@ -215,20 +217,40 @@ function Transport() {
   return (
     <div className="transport">
       <div className="group">
-        <button
-          className="capture-btn"
-          onClick={() => void captureAll()}
-          disabled={ready === 0}
-          title={`${ready > 1 ? `Sacar foto con las ${ready} cámaras habilitadas a la vez, cada una en su celda` : "Sacar foto"} (barra espaciadora)`}
-        >
-          <Icon name="camera" size={28} />
-        </button>
-        <select value={captureStep} onChange={(e) => set({ captureStep: Number(e.target.value) })} title="Cuántas celdas dura cada foto nueva">
+        {recording ? (
+          // While recording, the big button stops it (so does the space bar).
+          <button className="capture-btn stop" onClick={shoot} title="Detener la grabación (barra espaciadora)">
+            <Icon name="stop" size={28} />
+          </button>
+        ) : (
+          <button
+            className={`capture-btn${captureMode === "video" ? " video" : ""}`}
+            onClick={shoot}
+            disabled={ready === 0}
+            title={`${
+              captureMode === "video"
+                ? `Grabar video${ready > 1 ? ` con las ${ready} cámaras habilitadas a la vez` : ""}, una imagen por celda`
+                : ready > 1
+                  ? `Sacar foto con las ${ready} cámaras habilitadas a la vez, cada una en su celda`
+                  : "Sacar foto"
+            } (barra espaciadora)`}
+          >
+            <Icon name={captureMode === "video" ? "record" : "camera"} size={28} />
+          </button>
+        )}
+        <div className="segmented capture-mode" role="radiogroup" aria-label="Foto o video">
+          {(["photo", "video"] as const).map((m) => (
+            <button key={m} role="radio" aria-checked={captureMode === m} className={captureMode === m ? "active" : ""} disabled={recording} onClick={() => set({ captureMode: m })}>
+              {m === "photo" ? "Foto" : "Video"}
+            </button>
+          ))}
+        </div>
+        {captureMode === "photo" && <select value={captureStep} onChange={(e) => set({ captureStep: Number(e.target.value) })} title="Cuántas celdas dura cada foto nueva">
           <option value={1}>en unos</option>
           <option value={2}>en dos</option>
           <option value={3}>en tres</option>
           <option value={4}>en cuatro</option>
-        </select>
+        </select>}
       </div>
 
       <div className="group">
@@ -338,41 +360,23 @@ function Transport() {
   );
 }
 
-type SideTab = "tool" | "layers";
 
 /** Right column: camera settings or layers. Both stay mounted so switching keeps their state. */
+/**
+ * The detail panel: the properties of whatever was picked last — the tool in
+ * use (a camera, a brush…), a track, a picture, several pictures, strokes.
+ */
 function SidePanel() {
-  const [tab, setTab] = useState<SideTab>("tool");
-  // Choosing a tool shows its properties; picking a picture or a track shows its settings.
+  const panel = useLayers((s) => s.panel);
+  // Choosing a tool shows it.
   const tool = usePaint((s) => s.tool);
   const activeRig = useCamera((s) => s.activeRig);
-  useEffect(() => setTab("tool"), [tool, activeRig]);
-  const trackId = useLayers((s) => s.trackId);
-  const detail = useLayers((s) => s.detail);
-  const selection = useEditor((s) => s.selection);
-  useEffect(() => {
-    if (trackId || selection.length) setTab("layers");
-  }, [trackId, detail, selection]);
+  useEffect(() => useLayers.setState({ panel: "tool" }), [tool, activeRig]);
 
   return (
     <aside className="side-panel">
-      <div className="side-tabs" role="tablist">
-        <button role="tab" aria-selected={tab === "tool"} className={tab === "tool" ? "active" : ""} onClick={() => setTab("tool")}>
-          <Icon name="brush" size={16} /> Herramienta
-        </button>
-        <button role="tab" aria-selected={tab === "layers"} className={tab === "layers" ? "active" : ""} onClick={() => setTab("layers")}>
-          <Icon name="layers" size={16} /> Detalle
-        </button>
-      </div>
-      <div className="side-body" hidden={tab !== "tool"}>
-        <ErrorBoundary label="el panel de la herramienta">
-          <ToolPanel />
-        </ErrorBoundary>
-      </div>
-      <div className="side-body" hidden={tab !== "layers"}>
-        <ErrorBoundary label="el panel de detalle">
-          <DetailPanel />
-        </ErrorBoundary>
+      <div className="side-body">
+        <ErrorBoundary label="el panel de detalle">{panel === "tool" ? <ToolPanel /> : <DetailPanel />}</ErrorBoundary>
       </div>
     </aside>
   );

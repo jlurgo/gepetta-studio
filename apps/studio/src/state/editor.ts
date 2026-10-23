@@ -86,6 +86,8 @@ interface EditorState {
   focusOpacity: number;
   /** Cells each new photo lasts, and the cursor then moves: 1 = "on ones", 2 = "on twos". */
   captureStep: number;
+  /** What the big camera button does: a photo, or start and stop recording video. */
+  captureMode: "photo" | "video";
   playback: Playback | null;
   saveStatus: SaveStatus;
 
@@ -111,7 +113,7 @@ interface EditorState {
   addRelease(release: Release): void;
   setColumns(columns: { start: number; end: number } | null): void;
   setOnion(patch: Partial<OnionSettings>): void;
-  set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep" | "focusOpacity">>): void;
+  set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep" | "captureMode" | "focusOpacity">>): void;
   /** Plays from the cursor (from the start if the cursor is past the end), or the last seconds. */
   play(tail?: boolean): void;
   /** Stops where it is: the cursor moves to the cell being shown. */
@@ -206,6 +208,7 @@ export const useEditor = create<EditorState>((set, get) => {
     tailSeconds: 3,
     captureAverage: 1,
     captureStep: 1,
+    captureMode: "photo",
     focusOpacity: 1,
     playback: null,
     saveStatus: "saved",

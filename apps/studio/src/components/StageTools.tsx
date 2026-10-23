@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useRemote } from "../capture/remote";
 import { type Rig, rigColor, useCamera } from "../state/camera";
+import { useLayers } from "../state/layers";
 import { type StageTool, usePaint } from "../state/paint";
 import { Icon, type IconName } from "./Icon";
 
@@ -31,10 +32,17 @@ export function useFreeCameras(): { id: string; label: string; group: string }[]
   }, [rigs, webcams, dslrs, devices]);
 }
 
+/** Choosing a tool shows its properties in the detail panel (also when it was already the one in use). */
+function showTool(tool: StageTool) {
+  usePaint.getState().setTool(tool);
+  useLayers.setState({ panel: "tool" });
+}
+
 /** Choosing a camera as the tool asks where its photos go (the cell is picked in the timeline). */
 export function chooseCamera(rigId: string) {
   const camera = useCamera.getState();
   usePaint.getState().setTool("camera");
+  useLayers.setState({ panel: "tool" });
   if (camera.picking === rigId) camera.cancelPicking();
   else camera.startPicking(rigId);
 }
@@ -67,7 +75,7 @@ export function StageTools() {
   const free = useFreeCameras();
   const [move, ...paint] = TOOLS;
   const button = (t: (typeof TOOLS)[number]) => (
-    <button key={t.id} className={tool === t.id ? "active" : ""} aria-pressed={tool === t.id} title={`${t.label} (${t.key})`} onClick={() => usePaint.getState().setTool(t.id)}>
+    <button key={t.id} className={tool === t.id ? "active" : ""} aria-pressed={tool === t.id} title={`${t.label} (${t.key})`} onClick={() => showTool(t.id)}>
       <Icon name={t.icon} size={18} />
     </button>
   );
@@ -83,7 +91,7 @@ export function StageTools() {
         <button
           className={`camera-tool add${tool === "addCamera" ? " active" : ""}`}
           title={free.length ? `Agregar una cámara (${free.length} sin usar)` : "Agregar una cámara o conectar un celular"}
-          onClick={() => usePaint.getState().setTool("addCamera")}
+          onClick={() => showTool("addCamera")}
         >
           <Icon name="camera" size={18} />
           <span className="camera-tool-badge">+</span>

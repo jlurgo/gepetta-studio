@@ -1414,35 +1414,6 @@ input[type="range"] {
 
 /* Side panel tabs and layers */
 
-.side-tabs {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  flex-shrink: 0;
-}
-
-.side-tabs button {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.side-tabs button.active {
-  background: var(--panel-2);
-  color: var(--text);
-}
-
 .side-body {
   display: flex;
   flex-direction: column;
@@ -2164,5 +2135,19 @@ input[type="range"] {
   border-radius: var(--radius);
   background: rgb(255 255 255 / 0.04);
   font-size: 12px;
+}
+
+/* While recording, the big button stops it. */
+.capture-btn.stop {
+  background: var(--danger);
+  animation: blink 1s steps(2) infinite;
+}
+
+.capture-btn.video {
+  background: var(--danger);
+}
+
+.capture-mode button {
+  min-width: 52px;
 }
 
