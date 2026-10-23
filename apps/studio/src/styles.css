@@ -1658,6 +1658,8 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* A grid item: without this the long timeline widens the whole window. */
+  min-width: 0;
 }
 
 .tl-picking-bar {
