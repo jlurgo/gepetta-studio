@@ -989,6 +989,11 @@ export function Stage() {
         });
       }
       ctx.restore();
+      // The film's edge, just outside it, so it stands out from the stage around it.
+      const edge = dpr / s;
+      ctx.lineWidth = 1.5 * edge;
+      ctx.strokeStyle = "rgb(255 255 255 / 0.32)";
+      ctx.strokeRect(-0.75 * edge, -0.75 * edge, size.width + 1.5 * edge, size.height + 1.5 * edge);
       if (showGuides) drawGuides(ctx, guides, size, dpr / s, placing);
       const handles = layerHandles.current();
       // Picked strokes have their own handles, instead of their picture's.

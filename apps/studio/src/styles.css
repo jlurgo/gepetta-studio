@@ -356,7 +356,8 @@ input[type="range"] {
   position: relative;
   flex: 1;
   min-width: 0;
-  background: #0f0e0c;
+  /* Lighter than the film's black, so the frame shows where it ends. */
+  background: #2a2723;
 }
 
 .stage canvas {
