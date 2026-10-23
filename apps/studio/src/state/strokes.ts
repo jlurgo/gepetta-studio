@@ -1,4 +1,4 @@
-import { type Clip, type ClipId, type FilmState, type Op, type Stroke, type StrokePatch, composeTransforms, cropRect } from "@gepetta/core";
+import { type Clip, type ClipId, type FilmState, type Op, type Stroke, type StrokePatch, composeTransforms, cropRect, insideOutline } from "@gepetta/core";
 import { create } from "zustand";
 import { proxyCache } from "../media/cache";
 import { type Size, pictureMatrix } from "../render/frame";
@@ -137,10 +137,13 @@ async function paintedAt(filmId: string, stroke: Stroke, picture: Size, x: numbe
   return ctx.getImageData(0, 0, 1, 1).data[3]! > 16;
 }
 
-/** Whether a picture's own image is painted (not see-through) at a point of its pixels, and inside its crop. */
+/** Whether a picture's own image is painted (not see-through) at a point of its pixels, inside its crop and what its lasso keeps. */
 async function pictureAt(filmId: string, clip: Clip, x: number, y: number): Promise<boolean> {
   const r = cropRect(clip.media, clip.look);
   if (x < r.x || y < r.y || x >= r.x + r.width || y >= r.y + r.height) return false;
+  // Cut out with the lasso: only what it keeps.
+  const mask = clip.look?.mask;
+  if (mask && insideOutline([x / clip.media.width, y / clip.media.height], mask.points) === !!mask.invert) return false;
   const bmp = await proxyCache.load(filmId, clip.media.proxy);
   const c = new OffscreenCanvas(1, 1);
   const ctx = c.getContext("2d")!;

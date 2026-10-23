@@ -2348,3 +2348,14 @@ input[type="range"] {
   color: var(--muted);
 }
 
+
+/* The lasso's options. */
+.lasso-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lasso-panel h4 {
+  margin: 6px 0 0;
+}

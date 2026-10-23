@@ -1,4 +1,4 @@
-import { type Look, type MediaRef, type Stroke, type Transform2D, compositeOf, cropRect, effectsFilter, lookBox } from "@gepetta/core";
+import { type Look, type Mask, type MediaRef, type Stroke, type Transform2D, compositeOf, cropRect, effectsFilter, lookBox } from "@gepetta/core";
 
 export interface Size {
   width: number;
@@ -70,11 +70,40 @@ export function drawStack(
     if (look?.blend) ctx.globalCompositeOperation = compositeOf(look.blend);
     if (look?.effects) ctx.filter = effectsFilter(look.effects);
     ctx.transform(...matrixArgs(pictureMatrix(item, film, real)));
-    ctx.drawImage(img, r.x, r.y, r.width, r.height, r.x, r.y, r.width, r.height);
+    const src = look?.mask ? masked(img, real, look.mask) : img;
+    ctx.drawImage(src, r.x, r.y, r.width, r.height, r.x, r.y, r.width, r.height);
     ctx.restore();
   }
 }
 
 function matrixArgs(m: DOMMatrix): [number, number, number, number, number, number] {
   return [m.a, m.b, m.c, m.d, m.e, m.f];
+}
+
+/** The lasso's outline as a path in pixels of a picture of `size`. */
+export function maskPath(mask: Mask, size: Size): Path2D {
+  const path = new Path2D();
+  mask.points.forEach(([x, y], i) => (i ? path.lineTo(x * size.width, y * size.height) : path.moveTo(x * size.width, y * size.height)));
+  path.closePath();
+  return path;
+}
+
+/** The last masked copy of each image (masks are replaced, never changed, so the mask itself tells if it is still good). */
+const maskedCopies = new WeakMap<object, { mask: Mask; width: number; canvas: OffscreenCanvas }>();
+
+/** An image with only what its mask keeps (soft-edged if it says so). */
+function masked(img: CanvasImageSource, real: Size, mask: Mask): CanvasImageSource {
+  const width = Math.max(1, Math.round(real.width));
+  const height = Math.max(1, Math.round(real.height));
+  const hit = maskedCopies.get(img as object);
+  if (hit && hit.mask === mask && hit.width === width) return hit.canvas;
+  const canvas = new OffscreenCanvas(width, height);
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(img, 0, 0, width, height);
+  ctx.globalCompositeOperation = mask.invert ? "destination-out" : "destination-in";
+  const blur = (mask.feather ?? 0) * Math.max(width, height);
+  if (blur > 0.5) ctx.filter = `blur(${blur.toFixed(1)}px)`;
+  ctx.fill(maskPath(mask, { width, height }));
+  maskedCopies.set(img as object, { mask, width, canvas });
+  return canvas;
 }

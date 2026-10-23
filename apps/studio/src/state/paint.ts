@@ -39,7 +39,7 @@ import { useEditor } from "./editor";
  */
 /** "camera": the active camera (see useCamera), as a tool among the others; "addCamera": choosing one more;
  * "import": putting images and videos into cells; "sculpt": reshaping the strokes of the picture at the cursor. */
-export type StageTool = "move" | "camera" | "addCamera" | "import" | "sculpt" | "draw" | "erase" | "fill" | "tint" | "shape" | "clone" | "picker";
+export type StageTool = "move" | "camera" | "addCamera" | "import" | "sculpt" | "lasso" | "draw" | "erase" | "fill" | "tint" | "shape" | "clone" | "picker";
 export type BrushKind = "pencil" | "ink" | "marker" | "airbrush";
 export type ShapeKind = "line" | "box" | "ellipse";
 
@@ -174,8 +174,8 @@ export const usePaint = create<PaintState>((set, get) => ({
 }));
 
 /** The drawing tools work on the cell at the cursor (and hide the handles). */
-export function isPainting(tool: StageTool): tool is Exclude<StageTool, "move" | "camera" | "addCamera" | "import" | "sculpt"> {
-  return tool !== "move" && tool !== "camera" && tool !== "addCamera" && tool !== "import" && tool !== "sculpt";
+export function isPainting(tool: StageTool): tool is Exclude<StageTool, "move" | "camera" | "addCamera" | "import" | "sculpt" | "lasso"> {
+  return tool !== "move" && tool !== "camera" && tool !== "addCamera" && tool !== "import" && tool !== "sculpt" && tool !== "lasso";
 }
 
 /** Whether the tool has a width and a strength. */

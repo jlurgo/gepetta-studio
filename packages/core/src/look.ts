@@ -58,6 +58,6 @@ export function effectsFilter(effects: Effect[] | undefined): string {
 export function isPlainLook(look: Look | undefined): boolean {
   return (
     !look ||
-    (!look.crop && (look.fit ?? "contain") === "contain" && !look.flipX && !look.flipY && (look.blend ?? "normal") === "normal" && !(look.effects ?? []).some((e) => e.amount))
+    (!look.crop && !look.mask && (look.fit ?? "contain") === "contain" && !look.flipX && !look.flipY && (look.blend ?? "normal") === "normal" && !(look.effects ?? []).some((e) => e.amount))
   );
 }

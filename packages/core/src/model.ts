@@ -61,6 +61,23 @@ export interface Look {
   flipY?: boolean;
   blend?: BlendMode;
   effects?: Effect[];
+  /** Part cut out with the lasso: only what is inside shows (or, inverted, all but it). */
+  mask?: Mask;
+}
+
+/**
+ * An outline drawn on a picture (lasso or rectangle), in fractions of the
+ * picture (0–1), always MASK_POINTS points clockwise from its top, so the
+ * outlines of a sequence can be blended from one picture to the next.
+ */
+export interface Mask {
+  points: [number, number][];
+  /** Shows all but what is inside. */
+  invert?: boolean;
+  /** Soft edge, in fractions of the picture's longer side. */
+  feather?: number;
+  /** Drawn or changed by hand on this picture (the ones between are blended from these). */
+  key?: boolean;
 }
 
 /**

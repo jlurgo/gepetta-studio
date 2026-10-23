@@ -25,6 +25,7 @@ import { proxyCache } from "../media/cache";
 import { peekPicture } from "../media/composed";
 import type { LiveFrame } from "../capture/types";
 import { type Drawable, type Size, containScale, drawStack, pictureMatrix } from "../render/frame";
+import { beginLasso, drawLassoOutline, endLasso, lassoActive, lassoGhost, moveLasso } from "../state/lasso";
 import { objectsAt, pickedStrokes, selectStrokes, strokesBounds, transformStrokes, updateStrokes, useStrokePreview, useStrokes, withStrokePreview } from "../state/strokes";
 import { type CropSide, type HandleKind, dragCrop, drawHandles, dragTransform, hitHandle } from "../render/handles";
 import { type HandleTarget, commitTransform, selectedClipId, sequenceMoved, useLayers } from "../state/layers";
@@ -605,6 +606,34 @@ function useSculptPointer(filmRect: React.RefObject<FilmRect | null>) {
   return { onPointerDown, onPointerMove, onPointerUp };
 }
 
+/** The lasso on the picture of the cell picked: drawing, pushing or moving its outline. */
+function useLassoPointer(filmRect: React.RefObject<FilmRect | null>) {
+  const filmPoint = (e: React.PointerEvent): { p: Point; px: number } | null => {
+    const r = filmRect.current;
+    if (!r) return null;
+    const box = e.currentTarget.getBoundingClientRect();
+    return { p: { x: (e.clientX - box.left - r.x) / r.s, y: (e.clientY - box.top - r.y) / r.s }, px: 1 / r.s };
+  };
+  const onPointerDown = (e: React.PointerEvent): boolean => {
+    if (usePaint.getState().tool !== "lasso" || e.button !== 0) return false;
+    const at = filmPoint(e);
+    if (at && beginLasso(at.p, at.px)) capturePointer(e);
+    return true;
+  };
+  const onPointerMove = (e: React.PointerEvent): boolean => {
+    if (usePaint.getState().tool !== "lasso") return false;
+    const at = filmPoint(e);
+    if (at && lassoActive()) moveLasso(at.p);
+    return true;
+  };
+  const onPointerUp = (): boolean => {
+    if (usePaint.getState().tool !== "lasso") return false;
+    endLasso();
+    return true;
+  };
+  return { onPointerDown, onPointerMove, onPointerUp };
+}
+
 /** The picked strokes as the handles move them: their corners on the stage, and the picture's mapping. */
 function strokesOnStage(): { corners: Point[]; matrix: DOMMatrix; clip: string; ids: string[] } | null {
   const { film: raw, cursor, playback } = useEditor.getState();
@@ -806,6 +835,7 @@ export function Stage() {
   const strokePick = usePick(filmRect);
   const strokeDrag = useStrokeDrag(filmRect);
   const sculptPointer = useSculptPointer(filmRect);
+  const lassoPointer = useLassoPointer(filmRect);
   const painting = usePaint((s) => isPainting(s.tool));
   const layerHandles = useRef(targetOnStage);
   const guideEditing = useGuides((s) => s.editing);
@@ -988,6 +1018,11 @@ export function Stage() {
           drawProxies(ctx, filmId, film, [item], onion.opacity * (1 - distance / (onion.count + 1)));
         });
       }
+      // The lasso: what its outline leaves out, faintly, to see what to take.
+      if (tool === "lasso" && !playback) {
+        const ghost = lassoGhost(film);
+        if (ghost) drawProxies(ctx, filmId, film, [ghost], 0.3);
+      }
       ctx.restore();
       // The film's edge, just outside it, so it stands out from the stage around it.
       const edge = dpr / s;
@@ -1003,6 +1038,7 @@ export function Stage() {
         drawHandles(ctx, withStrokePreviewCorners(strokeHandles), dpr / s, false);
         drawStrokePoints(ctx, shown, strokeHandles, dpr / s);
       }
+      if (tool === "lasso" && !playback) drawLassoOutline(ctx, film, dpr / s);
       if (tool === "sculpt" && sculptHover) {
         // The sculpt brush's size, visible over light and dark.
         ctx.beginPath();
@@ -1014,7 +1050,7 @@ export function Stage() {
         ctx.strokeStyle = "#5cc8b5";
         ctx.stroke();
       }
-      else if (handles && !placing && !isPainting(tool)) drawHandles(ctx, handles.corners, dpr / s, !!handles.crop);
+      else if (handles && !placing && !isPainting(tool) && tool !== "lasso") drawHandles(ctx, handles.corners, dpr / s, !!handles.crop);
       const outline = brushOutline();
       if (outline) {
         // The brush's size where it would paint, visible over light and dark.
@@ -1055,16 +1091,16 @@ export function Stage() {
       ref={wrapRef}
       onPointerDown={(e) => {
         if (!playing) strokePick.onPointerDown(e);
-        if (playing || guideDrag.onPointerDown(e) || paintPointer.onPointerDown(e) || sculptPointer.onPointerDown(e) || strokeDrag.onPointerDown(e) || layerDrag.onPointerDown(e)) return;
+        if (playing || guideDrag.onPointerDown(e) || paintPointer.onPointerDown(e) || sculptPointer.onPointerDown(e) || lassoPointer.onPointerDown(e) || strokeDrag.onPointerDown(e) || layerDrag.onPointerDown(e)) return;
         if (hasSource) handlers.onPointerDown(e);
       }}
       onPointerMove={(e) => {
-        if (playing || guideDrag.onPointerMove(e) || paintPointer.onPointerMove(e) || sculptPointer.onPointerMove(e) || strokeDrag.onPointerMove(e) || layerDrag.onPointerMove(e)) return;
+        if (playing || guideDrag.onPointerMove(e) || paintPointer.onPointerMove(e) || sculptPointer.onPointerMove(e) || lassoPointer.onPointerMove(e) || strokeDrag.onPointerMove(e) || layerDrag.onPointerMove(e)) return;
         if (hasSource) handlers.onPointerMove(e);
       }}
       onPointerUp={(e) => {
         if (!playing) strokePick.onPointerUp(e);
-        if (playing || guideDrag.onPointerUp() || paintPointer.onPointerUp() || sculptPointer.onPointerUp() || strokeDrag.onPointerUp() || layerDrag.onPointerUp()) return;
+        if (playing || guideDrag.onPointerUp() || paintPointer.onPointerUp() || sculptPointer.onPointerUp() || lassoPointer.onPointerUp() || strokeDrag.onPointerUp() || layerDrag.onPointerUp()) return;
         if (hasSource) handlers.onPointerUp(e);
       }}
       onPointerCancel={() => paintPointer.onPointerUp()}

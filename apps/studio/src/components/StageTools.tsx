@@ -15,6 +15,7 @@ export const TOOLS: { id: StageTool; icon: IconName; label: string; key: string 
   { id: "shape", icon: "shape", label: "Formas", key: "U" },
   { id: "clone", icon: "stamp", label: "Sello de clonar", key: "S" },
   { id: "sculpt", icon: "sculpt", label: "Esculpir trazos", key: "K" },
+  { id: "lasso", icon: "lasso", label: "Lazo", key: "A" },
   { id: "picker", icon: "picker", label: "Cuentagotas", key: "I" },
 ];
 

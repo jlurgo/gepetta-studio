@@ -12,3 +12,4 @@ export * from "./fill";
 export * from "./look";
 export * from "./columns";
 export * from "./sequences";
+export * from "./mask";

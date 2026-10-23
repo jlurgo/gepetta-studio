@@ -43,7 +43,8 @@
 - [x] Fundido en el tiempo: una imagen que dura varias celdas, o varias imágenes seguidas
 - [x] Columnas del resultado: ⇧ extiende, ⌘/Ctrl suma partes sueltas; Supr las elimina en todos los tracks y lo que sigue se corre; la celda de una cámara en vivo también se elige y al borrarla la cámara va después del último cuadro
 - [x] Herramienta «Imágenes y videos»: varias imágenes en una lista para ordenar y poner en celdas seguidas; video cuadro por cuadro o en un track para calcar; imagen fija; «+ Track» agrega un track vacío directo
-- [ ] Selección y transformación de una parte de la imagen (lazo/rectángulo)
+- [x] Lazo (libre o rectángulo) que recorta sin tocar la foto: dejar lo de adentro o lo de afuera, borde suave, empujar y mover el contorno; en una secuencia, cuadros clave y el resto repartido; «Llevar a un track nuevo» (un track por personaje, con o sin hueco en el original)
+- [ ] Sacar el fondo automático dentro del lazo (comparando con un cuadro del fondo vacío)
 - [x] Transformar capas: mover, rotar, escalar con manijas
 - Alinear capas por puntos de control
   (afín/homografía/TPS de CasitaDesign); deformación trapezoidal

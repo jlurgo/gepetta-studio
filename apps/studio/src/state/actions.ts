@@ -306,7 +306,7 @@ export async function setCellImage(file: File, at: GridCursor) {
   state.commit([{ type: "clip.place", clips }], undefined, { cursor: at, selection: clips.map((c) => c.id) });
 }
 
-function newTrackOp(name: string, patch: Partial<Track> = {}): { op: Op; id: TrackId } {
+export function newTrackOp(name: string, patch: Partial<Track> = {}): { op: Op; id: TrackId } {
   const id = newId();
   return { id, op: { type: "track.add", track: { id, name, visible: true, opacity: 1, transform: IDENTITY_TRANSFORM, exported: true, ...patch } } };
 }

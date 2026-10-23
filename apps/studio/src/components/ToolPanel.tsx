@@ -10,6 +10,7 @@ import { FocusMeterPanel } from "./FocusMeterPanel";
 import { FOCUS_KEYS, FocusPanel } from "./FocusPanel";
 import { Icon } from "./Icon";
 import { ImportPanel } from "./ImportPanel";
+import { LassoPanel } from "./LassoPanel";
 import { MagnifyPanel, ZOOM_KEYS } from "./MagnifyPanel";
 import { PhoneConnect } from "./PhoneConnect";
 import { applyChange } from "../state/shot";
@@ -376,6 +377,8 @@ export function ToolPanel() {
         <AddCameraPanel />
       ) : tool === "import" ? (
         <ImportPanel />
+      ) : tool === "lasso" ? (
+        <LassoPanel />
       ) : (
         <PaintOptions />
       )}
