@@ -658,7 +658,7 @@ export function Timeline() {
 
             {/* The cell looked at (where an import goes). */}
             {laps.map((l) => (
-              <div key={l} className="tl-cursor-cell" style={{ left: cursor.cell * cw + lapX(l), width: cw, top: rowTop(cursorRow), height: TRACK_H }} />
+              <div key={l} className="tl-cursor-cell" style={{ left: wrap(cursor.cell) * cw + lapX(l), width: cw, top: rowTop(cursorRow), height: TRACK_H }} />
             ))}
 
             {laps.map((lap) =>
@@ -742,7 +742,7 @@ export function Timeline() {
 
             {/* The selected cell, across every row; it stays marked while playing. */}
             {laps.map((l) => (
-              <div key={l} className={`tl-selected${playing ? " playing" : ""}`} style={{ left: cursor.cell * cw + lapX(l), width: cw, height }} />
+              <div key={l} className={`tl-selected${playing ? " playing" : ""}`} style={{ left: wrap(cursor.cell) * cw + lapX(l), width: cw, height }} />
             ))}
             {loop && laps.map((l) => <div key={`seam-${l}`} className="tl-seam" style={{ left: lapX(l), height }} />)}
             {gesture?.kind === "length" && (

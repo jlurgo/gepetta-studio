@@ -151,13 +151,14 @@ async function flushSave() {
 /** Keeps the cursor on an existing track, and the selection on existing pictures. */
 function fixCursor(film: FilmState, cursor: GridCursor): GridCursor {
   const track = film.tracks.some((t) => t.id === cursor.track) ? cursor.track : PHOTO_TRACK;
-  return { track, cell: Math.max(0, cursor.cell) };
+  // A loop film has no cells past its end: they are its first ones again.
+  return { track, cell: wrapCell(film, Math.max(0, cursor.cell)) };
 }
 
-/** The first free cell after the last photo: where shooting continues when a film opens. */
+/** The first free cell after the last photo: where shooting continues when a film opens (a loop: its first cell). */
 function nextPhotoCell(film: FilmState): number {
   const last = trackClips(film, PHOTO_TRACK).at(-1);
-  return last ? last.start + last.length : 0;
+  return wrapCell(film, last ? last.start + last.length : 0);
 }
 
 export const useEditor = create<EditorState>((set, get) => {
@@ -289,7 +290,9 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     moveTo(cell, track, along = false) {
-      const cursor = { track: track ?? get().cursor.track, cell: Math.max(0, cell) };
+      const film = get().film;
+      const at = Math.max(0, cell);
+      const cursor = { track: track ?? get().cursor.track, cell: film ? wrapCell(film, at) : at };
       set({ cursor, cursorAlong: along, playback: null });
     },
     setSelection(ids) {
