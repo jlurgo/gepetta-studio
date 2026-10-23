@@ -182,7 +182,8 @@ export function startRecording(rigId?: string) {
         rec.cells++;
         rec.next = { track: rec.next.track, cell: clipEnd(clip!) };
         useCamera.getState().setTarget(id, rec.next);
-        useCamera.getState().setRecording(id, { cells: rec.cells });
+        // Only while still recording (pictures stored after the stop leave it stopped).
+        if (recorders.get(id) === rec) useCamera.getState().setRecording(id, { cells: rec.cells });
       })
       .catch((e) => console.warn("[gepetta] recording", e));
   };
@@ -192,15 +193,18 @@ export function startRecording(rigId?: string) {
   grab();
 }
 
-/** Stops a recording; the pictures still being stored go in too. */
+/**
+ * Stops a recording at once: no more pictures are taken. The ones already
+ * taken and still being stored go in after it, in the background.
+ */
 export async function stopRecording(rigId?: string) {
   const rig = rigFor(rigId);
   const rec = rig && recorders.get(rig.id);
   if (!rig || !rec) return;
   clearInterval(rec.timer);
   recorders.delete(rig.id);
-  await rec.chain;
   useCamera.getState().setRecording(rig.id, null);
+  await rec.chain;
 }
 
 /** The big camera button (and the space bar): a photo with every enabled camera, or video (started, then stopped). */
@@ -399,6 +403,17 @@ export function selectRelative(dir: -1 | 1) {
 /** Adds seconds of empty cells at the end. */
 export function extendFilm(film: FilmState, seconds: number) {
   useEditor.getState().commit([{ type: "film.setLength", length: film.length + Math.round(seconds * film.settings.fps) }]);
+}
+
+/** A loop film's length in cells: longer adds empty cells; shorter cuts what is past the new end (one step, undoable). */
+export function setLoopLength(length: number) {
+  const { film, commit } = useEditor.getState();
+  if (!film) return;
+  const to = Math.max(1, Math.round(length));
+  if (to === film.length) return;
+  const label = `Largo del loop: ${to} ${to === 1 ? "celda" : "celdas"}`;
+  if (to > film.length) commit([{ type: "film.setLength", length: to }], label);
+  else commit([{ type: "cells.clear", start: to, length: film.length - to }, { type: "film.setLength", length: to }], label);
 }
 
 // App state lives here (open cameras, the film being edited): a hot update would

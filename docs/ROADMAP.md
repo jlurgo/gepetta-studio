@@ -50,7 +50,7 @@
 - Importar SVG/PDF/raster como capas
 
 ## Fase 4 — Loops y dispositivos
-- [x] Película en loop: el primer cuadro sigue al último, línea de tiempo sin fin, cebolla que da la vuelta
+- [x] Película en loop: el primer cuadro sigue al último, línea de tiempo como tambor que gira, largo elegido arrastrando ↻, cebolla que da la vuelta
 - Ping-pong, herramientas para caminatas
 - Zootropo: simulación de tambor + export imprimible
 - Fenakitoscopio: distribución configurable en el círculo, ranuras, simulación,

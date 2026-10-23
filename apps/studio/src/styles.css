@@ -2205,3 +2205,44 @@ input[type="range"] {
   white-space: nowrap;
 }
 
+/* A loop film: one turn of a drum (the timeline turns, it does not scroll). */
+.timeline.drum .tl-body {
+  overflow-x: hidden;
+}
+
+.tl-drum {
+  position: absolute;
+  inset: 0;
+}
+
+.timeline.drum .tl-canvas {
+  overflow: hidden;
+}
+
+.timeline.drum .tl-ruler {
+  cursor: grab;
+}
+
+.tl-seam-label {
+  cursor: ew-resize;
+  white-space: nowrap;
+}
+
+.tl-seam.ghost {
+  border-left-style: solid;
+  border-left-color: var(--teal);
+}
+
+.tl-seam.ghost span {
+  position: absolute;
+  top: 20px;
+  left: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--teal);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+

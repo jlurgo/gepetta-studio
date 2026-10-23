@@ -122,8 +122,11 @@ hace, y todo se puede cambiar después.
 Una película puede ser un **loop** (`settings.loop`, op `film.setLoop`): después
 de la última celda viene la primera. La reproducción no termina, el papel de
 cebolla de las primeras celdas muestra las últimas (`previousClips`, `wrapCell`)
-y la línea de tiempo se dibuja como muchas vueltas seguidas, volviendo a las del
-medio al desplazarse, así que no tiene fin.
+y la línea de tiempo es un tambor: muestra la película una sola vez, girada
+(`rot`: la celda que se ve primero); desplazarse de costado o arrastrar la regla
+la gira, y al reproducir gira bajo la línea, que queda en el medio. Arrastrar la
+marca ↻ (donde vuelve a empezar) cambia el largo del loop (`setLoopLength`: al
+acortar se corta lo que queda afuera).
 
 ## Almacenamiento
 

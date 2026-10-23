@@ -1,7 +1,7 @@
 import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, stackAt, wrapCell } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
-import { addTrack, extendFilm, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
+import { addTrack, extendFilm, setLoopLength, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
 import { type Rig, rigColor, shotOn, useCamera } from "../state/camera";
@@ -20,14 +20,8 @@ const MAX_CW = 240;
 const ZOOM_KEY = "gepetta.timelineZoom";
 /** Empty cells shown past the end, to place pictures there. */
 const TAIL_SECONDS = 2;
-/** A loop film is drawn this many times in a row; the view stays near the middle one, so it never ends. */
-const LAPS = 41;
-const MID_LAP = 20;
 
-/** Where a cell of a loop film shows nearest to a point of the timeline (in cells). */
-function nearestLap(center: number, cell: number, period: number): number {
-  return period > 0 ? Math.round((center - cell) / period) * period + cell : cell;
-}
+const mod = (v: number, n: number) => ((v % n) + n) % n;
 
 function TrackHead({ track, current }: { track: Track; current: boolean }) {
   const selected = useLayers((s) => s.trackId === track.id);
@@ -57,7 +51,10 @@ type Gesture =
   | { kind: "move"; x0: number; y0: number; id: ClipId; ids: ClipId[]; moved: boolean; dx: number; dy: number }
   | { kind: "resize"; x0: number; id: ClipId; length0: number; dx: number }
   | { kind: "band"; x0: number; y0: number; x1: number; y1: number; add: boolean; base: ClipId[] }
-  | { kind: "columns"; x0: number; dx: number; moved: boolean };
+  | { kind: "columns"; x0: number; dx: number; moved: boolean }
+  /** A loop film: turning the drum (dragging the ruler), or its length (dragging where it starts again). */
+  | { kind: "turn"; cx0: number; rot0: number; moved: boolean }
+  | { kind: "length"; x0: number; seam: number; dx: number };
 
 function loadZoom(): number {
   try {
@@ -119,11 +116,41 @@ export function Timeline() {
   const zoomAnchor = useRef<{ cell: number; x: number } | null>(null);
   const cwRef = useRef(cw);
   cwRef.current = cw;
+
+  /**
+   * A loop film is a drum: one turn of it, the film once, turned so that cell
+   * `rot` shows first. Turning it shows the cells after the last one, from the first.
+   */
+  const [rot, setRot] = useState(0);
+  const rotRef = useRef(0);
+  const turn = (to: number) => {
+    const length = useEditor.getState().film?.length ?? 0;
+    if (!length) return;
+    const r = mod(Math.round(to), length);
+    if (r === rotRef.current) return;
+    rotRef.current = r;
+    setRot(r);
+  };
+
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
+    let turning = 0;
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
+      if (!e.ctrlKey && !e.metaKey) {
+        // Sideways scrolling turns a loop film's drum.
+        const f = useEditor.getState().film;
+        const d = e.deltaX || (e.shiftKey ? e.deltaY : 0);
+        if (!f?.settings.loop || !d) return;
+        e.preventDefault();
+        turning += d;
+        const steps = Math.trunc(turning / cwRef.current);
+        if (steps) {
+          turning -= steps * cwRef.current;
+          turn(rotRef.current + steps);
+        }
+        return;
+      }
       e.preventDefault();
       const x = e.clientX - el.getBoundingClientRect().left;
       const current = cwRef.current;
@@ -151,22 +178,25 @@ export function Timeline() {
     const el = scroller.current;
     if (!el) return;
     const f = useEditor.getState().film;
-    const period = f?.settings.loop ? f.length : 0;
-    const x = nearestLap((el.scrollLeft + el.clientWidth / 2) / cw, cursor.cell, period) * cw;
+    if (f?.settings.loop && f.length) {
+      // A drum turns instead (when it does not fit whole).
+      const view = Math.floor(el.clientWidth / cw);
+      if (f.length <= view) return;
+      const shown = mod(cursor.cell - rotRef.current, f.length);
+      if (cursorAlong || shown >= view - 1) turn(cursor.cell - Math.floor(view / 2));
+      return;
+    }
+    const x = cursor.cell * cw;
     if (cursorAlong) el.scrollLeft = Math.max(0, x + cw / 2 - el.clientWidth / 2);
     else if (x < el.scrollLeft) el.scrollLeft = x - cw;
     else if (x + cw > el.scrollLeft + el.clientWidth) el.scrollLeft = x + 2 * cw - el.clientWidth;
   }, [cursor.cell, cw, cursorAlong]);
 
-  // A loop film opens (or turns into a loop) in its middle lap, at the cursor.
-  const loopPeriod = useEditor((s) => (s.film?.settings.loop ? s.film.length : 0));
+  // A drum does not scroll sideways (it turns): back to the start when the film becomes a loop.
+  const isLoop = useEditor((s) => !!s.film?.settings.loop);
   useLayoutEffect(() => {
-    const el = scroller.current;
-    if (!el || !loopPeriod) return;
-    el.scrollLeft = (MID_LAP * loopPeriod + useEditor.getState().cursor.cell + 0.5) * cw - el.clientWidth / 2;
-    // Only when the loop starts or its length changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loopPeriod, filmId]);
+    if (isLoop && scroller.current) scroller.current.scrollLeft = 0;
+  }, [isLoop]);
 
   // While playing, a line runs over the cells being shown (outside React: it moves every frame).
   const playing = useEditor((s) => s.playback !== null);
@@ -174,25 +204,22 @@ export function Timeline() {
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
-    /** Where the line is (a loop film: it goes on to the next lap, never back). */
-    let last: number | null = null;
     const step = () => {
       raf = requestAnimationFrame(step);
       const { playback, film: f } = useEditor.getState();
       const line = playRef.current;
       const el = scroller.current;
       if (!playback || !f || !line || !el) return;
-      let cell = Math.max(0, Math.min(f.length - 1, playbackCell(playback, f.settings.fps)));
       if (f.settings.loop && f.length) {
-        const period = f.length;
+        // The drum turns under the line, which stays in the middle (a drum that fits whole stays still).
         const now = wrapCell(f, playbackCell(playback, f.settings.fps));
-        cell = last === null ? nearestLap((el.scrollLeft + el.clientWidth / 2) / cw, now, period) : last - wrapCell(f, last) + now;
-        if (last !== null && cell < last) cell += period;
-        // Back to the middle laps (the timeline looks the same there).
-        const lap = Math.floor(cell / period);
-        if (lap > LAPS - 4) cell -= (lap - MID_LAP) * period;
-        last = cell;
+        const view = Math.floor(el.clientWidth / cw);
+        if (f.length > view) turn(now - Math.floor(view / 2));
+        line.style.transform = `translateX(${(rotRef.current + mod(now - rotRef.current, f.length)) * cw}px)`;
+        line.style.width = `${cw}px`;
+        return;
       }
+      const cell = Math.max(0, Math.min(f.length - 1, playbackCell(playback, f.settings.fps)));
       const x = cell * cw;
       line.style.transform = `translateX(${x}px)`;
       line.style.width = `${cw}px`;
@@ -206,13 +233,19 @@ export function Timeline() {
   if (!film || !filmId) return null;
   const fps = film.settings.fps;
   const tracks = [...film.tracks].reverse(); // top first, like the picture
-  // A loop film repeats without end (see LAPS); `wrap` takes a cell of the timeline to the film's.
+  // A loop film is a drum (see `rot`): cells of the timeline from `r` on, `wrap` takes them to the film's.
   const loop = !!film.settings.loop && film.length > 0;
   const period = loop ? film.length : 0;
-  const wrap = (v: number) => (loop ? ((v % period) + period) % period : v);
-  const cells = loop ? LAPS * period : film.length + TAIL_SECONDS * fps;
-  const firstCell = Math.max(0, Math.floor(scroll.left / cw) - 1);
-  const lastCell = Math.min(cells, Math.ceil((scroll.left + scroll.width) / cw) + 1);
+  const wrap = (v: number) => (loop ? mod(v, period) : v);
+  const r = loop ? mod(rot, period) : 0;
+  const viewCells = Math.max(1, Math.ceil(scroll.width / cw));
+  /** The whole drum fits: it shows once, with room after it to make it longer. */
+  const whole = loop && period < viewCells;
+  const cells = loop ? period : film.length + TAIL_SECONDS * fps;
+  const firstCell = loop ? r : Math.max(0, Math.floor(scroll.left / cw) - 1);
+  const lastCell = loop ? r + Math.min(period, viewCells + 1) : Math.min(cells, Math.ceil((scroll.left + scroll.width) / cw) + 1);
+  /** How far the drum is turned, in pixels. */
+  const shiftX = r * cw;
   /** The laps on screen (just one, the film, when it is not a loop), and where each starts. */
   const laps: number[] = [];
   if (loop) for (let l = Math.floor(firstCell / period); l <= Math.floor(Math.max(firstCell, lastCell - 1) / period); l++) laps.push(l);
@@ -224,23 +257,13 @@ export function Timeline() {
   const selected = new Set(selection);
   const aspect = film.settings.width / film.settings.height;
 
-  /** Scrolling a loop film far from the middle jumps back by whole laps (it looks the same), so it never ends. */
-  const onScroll = (el: HTMLDivElement) => {
-    if (loop && !playing) {
-      const lap = Math.floor((el.scrollLeft + el.clientWidth / 2) / cw / period);
-      if (lap < 3 || lap > LAPS - 4) el.scrollLeft += (MID_LAP - lap) * period * cw;
-    }
-    setScroll({ left: el.scrollLeft, width: el.clientWidth });
-  };
+  const onScroll = (el: HTMLDivElement) => setScroll({ left: el.scrollLeft, width: el.clientWidth });
 
   /** Zoom buttons: around the cursor. */
   const zoomBy = (factor: number) => {
     const el = scroller.current;
     const next = Math.max(MIN_CW, Math.min(MAX_CW, cw * factor));
-    if (el) {
-      const cell = nearestLap((el.scrollLeft + el.clientWidth / 2) / cw, cursor.cell, period) + 0.5;
-      zoomAnchor.current = { cell, x: cell * cw - el.scrollLeft };
-    }
+    if (el && !loop) zoomAnchor.current = { cell: cursor.cell + 0.5, x: (cursor.cell + 0.5) * cw - el.scrollLeft };
     setCw(next);
     saveZoom(next);
   };
@@ -248,7 +271,7 @@ export function Timeline() {
   /** Cell and track row under a pointer event, in the canvas. */
   const at = (e: { clientX: number; clientY: number }) => {
     const box = scroller.current!.getBoundingClientRect();
-    const x = e.clientX - box.left + scroller.current!.scrollLeft;
+    const x = e.clientX - box.left + scroller.current!.scrollLeft + shiftX;
     const y = e.clientY - box.top + scroller.current!.scrollTop;
     const v = Math.max(0, Math.floor(x / cw));
     const row = Math.floor((y - rowsTop) / (TRACK_H + ROW_GAP));
@@ -359,6 +382,14 @@ export function Timeline() {
       return;
     }
     if (p.y < RULER_H) {
+      if (loop) {
+        // A loop: drag where it starts again to make it longer or shorter; drag the ruler to turn the drum.
+        capturePointer(e);
+        const seam = (e.target as HTMLElement).closest<HTMLElement>("[data-seam]");
+        if (seam) setGesture({ kind: "length", x0: p.x, seam: Number(seam.dataset.seam), dx: 0 });
+        else setGesture({ kind: "turn", cx0: e.clientX, rot0: r, moved: false });
+        return;
+      }
       // Ruler: pick the moment and show the film there.
       useEditor.getState().moveTo(p.cell, undefined);
       return;
@@ -422,6 +453,19 @@ export function Timeline() {
     const gesture = gestureRef.current;
     if (!gesture) return;
     const p = at(e);
+    if (gesture.kind === "turn") {
+      const dx = e.clientX - gesture.cx0;
+      if (gesture.moved || Math.abs(dx) > 4) {
+        if (!gesture.moved) setGesture({ ...gesture, moved: true });
+        turn(gesture.rot0 - Math.round(dx / cw));
+      }
+      return;
+    }
+    if (gesture.kind === "length") {
+      const dx = Math.max(1 - period, Math.round((p.x - gesture.x0) / cw));
+      if (dx !== gesture.dx) setGesture({ ...gesture, dx });
+      return;
+    }
     if (gesture.kind === "move") {
       const dx = Math.round((p.x - gesture.x0) / cw);
       const dy = Math.round((p.y - gesture.y0) / (TRACK_H + ROW_GAP));
@@ -454,6 +498,14 @@ export function Timeline() {
     setGesture(null);
     if (!g) return;
     const p = at(e);
+    if (g.kind === "turn") {
+      if (!g.moved) useEditor.getState().moveTo(p.cell, undefined);
+      return;
+    }
+    if (g.kind === "length") {
+      if (g.dx) setLoopLength(film!.length + g.dx);
+      return;
+    }
     if (g.kind === "move" && g.moved && (g.dx || g.dy)) {
       const moves = g.ids.map((id) => {
         const c = film!.clips[id]!;
@@ -523,7 +575,7 @@ export function Timeline() {
   return (
     <div className="timeline-wrap">
       {picking && pickIndex >= 0 && <PickingBar index={pickIndex} rig={rigs[pickIndex]!} color={pickColor} />}
-      <div className={`timeline${picking ? " picking" : ""}`} style={{ ["--thumb-aspect" as string]: aspect, ...(picking && { ["--rig" as string]: pickColor }) }}>
+      <div className={`timeline${picking ? " picking" : ""}${loop ? " drum" : ""}`} style={{ ["--thumb-aspect" as string]: aspect, ...(picking && { ["--rig" as string]: pickColor }) }}>
         <div className="tl-heads" style={{ minHeight: height + 40 }}>
           <div className="tl-head ruler" style={{ height: RULER_H }}>
             <button className="icon-btn small" onClick={() => zoomBy(1 / 1.5)} title="Alejar (⌘ + rueda, o pellizcar en el pad)">
@@ -547,7 +599,7 @@ export function Timeline() {
         <div className="tl-body" ref={scroller} onScroll={(e) => onScroll(e.currentTarget)}>
           <div
             className="tl-canvas"
-            style={{ width: cells * cw + 120, height: height + 40 }}
+            style={{ width: loop ? (whole ? period * cw + 120 : scroll.width) : cells * cw + 120, height: height + 40 }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -556,6 +608,7 @@ export function Timeline() {
             onDragOver={(e) => e.preventDefault()}
             onDrop={onDrop}
           >
+            <div className="tl-drum" style={loop ? { transform: `translateX(${-shiftX}px)` } : undefined}>
             <div className="tl-ruler" style={{ height: RULER_H }}>
               {ticks.map((v) => {
                 const c = wrap(v);
@@ -568,8 +621,14 @@ export function Timeline() {
               {/* Where a loop starts again. */}
               {loop &&
                 laps.map((l) => (
-                  <span key={`seam-${l}`} className="tl-seam-label" style={{ left: lapX(l) }} title="Acá la película vuelve a empezar">
-                    ↻
+                  <span
+                    key={`seam-${l}`}
+                    data-seam={l * period}
+                    className="tl-seam-label"
+                    style={{ left: lapX(l) }}
+                    title={`Acá la película vuelve a empezar (${period} celdas): arrastralo para alargarla o acortarla`}
+                  >
+                    ↻ {period}
                   </span>
                 ))}
             </div>
@@ -675,6 +734,11 @@ export function Timeline() {
               <div key={l} className={`tl-selected${playing ? " playing" : ""}`} style={{ left: cursor.cell * cw + lapX(l), width: cw, height }} />
             ))}
             {loop && laps.map((l) => <div key={`seam-${l}`} className="tl-seam" style={{ left: lapX(l), height }} />)}
+            {gesture?.kind === "length" && (
+              <div className="tl-seam ghost" style={{ left: (gesture.seam + gesture.dx) * cw, height }}>
+                <span>{period + gesture.dx} celdas</span>
+              </div>
+            )}
             {playing && <div className="tl-play" ref={playRef} style={{ height }} />}
 
             {gesture?.kind === "band" && (
@@ -698,6 +762,7 @@ export function Timeline() {
             >
               + 1 s
             </button>}
+            </div>
           </div>
         </div>
 
