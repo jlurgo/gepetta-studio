@@ -550,6 +550,21 @@ input[type="range"] {
 
 .tl-head.track {
   border-radius: 8px;
+  cursor: grab;
+  transition: transform 0.12s ease;
+}
+
+.tl-head.track:hover {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.tl-head.track.dragging {
+  position: relative;
+  z-index: 2;
+  cursor: grabbing;
+  transition: none;
+  background: var(--panel);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
 }
 
 .tl-head.track.current {

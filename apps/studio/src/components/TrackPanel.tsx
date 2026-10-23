@@ -1,12 +1,14 @@
-import { type Clip, type ClipPatch, IDENTITY_TRANSFORM, PHOTO_TRACK, type Track, newId, setSequenceOps } from "@gepetta/core";
+import { type Clip, type ClipPatch, IDENTITY_TRANSFORM, PHOTO_TRACK, type Track, clipAt, newId, setSequenceOps } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
+import { useCamera } from "../state/camera";
+import { selectStrokes, strokeName } from "../state/strokes";
 import { commitShot, shotOf, useShotPreview } from "../state/shot";
 import { FrameInfo } from "./FrameInfo";
 import { ShotEditor } from "./ShotEditor";
-import { StrokesPanel } from "./StrokesPanel";
-import { SequenceLink, SequencePanel } from "./SequencePanel";
+import { STROKE_ICONS, StrokesPanel } from "./StrokesPanel";
+import { SequenceLink, SequencePanel, sequenceColor } from "./SequencePanel";
 import { Icon } from "./Icon";
 
 /** Slider that shows changes live and records one history step when released. */
@@ -117,9 +119,11 @@ function Details({ track }: { track: Track }) {
   );
 }
 
-/** Settings of the one selected picture, with a way to its track. */
+/**
+ * Settings of the one picture picked (an object of a cell, picked on the
+ * stage or from its cell), with a way back to the cell and to its sequence.
+ */
 function ClipDetails({ clip }: { clip: Clip }) {
-  const track = useEditor((s) => s.film?.tracks.find((t) => t.id === clip.track));
   const fps = useEditor((s) => s.film?.settings.fps ?? 12);
   const [name, setName] = useState(clip.name);
   useEffect(() => setName(clip.name), [clip.name]);
@@ -138,29 +142,13 @@ function ClipDetails({ clip }: { clip: Clip }) {
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         />
       </label>
-      {track && (
-        <button className="btn small ghost go-track" onClick={() => useLayers.getState().select(track.id)} title="Ver los ajustes del track">
-          Track: <strong>{track.name}</strong> →
-        </button>
-      )}
+      <button className="btn small ghost go-track" onClick={() => showCellOf(clip)} title="Ver la celda donde está">
+        ← Celda <strong>{cellShown(clip) + 1}</strong>
+      </button>
       {clip.seq && <SequenceLink seq={clip.seq} />}
       <p className="hint">
         Celdas {clip.start + 1}–{clip.start + clip.length} · desde {seconds(clip.start)} s, dura {seconds(clip.length)} s
       </p>
-      <div className="control">
-        <span>Duración</span>
-        <span className="hold-control">
-          <button className="icon-btn small" onClick={() => update({ length: clip.length - 1 })} disabled={clip.length <= 1}>
-            <Icon name="minus" size={14} />
-          </button>
-          <span>
-            ×{clip.length} {clip.length === 1 ? "celda" : "celdas"}
-          </span>
-          <button className="icon-btn small" onClick={() => update({ length: clip.length + 1 })}>
-            <Icon name="plus" size={14} />
-          </button>
-        </span>
-      </div>
       <label className="control toggle">
         <input type="checkbox" checked={clip.visible} onChange={(e) => update({ visible: e.target.checked })} />
         <span>Visible</span>
@@ -177,6 +165,114 @@ function ClipDetails({ clip }: { clip: Clip }) {
       >
         <Icon name="trash" size={14} /> Borrar imagen
       </button>
+    </div>
+  );
+}
+
+/** The cell of a picture to go back to: the one looked at, if it is in the picture. */
+function cellShown(clip: Clip): number {
+  const { cursor } = useEditor.getState();
+  return cursor.track === clip.track && cursor.cell >= clip.start && cursor.cell < clip.start + clip.length ? cursor.cell : clip.start;
+}
+
+function showCellOf(clip: Clip) {
+  const { moveTo, setSelection } = useEditor.getState();
+  moveTo(cellShown(clip), clip.track);
+  setSelection([clip.id]);
+  selectStrokes(null, []);
+  useLayers.getState().showCell(clip.track);
+}
+
+/** Picks an object of a cell: its picture, or one of the picture's strokes. */
+function pickObject(clip: Clip, strokeId?: string) {
+  useEditor.getState().setSelection([clip.id]);
+  selectStrokes(strokeId ? clip.id : null, strokeId ? [strokeId] : []);
+  useLayers.getState().showClip(clip.track);
+}
+
+/**
+ * The cell picked in a track's row (the one at the cursor): where it is, what
+ * is in it (its picture and the picture's strokes, each one to pick), how many
+ * cells the picture lasts, and a way to its track.
+ */
+function CellDetails() {
+  const film = useEditor((s) => s.film)!;
+  const cursor = useEditor((s) => s.cursor);
+  const live = useCamera((s) => s.rigs.find((r) => {
+    if (!r.source) return false;
+    const t = s.targetOf(r);
+    return t.track === cursor.track && t.cell === cursor.cell;
+  }));
+  const liveName = useCamera((s) => (live ? s.labelOf(live.source?.id ?? live.deviceId) : null));
+  const track = film.tracks.find((t) => t.id === cursor.track);
+  if (!track) return null;
+  const clip = clipAt(film, track.id, cursor.cell);
+  const fps = film.settings.fps;
+  const commit = useEditor.getState().commit;
+  const update = (patch: ClipPatch) => clip && commit([{ type: "clip.update", id: clip.id, patch }]);
+  const strokes = [...(clip?.strokes ?? [])].reverse();
+
+  return (
+    <div className="layer-details">
+      <p className="hint">
+        {(cursor.cell / fps).toFixed(2).replace(/\.?0+$/, "")} s
+      </p>
+      <button className="btn small ghost go-track" onClick={() => useLayers.getState().select(track.id)} title="Ver los ajustes del track">
+        Track: <strong>{track.name}</strong> →
+      </button>
+      {live && <p className="hint">Acá está en vivo la cámara {liveName ?? ""}: lo que saques va en esta celda.</p>}
+      {!clip ? (
+        !live && <p className="hint">Vacía. Lo que saques con la cámara, dibujes o importes va acá.</p>
+      ) : (
+        <>
+          <h4>En la celda</h4>
+          <ul className="stroke-list cell-objects">
+            <li>
+              <button className="stroke-pick" onClick={() => pickObject(clip)} title="Ver sus ajustes (también: tocala en la imagen grande con «Elegir»)">
+                <Icon name="image" size={14} />
+                <span>{clip.name}</span>
+              </button>
+              {clip.seq && <span className="seq-dot" style={{ ["--seq" as string]: sequenceColor(clip.seq) }} title="Parte de una secuencia" />}
+            </li>
+            {strokes.map((st) => (
+              <li key={st.id} className={st.hidden ? "off" : ""}>
+                <button className="stroke-pick" onClick={() => pickObject(clip, st.id)}>
+                  <Icon name={STROKE_ICONS[st.tool]} size={14} />
+                  <span>{strokeName(st)}</span>
+                  {st.color && st.tool !== "erase" && <span className="stroke-color" style={{ background: st.color }} />}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="hint">Tocá un objeto acá o en la imagen grande (con «Elegir») para ver sus ajustes.</p>
+          <div className="control">
+            <span>Se ve durante</span>
+            <span className="hold-control">
+              <button className="icon-btn small" onClick={() => update({ length: clip.length - 1 })} disabled={clip.length <= 1}>
+                <Icon name="minus" size={14} />
+              </button>
+              <span>
+                {clip.length} {clip.length === 1 ? "celda" : "celdas"}
+              </span>
+              <button className="icon-btn small" onClick={() => update({ length: clip.length + 1 })}>
+                <Icon name="plus" size={14} />
+              </button>
+            </span>
+          </div>
+          {clip.length > 1 && (
+            <p className="hint">
+              La misma imagen, de la celda {clip.start + 1} a la {clip.start + clip.length}.
+            </p>
+          )}
+          <label className="control toggle">
+            <input type="checkbox" checked={clip.visible} onChange={(e) => update({ visible: e.target.checked })} />
+            <span>Visible</span>
+          </label>
+          <button className="btn small danger" onClick={() => commit([{ type: "clip.remove", ids: [clip.id] }], "Vaciar la celda", { selection: [] })}>
+            <Icon name="trash" size={14} /> Vaciar{clip.length > 1 ? ` (las ${clip.length} celdas)` : ""}
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -309,6 +405,7 @@ export function DetailPanel() {
   const track = useEditor((s) => s.film?.tracks.find((t) => t.id === trackId) ?? null);
   const clip = useEditor((s) => (s.selection.length === 1 ? (s.film?.clips[s.selection[0]!] ?? null) : null));
   const many = useEditor((s) => s.selection.length > 1);
+  const cursorCell = useEditor((s) => s.cursor.cell);
 
   // Undo can remove the selected track.
   useEffect(() => {
@@ -331,6 +428,14 @@ export function DetailPanel() {
       </div>
     );
   }
+  if (detail === "cell" && !many) {
+    return (
+      <div className="layers-panel">
+        <h3>Celda {cursorCell + 1}</h3>
+        <CellDetails />
+      </div>
+    );
+  }
   if (detail === "clip" && clip) {
     return (
       <div className="layers-panel">
@@ -345,15 +450,15 @@ export function DetailPanel() {
       {track ? (
         <>
           {clip && clip.track === track.id && (
-            <button className="btn small ghost go-track" onClick={() => useLayers.getState().showClip(track.id)}>
-              ← Volver a la imagen <strong>{clip.name}</strong>
+            <button className="btn small ghost go-track" onClick={() => showCellOf(clip)}>
+              ← Volver a la celda <strong>{cellShown(clip) + 1}</strong>
             </button>
           )}
           <Details key={track.id} track={track} />
         </>
       ) : (
         <p className="hint">
-          Tocá una imagen o el nombre de un track en la línea de tiempo para ver sus ajustes. Con «+ Track» agregás una capa vacía, una imagen fija o un video para rotoscopia.
+          Tocá una celda o el nombre de un track en la línea de tiempo para ver sus ajustes. Con «+ Track» agregás una capa vacía, una imagen fija o un video para rotoscopia.
         </p>
       )}
     </div>

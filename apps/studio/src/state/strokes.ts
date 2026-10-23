@@ -157,14 +157,15 @@ export interface StageObject {
 /**
  * Everything under a film point at a cell, topmost first: each picture's
  * strokes there, then the picture itself (where it is not see-through, or
- * where one of its strokes is). `reach` is how near counts, in film pixels.
+ * where one of its strokes is). `reach` is how near counts, in film pixels;
+ * `onlyTrack` keeps to one track's cell.
  */
-export async function objectsAt(film: FilmState, cell: number, p: { x: number; y: number }, reach: number): Promise<StageObject[]> {
+export async function objectsAt(film: FilmState, cell: number, p: { x: number; y: number }, reach: number, onlyTrack?: string): Promise<StageObject[]> {
   const { filmId } = useEditor.getState();
   if (!filmId) return [];
   const out: StageObject[] = [];
   for (const track of [...film.tracks].reverse()) {
-    if (!track.visible) continue;
+    if (!track.visible || (onlyTrack && track.id !== onlyTrack)) continue;
     const clip = Object.values(film.clips).find((c) => c.track === track.id && c.visible && cell >= c.start && cell < c.start + c.length);
     if (!clip) continue;
     const transform = composeTransforms(track.transform, clip.transform);

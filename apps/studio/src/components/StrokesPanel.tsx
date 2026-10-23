@@ -4,7 +4,7 @@ import { BRUSHES, type BrushKind, PAINT_COLORS } from "../state/paint";
 import { removeStrokes, selectStrokes, strokeName, updateStrokes, useStrokes } from "../state/strokes";
 import { Icon, type IconName } from "./Icon";
 
-const ICONS: Record<Stroke["tool"], IconName> = {
+export const STROKE_ICONS: Record<Stroke["tool"], IconName> = {
   draw: "brush",
   erase: "eraser",
   tint: "tint",
@@ -165,7 +165,7 @@ export function StrokesPanel({ clip }: { clip: Clip }) {
         {[...strokes].reverse().map((s) => (
           <li key={s.id} className={`${picked.includes(s) ? "active" : ""}${s.hidden ? " off" : ""}`}>
             <button className="stroke-pick" onClick={(e) => toggle(s, e.shiftKey || e.metaKey || e.ctrlKey)}>
-              <Icon name={ICONS[s.tool]} size={14} />
+              <Icon name={STROKE_ICONS[s.tool]} size={14} />
               <span>{strokeName(s)}</span>
               {s.color && s.tool !== "erase" && <span className="stroke-color" style={{ background: s.color }} />}
             </button>
@@ -182,7 +182,7 @@ export function StrokesPanel({ clip }: { clip: Clip }) {
           </li>
         ))}
       </ul>
-      {picked.length > 0 ? <StrokeEditor clip={clip} strokes={picked} /> : <p className="hint">Tocá un trazo (acá o en la imagen, con «Mover») para cambiarlo o borrarlo.</p>}
+      {picked.length > 0 ? <StrokeEditor clip={clip} strokes={picked} /> : <p className="hint">Tocá un trazo (acá o en la imagen, con «Elegir») para cambiarlo o borrarlo.</p>}
     </div>
   );
 }

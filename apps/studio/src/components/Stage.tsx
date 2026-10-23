@@ -80,6 +80,15 @@ function withPreview(raw: FilmState): FilmState {
   return clip ? { ...film, clips: { ...film.clips, [clip.id]: { ...clip, transform } } } : film;
 }
 
+/** The picture in the cell picked in a track's row (the cell at the cursor), unless a camera is live there. */
+function cellClip(film: FilmState) {
+  const { cursor } = useEditor.getState();
+  const track = film.tracks.find((t) => t.id === cursor.track);
+  const clip = track?.visible ? clipAt(film, track.id, cursor.cell) : undefined;
+  if (!clip || !track || liveRigAt(track.id, cursor.cell)) return null;
+  return { clip, track };
+}
+
 /**
  * The picture selected in the timeline, when the cursor is on it: it shows on
  * top of everything (at the viewing opacity), to work on it.
@@ -357,7 +366,7 @@ function targetOnStage(): OnStage | null {
     };
   }
   // The picture picked in the timeline: its handles change just that picture.
-  const focus = layers.detail === "clip" ? focusedClip(film) : null;
+  const focus = layers.detail === "clip" ? focusedClip(film) : layers.detail === "cell" ? cellClip(film) : null;
   if (focus) {
     const { clip, track } = focus;
     const transform = composeTransforms(track.transform, clip.transform);
@@ -527,12 +536,17 @@ function usePick(filmRect: React.RefObject<FilmRect | null>) {
     const again = last.current && Math.hypot(e.clientX - last.current.x, e.clientY - last.current.y) <= 4;
     last.current = { x: e.clientX, y: e.clientY };
     const shift = e.shiftKey;
-    void objectsAt(film, cursor.cell, p, 6 / r.s).then((found) => {
+    // A cell picked in a track's row (or an object of it): only what is in that cell.
+    const { detail } = useLayers.getState();
+    const inCell = (detail === "cell" || detail === "clip") && useEditor.getState().selection.length <= 1;
+    void objectsAt(film, cursor.cell, p, 6 / r.s, inCell ? cursor.track : undefined).then((found) => {
       const editor = useEditor.getState();
       const picked = useStrokes.getState();
       if (!found.length) {
         selectStrokes(null, []);
-        editor.setSelection([]);
+        // Nothing of the cell there: back to the cell.
+        if (inCell) useLayers.getState().showCell(cursor.track);
+        else editor.setSelection([]);
         return;
       }
       if (shift && picked.clip) {

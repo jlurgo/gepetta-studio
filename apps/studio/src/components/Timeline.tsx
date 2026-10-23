@@ -24,22 +24,72 @@ const TAIL_SECONDS = 2;
 
 const mod = (v: number, n: number) => ((v % n) + n) % n;
 
-function TrackHead({ track, current }: { track: Track; current: boolean }) {
-  const selected = useLayers((s) => s.trackId === track.id);
+/** A track's head being dragged up or down to put it elsewhere (rows shown top first). */
+type HeadDrag = { row: number; y0: number; dy: number; moved: boolean };
+const ROW_STEP = TRACK_H + ROW_GAP;
+
+/** Where a dragged head lands, and how much each other head makes room. */
+function headTarget(drag: HeadDrag, rows: number): number {
+  return Math.max(0, Math.min(rows - 1, drag.row + Math.round(drag.dy / ROW_STEP)));
+}
+function headShift(drag: HeadDrag | null, row: number, rows: number): number {
+  if (!drag?.moved) return 0;
+  if (row === drag.row) return drag.dy;
+  const to = headTarget(drag, rows);
+  if (drag.row < to && row > drag.row && row <= to) return -ROW_STEP;
+  if (to < drag.row && row >= to && row < drag.row) return ROW_STEP;
+  return 0;
+}
+
+/**
+ * A track's head: a click anywhere on it (but its buttons) picks the track;
+ * dragging it up or down puts the track elsewhere.
+ */
+function TrackHead({ track, current, row, rows, drag, setDrag }: { track: Track; current: boolean; row: number; rows: number; drag: HeadDrag | null; setDrag(d: HeadDrag | null): void }) {
+  const selected = useLayers((s) => s.trackId === track.id && s.detail === "track" && s.panel === "detail");
+  const dragging = drag?.moved && drag.row === row;
+  // This head's own press (state updates may come after the next event).
+  const press = useRef<HeadDrag | null>(null);
+  const follow = (d: HeadDrag | null) => {
+    press.current = d;
+    setDrag(d);
+  };
+  const pick = () => {
+    useLayers.getState().select(track.id);
+    const { cursor, moveTo } = useEditor.getState();
+    moveTo(cursor.cell, track.id);
+  };
   return (
-    <div className={`tl-head track${selected ? " selected" : ""}${current ? " current" : ""}${track.visible ? "" : " off"}`} style={{ height: TRACK_H }}>
+    <div
+      className={`tl-head track${selected ? " selected" : ""}${current ? " current" : ""}${track.visible ? "" : " off"}${dragging ? " dragging" : ""}`}
+      style={{ height: TRACK_H, transform: `translateY(${headShift(drag, row, rows)}px)` }}
+      title={`${track.name}${track.exported ? "" : " (solo referencia: no se exporta)"} — tocá para ver sus ajustes; arrastralo para cambiarlo de lugar`}
+      onPointerDown={(e) => {
+        if (e.button !== 0 || (e.target as HTMLElement).closest("button:not(.tl-name), input")) return;
+        capturePointer(e);
+        follow({ row, y0: e.clientY, dy: 0, moved: false });
+      }}
+      onPointerMove={(e) => {
+        const drag = press.current;
+        if (!drag) return;
+        const dy = e.clientY - drag.y0;
+        follow({ ...drag, dy, moved: drag.moved || Math.abs(dy) > 4 });
+      }}
+      onPointerUp={() => {
+        const drag = press.current;
+        if (!drag) return;
+        follow(null);
+        if (!drag.moved) return pick();
+        const to = headTarget(drag, rows);
+        // Rows are shown top first; the film keeps them bottom first.
+        if (to !== row) useEditor.getState().commit([{ type: "track.move", trackId: track.id, index: rows - 1 - to }]);
+      }}
+      onPointerCancel={() => follow(null)}
+    >
       <button className="icon-btn small" onClick={() => updateTrack(track.id, { visible: !track.visible })} title={track.visible ? "Ocultar" : "Mostrar"}>
         <Icon name={track.visible ? "eye" : "eyeOff"} size={15} />
       </button>
-      <button
-        className="tl-name"
-        onClick={() => {
-          useLayers.getState().select(selected ? null : track.id);
-          const { cursor, moveTo } = useEditor.getState();
-          moveTo(cursor.cell, track.id);
-        }}
-        title={`${track.name}${track.exported ? "" : " (solo referencia: no se exporta)"} — tocá para elegirlo y ver sus ajustes`}
-      >
+      <button className="tl-name" tabIndex={0} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && pick()}>
         {track.name}
         {!track.exported && <span className="ref-dot" aria-hidden />}
       </button>
@@ -90,6 +140,7 @@ export function Timeline() {
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ left: 0, width: 1200 });
   const [gesture, setGestureState] = useState<Gesture | null>(null);
+  const [headDrag, setHeadDrag] = useState<HeadDrag | null>(null);
   /** The picture ranges start from (the last one picked), and the last one pressed (for double/triple clicks). */
   const anchorRef = useRef<ClipId | null>(null);
   const lastDown = useRef<ClipId | null>(null);
@@ -446,7 +497,7 @@ export function Timeline() {
       lastDown.current = id;
       setSelection(ids);
       useEditor.getState().moveTo(Math.max(clip.start, Math.min(p.cell, clipEnd(clip) - 1)), clip.track);
-      if (ids.length === 1) useLayers.getState().showClip(clip.track);
+      if (ids.length === 1) useLayers.getState().showCell(clip.track);
       if (ids.includes(id)) setGesture({ kind: "move", x0: p.x, y0: p.y, id, ids, moved: false, dx: 0, dy: 0 });
       return;
     }
@@ -528,7 +579,7 @@ export function Timeline() {
     } else if (g.kind === "move" && !g.moved && !(e.shiftKey || e.metaKey || e.ctrlKey) && e.detail < 2) {
       // A plain click on a picture of a group picks just that one.
       useEditor.getState().setSelection([g.id]);
-      useLayers.getState().showClip(film!.clips[g.id]!.track);
+      useLayers.getState().showCell(film!.clips[g.id]!.track);
     } else if (g.kind === "columns") {
       if (g.moved && g.dx) moveColumns(g.dx);
     } else if (g.kind === "resize" && g.dx) {
@@ -539,6 +590,7 @@ export function Timeline() {
       if (!g.add) useEditor.getState().setSelection([]);
       useEditor.getState().setColumns(null);
       useEditor.getState().moveTo(p.cell, p.track.id);
+      if (!g.add) useLayers.getState().showCell(p.track.id);
     }
   }
 
@@ -599,8 +651,8 @@ export function Timeline() {
           <div className="tl-head main" style={{ height: RESULT_H }}>
             Resultado
           </div>
-          {tracks.map((t) => (
-            <TrackHead key={t.id} track={t} current={t.id === cursor.track} />
+          {tracks.map((t, i) => (
+            <TrackHead key={t.id} track={t} current={t.id === cursor.track} row={i} rows={tracks.length} drag={headDrag} setDrag={setHeadDrag} />
           ))}
           <button className="btn small ghost tl-add" onClick={() => addTrack()} title="Agregar un track vacío arriba (imágenes y videos: herramienta «Imágenes y videos»)">
             <Icon name="plus" size={14} /> Track

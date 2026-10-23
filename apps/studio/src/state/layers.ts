@@ -16,8 +16,12 @@ export type HandleTarget =
 interface LayersState {
   /** Track picked in the timeline (by its name, or as the track of the picture shown). */
   trackId: TrackId | null;
-  /** What the detail panel shows: the selected picture, its track, or its sequence. */
-  detail: "clip" | "track" | "sequence";
+  /**
+   * What the detail panel shows: the cell at the cursor (picked in a track's
+   * row), the picture picked (an object in a cell, or several pictures), a
+   * track, or a sequence.
+   */
+  detail: "cell" | "clip" | "track" | "sequence";
   /** The sequence shown, and whether the handles move all of it or just the picture at the cursor. */
   seq: string | null;
   seqHandles: "all" | "one";
@@ -27,6 +31,8 @@ interface LayersState {
   preview: { target: HandleTarget; transform: Transform2D } | null;
   /** Shows a track's settings. */
   select(trackId: TrackId | null): void;
+  /** Shows the cell at the cursor (picked in its track's row). */
+  showCell(trackId: TrackId): void;
   /** Shows the selected picture's settings (its track is remembered to go there). */
   showClip(trackId: TrackId): void;
   setPreview(preview: LayersState["preview"]): void;
@@ -42,6 +48,7 @@ export const useLayers = create<LayersState>((set) => ({
   panel: "tool",
   preview: null,
   select: (trackId) => set({ trackId, detail: "track", preview: null, panel: trackId ? "detail" : "tool" }),
+  showCell: (trackId) => set({ trackId, detail: "cell", preview: null, panel: "detail" }),
   showClip: (trackId) => set({ trackId, detail: "clip", preview: null, panel: "detail" }),
   setPreview: (preview) => set({ preview }),
   showSequence: (seq) => set({ seq, detail: "sequence", preview: null, panel: "detail" }),
