@@ -1,4 +1,5 @@
 import {
+  type ColumnRange,
   type ClipId,
   type FilmState,
   type History,
@@ -71,10 +72,11 @@ interface EditorState {
   /** Pictures selected in the timeline (to move, delete, lengthen…). */
   selection: ClipId[];
   /**
-   * Columns selected in the results row: cells [start, end) of every track,
-   * the film as it comes out there (moved as a whole; effects will go here).
+   * Columns selected in the results row: stretches of cells [start, end) of
+   * every track, the film as it comes out there (sorted, apart; one stretch
+   * can be moved as a whole; effects will go here).
    */
-  columns: { start: number; end: number } | null;
+  columns: ColumnRange[] | null;
   onion: OnionSettings;
   loop: boolean;
   tailSeconds: number;
@@ -112,7 +114,7 @@ interface EditorState {
   moveTo(cell: number, track?: TrackId, along?: boolean): void;
   setSelection(ids: ClipId[]): void;
   addRelease(release: Release): void;
-  setColumns(columns: { start: number; end: number } | null): void;
+  setColumns(columns: ColumnRange[] | null): void;
   setOnion(patch: Partial<OnionSettings>): void;
   set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep" | "captureMode" | "focusOpacity">>): void;
   /** Plays from the cursor (from the start if the cursor is past the end), or the last seconds. */
@@ -301,7 +303,8 @@ export const useEditor = create<EditorState>((set, get) => {
       scheduleSave(filmId, history, film);
     },
     setColumns(columns) {
-      set({ columns, ...(columns && { selection: [] }) });
+      const picked = columns?.length ? columns : null;
+      set({ columns: picked, ...(picked && { selection: [] }) });
     },
     setOnion(patch) {
       set({ onion: { ...get().onion, ...patch } });

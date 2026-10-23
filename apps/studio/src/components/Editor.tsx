@@ -1,6 +1,6 @@
 import { currentSettings, hasSettings, usePaint } from "../state/paint";
 import { TOOLS } from "./StageTools";
-import { type FilmState, clipAt } from "@gepetta/core";
+import { type FilmState, cellsInColumns, clipAt } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import {
   shoot,
@@ -226,15 +226,19 @@ function Transport() {
         {columns ? (
           <>
             <span className="hint">
-              {columns.end - columns.start === 1 ? `Columna ${columns.start + 1}` : `Columnas ${columns.start + 1}–${columns.end}`}
+              {columns.length > 1
+                ? `${cellsInColumns(columns)} columnas en ${columns.length} partes`
+                : columns[0]!.end - columns[0]!.start === 1
+                  ? `Columna ${columns[0]!.start + 1}`
+                  : `Columnas ${columns[0]!.start + 1}–${columns[0]!.end}`}
             </span>
-            <button className="icon-btn" onClick={() => nudgeSelected(-1)} title="Mover la columna una celda a la izquierda (⌥←)">
+            <button className="icon-btn" onClick={() => nudgeSelected(-1)} disabled={columns.length > 1} title="Mover la columna una celda a la izquierda (⌥←)">
               <Icon name="left" />
             </button>
-            <button className="icon-btn" onClick={() => nudgeSelected(1)} title="Mover la columna una celda a la derecha (⌥→)">
+            <button className="icon-btn" onClick={() => nudgeSelected(1)} disabled={columns.length > 1} title="Mover la columna una celda a la derecha (⌥→)">
               <Icon name="right" />
             </button>
-            <button className="icon-btn danger" onClick={deleteSelected} title="Vaciar estas celdas en todos los tracks (Supr)">
+            <button className="icon-btn danger" onClick={deleteSelected} title="Eliminar estas columnas en todos los tracks: lo que sigue se corre (Supr)">
               <Icon name="trash" />
             </button>
           </>

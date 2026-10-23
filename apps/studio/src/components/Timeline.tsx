@@ -1,4 +1,4 @@
-import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, stackAt, wrapCell } from "@gepetta/core";
+import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, columnsContain, extendColumns, stackAt, toggleColumns, wrapCell } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addTrack, extendFilm, setLoopLength, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
@@ -395,14 +395,22 @@ export function Timeline() {
       return;
     }
     if (p.y < rowsTop) {
-      // Results: select the column (the film as it comes out there); drag it to move it.
+      // Results: pick the column (the film as it comes out there); ⇧ extends, ⌘/Ctrl adds or takes out; drag one stretch to move it.
       const { setColumns, moveTo } = useEditor.getState();
       const shownRun = runs.find((r) => p.v >= r.start && p.v < r.end);
-      const run = shownRun && { start: wrap(shownRun.start), end: wrap(shownRun.start) + shownRun.end - shownRun.start };
+      // An empty cell (or a camera's live one) is a column of its own.
+      const live = rigs.some((r) => r.source && r.target.cell === p.cell);
+      const run = shownRun
+        ? { start: wrap(shownRun.start), end: wrap(shownRun.start) + shownRun.end - shownRun.start }
+        : p.cell < film!.length || live
+          ? { start: p.cell, end: p.cell + 1 }
+          : null;
       moveTo(p.cell, undefined);
       if (!run) return setColumns(null);
-      if (e.shiftKey && columns) setColumns({ start: Math.min(columns.start, run.start), end: Math.max(columns.end, run.end) });
-      else if (!(columns && p.cell >= columns.start && p.cell < columns.end)) setColumns(run);
+      const picked = columns ?? [];
+      if (e.shiftKey) return setColumns(extendColumns(picked, run));
+      if (e.metaKey || e.ctrlKey) return setColumns(toggleColumns(picked, run));
+      if (!columnsContain(picked, p.cell)) setColumns([run]);
       capturePointer(e);
       setGesture({ kind: "columns", x0: p.x, dx: 0, moved: false });
       return;
@@ -679,20 +687,22 @@ export function Timeline() {
             )}
 
             {columns &&
-              laps.map((l) => (
-              <Fragment key={l}>
-                <div
-                  className={`tl-colsel${gesture?.kind === "columns" && gesture.moved ? " from" : ""}`}
-                  style={{ left: columns.start * cw + lapX(l), width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
-                />
-                {gesture?.kind === "columns" && gesture.moved && (
-                  <div
-                    className="tl-colsel ghost"
-                    style={{ left: Math.max(0, columns.start + gesture.dx) * cw + lapX(l), width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
-                  />
-                )}
-              </Fragment>
-              ))}
+              laps.map((l) =>
+                columns.map((c) => (
+                  <Fragment key={`${l}:${c.start}`}>
+                    <div
+                      className={`tl-colsel${gesture?.kind === "columns" && gesture.moved ? " from" : ""}`}
+                      style={{ left: c.start * cw + lapX(l), width: (c.end - c.start) * cw, top: RULER_H, height: height - RULER_H }}
+                    />
+                    {gesture?.kind === "columns" && gesture.moved && columns.length === 1 && (
+                      <div
+                        className="tl-colsel ghost"
+                        style={{ left: Math.max(0, c.start + gesture.dx) * cw + lapX(l), width: (c.end - c.start) * cw, top: RULER_H, height: height - RULER_H }}
+                      />
+                    )}
+                  </Fragment>
+                )),
+              )}
 
             {/* Each camera live in the cell it aims at. */}
             {laps.map((l) => rigs.map((r) => {

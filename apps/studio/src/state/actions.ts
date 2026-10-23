@@ -4,6 +4,11 @@ import {
   type ClipId,
   type FilmState,
   IDENTITY_TRANSFORM,
+  type ColumnRange,
+  afterLastPicture,
+  cellAfterRemoving,
+  cellsInColumns,
+  removeColumnsOps,
   isPlainLook,
   type MediaRef,
   type Op,
@@ -331,12 +336,38 @@ function targets(): Clip[] {
 /** Moves the selected columns `by` cells (every track's cells there, as a whole). */
 export function moveColumns(by: number) {
   const { columns, commit, cursor } = useEditor.getState();
-  if (!columns || by === 0 || columns.start + by < 0) return;
-  const length = columns.end - columns.start;
-  commit([{ type: "cells.move", start: columns.start, length, to: columns.start + by }], undefined, {
-    cursor: { ...cursor, cell: columns.start + by },
+  // One stretch at a time.
+  const one = columns?.length === 1 ? columns[0]! : null;
+  if (!one || by === 0 || one.start + by < 0) return;
+  const length = one.end - one.start;
+  commit([{ type: "cells.move", start: one.start, length, to: one.start + by }], undefined, {
+    cursor: { ...cursor, cell: one.start + by },
   });
-  useEditor.getState().setColumns({ start: columns.start + by, end: columns.end + by });
+  useEditor.getState().setColumns([{ start: one.start + by, end: one.end + by }]);
+}
+
+/**
+ * Takes the picked columns out of the film (what follows moves back). A
+ * camera aimed at a cell taken out goes right after the last picture of its
+ * track; one aimed further on moves back with its cell.
+ */
+export function removeColumns(ranges: ColumnRange[]) {
+  const { film, commit, cursor } = useEditor.getState();
+  if (!film || !ranges.length) return;
+  const ops = removeColumnsOps(film, ranges);
+  const removed = cellsInColumns(ranges);
+  if (ops.length) {
+    const label = removed === 1 ? "Eliminar una columna" : `Eliminar ${removed} columnas`;
+    commit(ops, label, { cursor: { ...cursor, cell: Math.max(0, Math.min(cellAfterRemoving(ranges, cursor.cell) ?? ranges[0]!.start, film.length - removed)) } });
+  }
+  useEditor.getState().setColumns(null);
+  const after = useEditor.getState().film!;
+  const camera = useCamera.getState();
+  for (const r of camera.rigs) {
+    const moved = cellAfterRemoving(ranges, r.target.cell);
+    const cell = moved === null ? afterLastPicture(after, r.target.track) : moved;
+    if (cell !== r.target.cell) camera.setTarget(r.id, { ...r.target, cell });
+  }
 }
 
 export function deleteSelected() {
@@ -347,10 +378,7 @@ export function deleteSelected() {
     removeStrokes(picked.clip.id, picked.strokes.map((st) => st.id));
     return;
   }
-  if (columns) {
-    commit([{ type: "cells.clear", start: columns.start, length: columns.end - columns.start }]);
-    return;
-  }
+  if (columns) return removeColumns(columns);
   const clips = targets();
   if (clips.length) useEditor.getState().commit([{ type: "clip.remove", ids: clips.map((c) => c.id) }], undefined, { selection: [] });
 }
