@@ -56,10 +56,13 @@
 - [x] Película en loop: el primer cuadro sigue al último, línea de tiempo como tambor que gira, largo elegido arrastrando ↻, cebolla que da la vuelta
 - [x] Ping-pong (ida y vuelta, también al exportar)
 - Herramientas para caminatas
-- Zootropo: simulación de tambor + export imprimible
-- Fenakitoscopio: distribución configurable en el círculo, ranuras, simulación,
-  impresión en papel + SVG/DXF/STL
-- Flipbook: imposición en hojas para imprimir y encuadernar
+- [x] Zootropo: simulación de tambor + export imprimible (PDF A4/Carta en tamaño
+  real: tira de π·d en pedazos con pestañas, pared con ranuras y dientes, base;
+  o solo la tira para el tambor del taller; SVG entero)
+- [x] Fenakitoscopio: distribución configurable en el círculo, ranuras (N, N+1, N−1),
+  simulación en el espejo, impresión en papel + SVG/DXF (falta STL)
+- [x] Flipbook: imposición en hojas para imprimir y encuadernar (tapa, franja para
+  abrochar con el número, líneas y marcas de corte; vista previa que pasa las hojas)
 
 ## Fase 5 — Audio, exportaciones avanzadas y online
 - Pistas de música y efectos (biblioteca local + fuentes online)
