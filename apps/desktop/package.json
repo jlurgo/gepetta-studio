@@ -1,7 +1,7 @@
 {
   "name": "@gepetta/desktop",
   "productName": "Gepetta Studio",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Estudio de animación stop-motion y cuadro a cuadro",
   "main": "dist-electron/main.cjs",
