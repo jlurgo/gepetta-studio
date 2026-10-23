@@ -514,7 +514,8 @@ export function beginStroke(p: Point, pressure: number, pen: boolean, mods: { al
     return true;
   }
   if ((tool === "erase" || tool === "tint") && !at.clip) return true;
-  const source = paint.cloneSource;
+  // Only the clone stamp copies; the source stays set for when it comes back.
+  const source = tool === "clone" ? paint.cloneSource : null;
   if (tool === "clone" && !source) {
     useBusy.getState().notify("Primero Alt+clic (⌥+clic) donde querés copiar.");
     return true;
