@@ -29,7 +29,7 @@ export const PAPERS: Record<PaperId, PageSize & { label: string }> = {
 /** Most printers can't print closer than this to the edge. */
 export const PAGE_MARGIN = 10;
 /** Room at the top of every page for its title and how to put it together. */
-export const PAGE_HEADER = 12;
+export const PAGE_HEADER = 15;
 
 export function pageSize(paper: PaperId, orientation: Orientation): PageSize {
   const p = PAPERS[paper];
@@ -151,6 +151,8 @@ export interface ZoetropeOptions {
   slitWidth: number;
   /** Glue tab at the end of each piece. */
   tab: number;
+  /** Only the picture strip, for a drum there already is. */
+  stripOnly?: boolean;
 }
 
 /** Wall of the drum, top to bottom: border, slits, gap, the pictures' height, border; then teeth folded onto the base. */
@@ -228,6 +230,7 @@ export function zoetropeLayout(o: ZoetropeOptions): ZoetropeLayout {
     y += height + STRIP_LABEL + STRIP_GAP;
   };
   pieces.forEach((piece, index) => place(o.pictureHeight, (x, y) => ({ kind: "pictures", x, y, height: o.pictureHeight, piece, index })));
+  if (o.stripOnly) return { circumference, pitch, wallHeight, pieces, pages, baseFits: true };
   pieces.forEach((piece, index) =>
     place(wallHeight + ZOETROPE_TEETH, (x, y) => ({ kind: "wall", x, y, height: wallHeight, piece, index })),
   );

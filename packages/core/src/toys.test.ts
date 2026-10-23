@@ -101,6 +101,12 @@ describe("zoetropeLayout", () => {
     expect(l.pieces).toHaveLength(1);
   });
 
+  it("makes only the picture strip for a drum there already is", () => {
+    const l = zoetropeLayout({ ...base, stripOnly: true });
+    expect(l.pages.flat().every((i) => i.kind === "pictures")).toBe(true);
+    expect(l.pages).toHaveLength(1);
+  });
+
   it("leaves the base out when it doesn't fit", () => {
     expect(zoetropeLayout({ ...base, diameter: 300 }).baseFits).toBe(false);
   });
