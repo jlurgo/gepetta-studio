@@ -34,7 +34,11 @@
 - [x] Varias cámaras a la vez, cada una con su track y celda destino; en vivo con la transparencia de su track; grabar video con cada una
 - [x] Barra de herramientas en la pantalla grande: mover, pincel y borrador (pintan en la celda del cursor; presión del lápiz)
 - [x] Herramientas al estilo Grease Pencil (Blender 2D): pinceles lápiz/tinta/marcador/aerógrafo con fuerza y suavizado, borrar, rellenar, teñir, formas (línea, rectángulo, elipse), sello de clonar (también desde otra celda) y cuentagotas
-- [ ] Trazos vectoriales editables (modo edición y esculpido de Grease Pencil): cambiaría el modelo de dibujo, a decidir
+- [x] Trazos como objetos: cada trazo se elige (en la imagen o en la lista), se cambia (color, grosor, fuerza, pincel), se oculta o se borra
+- [ ] Editar los puntos de un trazo, moverlo, esculpirlo (modo edición de Grease Pencil)
+- [x] Cámaras como herramientas en la barra, con sus propiedades en el panel de detalle; botón grande en modo foto o video con todas las cámaras habilitadas
+- [x] Ajustes de imagen sin tocar la foto (tamaño, recorte, giro, espejo, transparencia, mezcla, brillo/contraste/saturación): en vivo, en cada foto y cuadro grabado, editables en uno o varios
+- [ ] Fundido en el tiempo (aparecer/desaparecer en varios cuadros)
 - [ ] Selección y transformación de una parte de la imagen (lazo/rectángulo)
 - [x] Transformar capas: mover, rotar, escalar con manijas
 - Alinear capas por puntos de control
@@ -45,7 +49,8 @@
 - Importar SVG/PDF/raster como capas
 
 ## Fase 4 — Loops y dispositivos
-- Modo loop: visualización circular, ping-pong, herramientas para caminatas
+- [x] Película en loop: el primer cuadro sigue al último, línea de tiempo sin fin, cebolla que da la vuelta
+- Ping-pong, herramientas para caminatas
 - Zootropo: simulación de tambor + export imprimible
 - Fenakitoscopio: distribución configurable en el círculo, ranuras, simulación,
   impresión en papel + SVG/DXF/STL

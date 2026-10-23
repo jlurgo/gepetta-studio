@@ -93,3 +93,28 @@ describe("stackAt", () => {
     expect(composeTransforms(IDENTITY_TRANSFORM, { x: 3, y: 4, rotation: 1, scale: 2 })).toEqual({ x: 3, y: 4, rotation: 1, scale: 2 });
   });
 });
+
+describe("loop films", () => {
+  it("shows the last pictures as the ones before the first", async () => {
+    const { previousClips } = await import("./layers");
+    const { applyOp } = await import("./ops");
+    const { emptyFilm, IDENTITY_TRANSFORM, PHOTO_TRACK } = await import("./model");
+    const pic = (id: string, start: number) => ({
+      id,
+      track: PHOTO_TRACK,
+      start,
+      length: 1,
+      media: { original: id, proxy: id, thumb: id, width: 10, height: 10 },
+      name: id,
+      visible: true,
+      opacity: 1,
+      transform: IDENTITY_TRANSFORM,
+    });
+    let film = emptyFilm({ name: "t", fps: 12, width: 160, height: 90 });
+    film = applyOp(film, { type: "clip.place", clips: [pic("a", 0), pic("b", 1), pic("c", 2), pic("d", 3)] });
+    expect(previousClips(film, PHOTO_TRACK, 1, 3).map((c) => c.id)).toEqual(["a"]);
+    film = applyOp(film, { type: "film.setLoop", loop: true });
+    expect(previousClips(film, PHOTO_TRACK, 1, 3).map((c) => c.id)).toEqual(["a", "d", "c"]);
+    expect(previousClips(film, PHOTO_TRACK, 0, 2).map((c) => c.id)).toEqual(["d", "c"]);
+  });
+});

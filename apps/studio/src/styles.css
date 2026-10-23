@@ -2151,3 +2151,34 @@ input[type="range"] {
   min-width: 52px;
 }
 
+
+.inline-control.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* A loop film: where it starts again, in the endless timeline. */
+.tl-seam {
+  position: absolute;
+  top: 0;
+  width: 0;
+  border-left: 2px dashed var(--accent);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.tl-seam-label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+  z-index: 5;
+}
+

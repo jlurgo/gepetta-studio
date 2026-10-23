@@ -1,5 +1,5 @@
-import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, stackAt } from "@gepetta/core";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, stackAt, wrapCell } from "@gepetta/core";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addImageTrack, addTrack, extendFilm, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
 import { playbackCell, useEditor } from "../state/editor";
@@ -21,6 +21,14 @@ const MAX_CW = 240;
 const ZOOM_KEY = "gepetta.timelineZoom";
 /** Empty cells shown past the end, to place pictures there. */
 const TAIL_SECONDS = 2;
+/** A loop film is drawn this many times in a row; the view stays near the middle one, so it never ends. */
+const LAPS = 41;
+const MID_LAP = 20;
+
+/** Where a cell of a loop film shows nearest to a point of the timeline (in cells). */
+function nearestLap(center: number, cell: number, period: number): number {
+  return period > 0 ? Math.round((center - cell) / period) * period + cell : cell;
+}
 
 function TrackHead({ track, current }: { track: Track; current: boolean }) {
   const selected = useLayers((s) => s.trackId === track.id);
@@ -127,7 +135,7 @@ export function Timeline() {
   const activeRig = useCamera((s) => s.activeRig);
   const picking = useCamera((s) => s.picking);
   /** While picking a camera's cell: the cell under the pointer. */
-  const [hover, setHover] = useState<{ track: string; cell: number } | null>(null);
+  const [hover, setHover] = useState<{ track: string; cell: number; v: number } | null>(null);
   const [cw, setCw] = useState(loadZoom);
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ left: 0, width: 1200 });
@@ -193,11 +201,23 @@ export function Timeline() {
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    const x = cursor.cell * cw;
+    const f = useEditor.getState().film;
+    const period = f?.settings.loop ? f.length : 0;
+    const x = nearestLap((el.scrollLeft + el.clientWidth / 2) / cw, cursor.cell, period) * cw;
     if (cursorAlong) el.scrollLeft = Math.max(0, x + cw / 2 - el.clientWidth / 2);
     else if (x < el.scrollLeft) el.scrollLeft = x - cw;
     else if (x + cw > el.scrollLeft + el.clientWidth) el.scrollLeft = x + 2 * cw - el.clientWidth;
   }, [cursor.cell, cw, cursorAlong]);
+
+  // A loop film opens (or turns into a loop) in its middle lap, at the cursor.
+  const loopPeriod = useEditor((s) => (s.film?.settings.loop ? s.film.length : 0));
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !loopPeriod) return;
+    el.scrollLeft = (MID_LAP * loopPeriod + useEditor.getState().cursor.cell + 0.5) * cw - el.clientWidth / 2;
+    // Only when the loop starts or its length changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loopPeriod, filmId]);
 
   // While playing, a line runs over the cells being shown (outside React: it moves every frame).
   const playing = useEditor((s) => s.playback !== null);
@@ -205,13 +225,25 @@ export function Timeline() {
   useEffect(() => {
     if (!playing) return;
     let raf = 0;
+    /** Where the line is (a loop film: it goes on to the next lap, never back). */
+    let last: number | null = null;
     const step = () => {
       raf = requestAnimationFrame(step);
       const { playback, film: f } = useEditor.getState();
       const line = playRef.current;
       const el = scroller.current;
       if (!playback || !f || !line || !el) return;
-      const cell = Math.max(0, Math.min(f.length - 1, playbackCell(playback, f.settings.fps)));
+      let cell = Math.max(0, Math.min(f.length - 1, playbackCell(playback, f.settings.fps)));
+      if (f.settings.loop && f.length) {
+        const period = f.length;
+        const now = wrapCell(f, playbackCell(playback, f.settings.fps));
+        cell = last === null ? nearestLap((el.scrollLeft + el.clientWidth / 2) / cw, now, period) : last - wrapCell(f, last) + now;
+        if (last !== null && cell < last) cell += period;
+        // Back to the middle laps (the timeline looks the same there).
+        const lap = Math.floor(cell / period);
+        if (lap > LAPS - 4) cell -= (lap - MID_LAP) * period;
+        last = cell;
+      }
       const x = cell * cw;
       line.style.transform = `translateX(${x}px)`;
       line.style.width = `${cw}px`;
@@ -225,20 +257,41 @@ export function Timeline() {
   if (!film || !filmId) return null;
   const fps = film.settings.fps;
   const tracks = [...film.tracks].reverse(); // top first, like the picture
-  const cells = film.length + TAIL_SECONDS * fps;
+  // A loop film repeats without end (see LAPS); `wrap` takes a cell of the timeline to the film's.
+  const loop = !!film.settings.loop && film.length > 0;
+  const period = loop ? film.length : 0;
+  const wrap = (v: number) => (loop ? ((v % period) + period) % period : v);
+  const cells = loop ? LAPS * period : film.length + TAIL_SECONDS * fps;
   const firstCell = Math.max(0, Math.floor(scroll.left / cw) - 1);
   const lastCell = Math.min(cells, Math.ceil((scroll.left + scroll.width) / cw) + 1);
+  /** The laps on screen (just one, the film, when it is not a loop), and where each starts. */
+  const laps: number[] = [];
+  if (loop) for (let l = Math.floor(firstCell / period); l <= Math.floor(Math.max(firstCell, lastCell - 1) / period); l++) laps.push(l);
+  else laps.push(0);
+  const lapX = (lap: number) => lap * period * cw;
   const rowsTop = RULER_H + ROW_GAP + RESULT_H + ROW_GAP;
   const rowTop = (i: number) => rowsTop + i * (TRACK_H + ROW_GAP);
   const height = rowTop(tracks.length);
   const selected = new Set(selection);
   const aspect = film.settings.width / film.settings.height;
 
+  /** Scrolling a loop film far from the middle jumps back by whole laps (it looks the same), so it never ends. */
+  const onScroll = (el: HTMLDivElement) => {
+    if (loop && !playing) {
+      const lap = Math.floor((el.scrollLeft + el.clientWidth / 2) / cw / period);
+      if (lap < 3 || lap > LAPS - 4) el.scrollLeft += (MID_LAP - lap) * period * cw;
+    }
+    setScroll({ left: el.scrollLeft, width: el.clientWidth });
+  };
+
   /** Zoom buttons: around the cursor. */
   const zoomBy = (factor: number) => {
     const el = scroller.current;
     const next = Math.max(MIN_CW, Math.min(MAX_CW, cw * factor));
-    if (el) zoomAnchor.current = { cell: cursor.cell + 0.5, x: (cursor.cell + 0.5) * cw - el.scrollLeft };
+    if (el) {
+      const cell = nearestLap((el.scrollLeft + el.clientWidth / 2) / cw, cursor.cell, period) + 0.5;
+      zoomAnchor.current = { cell, x: cell * cw - el.scrollLeft };
+    }
     setCw(next);
     saveZoom(next);
   };
@@ -248,17 +301,19 @@ export function Timeline() {
     const box = scroller.current!.getBoundingClientRect();
     const x = e.clientX - box.left + scroller.current!.scrollLeft;
     const y = e.clientY - box.top + scroller.current!.scrollTop;
-    const cell = Math.max(0, Math.floor(x / cw));
+    const v = Math.max(0, Math.floor(x / cw));
     const row = Math.floor((y - rowsTop) / (TRACK_H + ROW_GAP));
-    return { x, y, cell, row, track: y >= rowsTop && row < tracks.length ? tracks[row]! : null };
+    return { x, y, v, cell: wrap(v), row, track: y >= rowsTop && row < tracks.length ? tracks[row]! : null };
   };
 
   // Results row: one box per run of cells that look the same (empty cells get none).
   const runs: { start: number; end: number }[] = [];
   {
     let prev = "";
-    for (let c = firstCell; c < Math.min(lastCell, film.length); c++) {
-      const key = stackAt(film, c, { index })
+    for (let c = firstCell; c < (loop ? lastCell : Math.min(lastCell, film.length)); c++) {
+      // A loop's runs end where it starts again.
+      if (loop && wrap(c) === 0) prev = "";
+      const key = stackAt(film, wrap(c), { index })
         .map((s) => s.clipId)
         .join("|");
       if (key && runs.length && key === prev && runs[runs.length - 1]!.end === c) runs[runs.length - 1]!.end = c + 1;
@@ -313,17 +368,19 @@ export function Timeline() {
     strokes: c.strokes,
   });
   /** Cells of a clip that are on screen. */
-  const cellsOf = (c: Clip, length: number): number[] => {
+  const cellsOf = (c: Clip, length: number, lap: number): number[] => {
     const out: number[] = [];
-    for (let cell = Math.max(c.start, firstCell); cell < Math.min(c.start + length, lastCell); cell++) out.push(cell);
+    const from = firstCell - lap * period;
+    const to = lastCell - lap * period;
+    for (let cell = Math.max(c.start, from); cell < Math.min(c.start + length, to); cell++) out.push(cell);
     return out;
   };
   // Results row: the film at each cell on screen, with every camera live where it aims.
   const liveTargets = rigs.filter((r) => r.source).map((r) => ({ id: r.id, target: r.target }));
   const resultCells: { cell: number; items: CellItem[] }[] = [];
   for (let c = firstCell; c < lastCell; c++) {
-    const stack = c < film.length ? stackAt(film, c, { index }) : [];
-    const lives = liveTargets.filter((l) => l.target.cell === c);
+    const stack = wrap(c) < film.length ? stackAt(film, wrap(c), { index }) : [];
+    const lives = liveTargets.filter((l) => l.target.cell === wrap(c));
     if (!stack.length && !lives.length) continue;
     const items: CellItem[] = [];
     for (const t of film.tracks) {
@@ -338,7 +395,8 @@ export function Timeline() {
     resultCells.push({ cell: c, items });
   }
 
-  const visibleClips = (track: Track): Clip[] => (index.get(track.id) ?? []).filter((c) => clipEnd(c) > firstCell && c.start < lastCell);
+  const visibleClips = (track: Track, lap: number): Clip[] =>
+    (index.get(track.id) ?? []).filter((c) => clipEnd(c) > firstCell - lap * period && c.start < lastCell - lap * period);
 
   // -- pointer gestures ------------------------------------------------------
 
@@ -359,7 +417,8 @@ export function Timeline() {
     if (p.y < rowsTop) {
       // Results: select the column (the film as it comes out there); drag it to move it.
       const { setColumns, moveTo } = useEditor.getState();
-      const run = runs.find((r) => p.cell >= r.start && p.cell < r.end);
+      const shownRun = runs.find((r) => p.v >= r.start && p.v < r.end);
+      const run = shownRun && { start: wrap(shownRun.start), end: wrap(shownRun.start) + shownRun.end - shownRun.start };
       moveTo(p.cell, undefined);
       if (!run) return setColumns(null);
       if (e.shiftKey && columns) setColumns({ start: Math.min(columns.start, run.start), end: Math.max(columns.end, run.end) });
@@ -407,8 +466,8 @@ export function Timeline() {
   function onPointerMove(e: React.PointerEvent) {
     if (picking) {
       const p = at(e);
-      const next = p.track ? { track: p.track.id, cell: p.cell } : null;
-      if (next?.track !== hover?.track || next?.cell !== hover?.cell) setHover(next);
+      const next = p.track ? { track: p.track.id, cell: p.cell, v: p.v } : null;
+      if (next?.track !== hover?.track || next?.v !== hover?.v) setHover(next);
       return;
     }
     const gesture = gestureRef.current;
@@ -434,7 +493,7 @@ export function Timeline() {
       const inside = Object.values(film!.clips)
         .filter((c) => {
           const top = rowTop(tracks.findIndex((t) => t.id === c.track));
-          return c.start * cw < x1 && clipEnd(c) * cw > x0 && top < y1 && top + TRACK_H > y0;
+          return laps.some((l) => c.start * cw + lapX(l) < x1 && clipEnd(c) * cw + lapX(l) > x0) && top < y1 && top + TRACK_H > y0;
         })
         .map((c) => c.id);
       useEditor.getState().setSelection(gesture.add ? [...new Set([...gesture.base, ...inside])] : inside);
@@ -451,7 +510,7 @@ export function Timeline() {
         const c = film!.clips[id]!;
         const row = tracks.findIndex((t) => t.id === c.track);
         const to = tracks[Math.max(0, Math.min(tracks.length - 1, row + g.dy))]!;
-        return { id, track: to.id, start: c.start + g.dx };
+        return { id, track: to.id, start: wrap(c.start + g.dx) };
       });
       if (moves.every((m) => m.start >= 0)) moveClips(moves);
     } else if (g.kind === "move" && !g.moved && !(e.shiftKey || e.metaKey || e.ctrlKey) && e.detail < 2) {
@@ -496,11 +555,11 @@ export function Timeline() {
   }
 
   // Where moved clips are drawn while dragging.
-  const shift = (c: Clip): { left: number; top: number } | null => {
+  const shift = (c: Clip, lap: number): { left: number; top: number } | null => {
     if (!gesture || gesture.kind !== "move" || !gesture.moved || !selected.has(c.id)) return null;
     const row = tracks.findIndex((t) => t.id === c.track);
     const to = Math.max(0, Math.min(tracks.length - 1, row + gesture.dy));
-    return { left: Math.max(0, c.start + gesture.dx) * cw, top: rowTop(to) };
+    return { left: Math.max(0, c.start + gesture.dx) * cw + lapX(lap), top: rowTop(to) };
   };
 
   const ticks: number[] = [];
@@ -534,7 +593,7 @@ export function Timeline() {
           <AddTrackMenu onVideo={() => videoInput.current?.click()} />
         </div>
 
-        <div className="tl-body" ref={scroller} onScroll={(e) => setScroll({ left: e.currentTarget.scrollLeft, width: e.currentTarget.clientWidth })}>
+        <div className="tl-body" ref={scroller} onScroll={(e) => onScroll(e.currentTarget)}>
           <div
             className="tl-canvas"
             style={{ width: cells * cw + 120, height: height + 40 }}
@@ -547,11 +606,21 @@ export function Timeline() {
             onDrop={onDrop}
           >
             <div className="tl-ruler" style={{ height: RULER_H }}>
-              {ticks.map((c) => (
-                <span key={c} className={c % fps === 0 ? "sec" : ""} style={{ left: c * cw }}>
-                  {c % fps === 0 ? `${c / fps}s` : c + 1}
-                </span>
-              ))}
+              {ticks.map((v) => {
+                const c = wrap(v);
+                return (
+                  <span key={v} className={c % fps === 0 ? "sec" : ""} style={{ left: v * cw }}>
+                    {c % fps === 0 ? `${c / fps}s` : c + 1}
+                  </span>
+                );
+              })}
+              {/* Where a loop starts again. */}
+              {loop &&
+                laps.map((l) => (
+                  <span key={`seam-${l}`} className="tl-seam-label" style={{ left: lapX(l) }} title="Acá la película vuelve a empezar">
+                    ↻
+                  </span>
+                ))}
             </div>
 
             {resultCells.map(({ cell, items }) => (
@@ -569,21 +638,24 @@ export function Timeline() {
             ))}
 
             {/* The cell looked at (where an import goes). */}
-            <div className="tl-cursor-cell" style={{ left: cursor.cell * cw, width: cw, top: rowTop(cursorRow), height: TRACK_H }} />
+            {laps.map((l) => (
+              <div key={l} className="tl-cursor-cell" style={{ left: cursor.cell * cw + lapX(l), width: cw, top: rowTop(cursorRow), height: TRACK_H }} />
+            ))}
 
-            {tracks.map((t, row) =>
-              visibleClips(t).map((c) => {
-                const moving = shift(c);
+            {laps.map((lap) =>
+              tracks.map((t, row) =>
+              visibleClips(t, lap).map((c) => {
+                const moving = shift(c, lap);
                 const length = gesture?.kind === "resize" && gesture.id === c.id ? Math.max(1, gesture.length0 + gesture.dx) : c.length;
                 return (
                   <div
-                    key={c.id}
+                    key={`${lap}:${c.id}`}
                     data-clip={c.id}
                     className={`tl-clip${selected.has(c.id) ? " selected" : ""}${moving ? " moving" : ""}${c.visible ? "" : " off"}`}
-                    style={{ left: (moving?.left ?? c.start * cw) + 1, top: moving?.top ?? rowTop(row), width: length * cw - 2, height: TRACK_H }}
+                    style={{ left: (moving?.left ?? c.start * cw + lapX(lap)) + 1, top: moving?.top ?? rowTop(row), width: length * cw - 2, height: TRACK_H }}
                     title={`${c.name} · celdas ${c.start + 1}–${c.start + c.length}`}
                   >
-                    {cellsOf(c, length).map((cell) => (
+                    {cellsOf(c, length, lap).map((cell) => (
                       <div key={cell} className="tl-clip-cell" style={{ left: (cell - c.start) * cw, width: cw - (cell === c.start + length - 1 ? 2 : 0) }}>
                         <CellCanvas filmId={filmId} film={film.settings} items={[clipItem(t, c)]} />
                       </div>
@@ -593,59 +665,65 @@ export function Timeline() {
                   </div>
                 );
               }),
+              ),
             )}
 
-            {columns && (
-              <>
+            {columns &&
+              laps.map((l) => (
+              <Fragment key={l}>
                 <div
                   className={`tl-colsel${gesture?.kind === "columns" && gesture.moved ? " from" : ""}`}
-                  style={{ left: columns.start * cw, width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
+                  style={{ left: columns.start * cw + lapX(l), width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
                 />
                 {gesture?.kind === "columns" && gesture.moved && (
                   <div
                     className="tl-colsel ghost"
-                    style={{ left: Math.max(0, columns.start + gesture.dx) * cw, width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
+                    style={{ left: Math.max(0, columns.start + gesture.dx) * cw + lapX(l), width: (columns.end - columns.start) * cw, top: RULER_H, height: height - RULER_H }}
                   />
                 )}
-              </>
-            )}
+              </Fragment>
+              ))}
 
             {/* Each camera live in the cell it aims at. */}
-            {rigs.map((r) => {
+            {laps.map((l) => rigs.map((r) => {
               if (!r.source) return null;
               const target = r.target;
               const row = tracks.findIndex((t) => t.id === target.track);
-              if (row < 0 || target.cell < firstCell || target.cell > lastCell) return null;
+              const v = target.cell + l * period;
+              if (row < 0 || v < firstCell || v > lastCell) return null;
               const track = tracks[row]!;
               return (
-                <div key={`live-${r.id}`} className="tl-livecell" style={{ left: target.cell * cw + 1, width: cw - 2, top: rowTop(row), height: TRACK_H }}>
+                <div key={`live-${l}-${r.id}`} className="tl-livecell" style={{ left: v * cw + 1, width: cw - 2, top: rowTop(row), height: TRACK_H }}>
                   <CellCanvas filmId={filmId} film={film.settings} items={[liveItem(r.id, { ...track, opacity: 1 })]} />
                 </div>
               );
-            })}
+            }))}
 
             {/* Where each camera puts its photos (not while its cell is being picked again). */}
-            {rigs.map((r, i) => {
+            {laps.map((l) => rigs.map((r, i) => {
               if (r.id === picking) return null;
               const row = tracks.findIndex((t) => t.id === r.target.track);
               if (row < 0) return null;
               const color = rigColor(i);
               return (
-                <div key={r.id} className={`tl-rig${r.id === activeRig ? " active" : ""}`} style={{ left: r.target.cell * cw, width: cw, top: rowTop(row), height: TRACK_H, borderColor: color }}>
+                <div key={`${l}-${r.id}`} className={`tl-rig${r.id === activeRig ? " active" : ""}`} style={{ left: r.target.cell * cw + lapX(l), width: cw, top: rowTop(row), height: TRACK_H, borderColor: color }}>
                   <span style={{ background: color }}>{i + 1}</span>
                 </div>
               );
-            })}
+            }))}
 
             {/* While picking a camera's cell: where it would go. */}
             {picking && hover && (
-              <div className="tl-pick" style={{ left: hover.cell * cw, width: cw, top: rowTop(tracks.findIndex((t) => t.id === hover.track)), height: TRACK_H }}>
+              <div className="tl-pick" style={{ left: hover.v * cw, width: cw, top: rowTop(tracks.findIndex((t) => t.id === hover.track)), height: TRACK_H }}>
                 <Icon name="camera" size={Math.min(18, cw - 6)} />
               </div>
             )}
 
             {/* The selected cell, across every row; it stays marked while playing. */}
-            <div className={`tl-selected${playing ? " playing" : ""}`} style={{ left: cursor.cell * cw, width: cw, height }} />
+            {laps.map((l) => (
+              <div key={l} className={`tl-selected${playing ? " playing" : ""}`} style={{ left: cursor.cell * cw + lapX(l), width: cw, height }} />
+            ))}
+            {loop && laps.map((l) => <div key={`seam-${l}`} className="tl-seam" style={{ left: lapX(l), height }} />)}
             {playing && <div className="tl-play" ref={playRef} style={{ height }} />}
 
             {gesture?.kind === "band" && (
@@ -660,7 +738,7 @@ export function Timeline() {
               />
             )}
 
-            <button
+            {!loop && <button
               className="btn small ghost tl-extend"
               style={{ left: cells * cw + 8, top: rowsTop }}
               onPointerDown={(e) => e.stopPropagation()}
@@ -668,7 +746,7 @@ export function Timeline() {
               title="Agregar un segundo de celdas vacías al final"
             >
               + 1 s
-            </button>
+            </button>}
           </div>
         </div>
 

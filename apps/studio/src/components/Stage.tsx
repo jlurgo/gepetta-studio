@@ -16,6 +16,7 @@ import {
   previousClips,
   stackAt,
   vanishingPoints,
+  wrapCell,
 } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { proxyCache } from "../media/cache";
@@ -588,7 +589,8 @@ export function Stage() {
       }
       const { playback, onion, cursor } = state;
       if (playback) {
-        const cell = playbackCell(playback, size.fps);
+        // A loop film goes on from its first cell, until stopped.
+        const cell = wrapCell(film, playbackCell(playback, size.fps));
         if (cell >= film.length) {
           if (playback.loop) useEditor.setState({ playback: { ...playback, startCell: playback.loopFrom, startedAt: performance.now() } });
           else state.stop();

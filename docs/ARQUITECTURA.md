@@ -97,15 +97,33 @@ Cada cambio es una `Op` serializable (`clip.place`, `clip.move`, `clip.update`,
   Fusion.
 
 Como las operaciones no contienen píxeles, recalcular miles de pasos es barato.
-El dibujo es raster: las herramientas de `state/paint.ts` (pinceles, borrar, teñir,
-formas, sello de clonar; cada trazo va a una capa propia que se aplica con su fuerza
-al soltar; el relleno usa `fillMask` de core) pintan en la
-imagen de la celda del cursor (o empiezan un dibujo nuevo si está vacía) sobre un
-canvas con la resolución de esa imagen, mapeando el puntero con la inversa de la
-transformación del track y la imagen. Al soltar, el resultado se guarda como un
-asset nuevo (PNG si tiene transparencia) y el trazo es un paso del historial
-(`clip.update` con `media`, o `clip.place`): los pasos siguen sin píxeles, solo
-referencias a assets.
+Las imágenes nunca se modifican: cada imagen (`Clip`) lleva encima lo que se le
+hace, y todo se puede cambiar después.
+
+- **Ajustes (`look`)**: recorte, ajuste "entera/llenar", espejo, modo de mezcla y
+  efectos de color, además de `transform` y `opacity`. `drawStack` y
+  `pictureMatrix` (render/frame.ts) los aplican igual en la pantalla, las
+  miniaturas, la exportación, las manijas y el pincel.
+- **Trazos (`strokes`)**: las herramientas de `state/paint.ts` (pinceles, borrar,
+  teñir, formas, rellenar, sello de clonar) guardan cada trazo como un `Stroke`
+  (puntos con ancho y presión en píxeles de la imagen, color, fuerza…) con
+  `stroke.add`; se eligen (clic con «Mover», o en la lista del detalle), se
+  cambian (`stroke.update`), se ocultan o se borran (`stroke.remove`). El relleno
+  y el sello guardan además sus píxeles como asset (`layer`), porque dependen de
+  lo que había debajo. `render/strokes.ts` dibuja un trazo igual mientras se pinta
+  y al rearmar la imagen; `media/composed.ts` guarda las imágenes ya compuestas
+  (con sus trazos) en tamaño proxy y miniatura; al exportar se componen en
+  tamaño original. Un dibujo en una celda vacía es una imagen transparente del
+  tamaño de la película con sus trazos.
+- **Cámaras como herramientas**: cada cámara tiene sus ajustes de toma (`Shot`:
+  posición, tamaño, giro, transparencia y `look`), que se ven en vivo y se copian
+  a cada foto o cuadro grabado; se recuerdan por cámara.
+
+Una película puede ser un **loop** (`settings.loop`, op `film.setLoop`): después
+de la última celda viene la primera. La reproducción no termina, el papel de
+cebolla de las primeras celdas muestra las últimas (`previousClips`, `wrapCell`)
+y la línea de tiempo se dibuja como muchas vueltas seguidas, volviendo a las del
+medio al desplazarse, así que no tiene fin.
 
 ## Almacenamiento
 

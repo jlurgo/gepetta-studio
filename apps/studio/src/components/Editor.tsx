@@ -146,6 +146,10 @@ function TopBar({
           ))}
         </select>
       </label>
+      <label className="inline-control toggle" title="Película en loop: después del último cuadro viene el primero (la línea de tiempo no termina)">
+        <input type="checkbox" checked={!!film.settings.loop} onChange={(e) => commit([{ type: "film.setLoop", loop: e.target.checked }])} />
+        <span>↻ Loop</span>
+      </label>
       <button className="btn" onClick={() => imageInput.current?.click()} title="Poner imágenes desde la celda elegida, en el track elegido">
         <Icon name="image" /> Imágenes
       </button>

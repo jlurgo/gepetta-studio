@@ -121,11 +121,24 @@ export function splitAtTrack(film: FilmState, items: StackItem[], track: TrackId
   };
 }
 
-/** The pictures of `track` before `cell`, nearest first (for onion skin). */
+/**
+ * The pictures of `track` before `cell`, nearest first (for onion skin). In a
+ * loop film the ones at the end come before the first cell.
+ */
 export function previousClips(film: FilmState, track: TrackId, cell: number, count: number, index?: CellIndex): Clip[] {
   const clips = (index ?? cellIndex(film)).get(track) ?? [];
-  return clips
+  const before = clips
     .filter((c) => c.start < cell && !(cell < clipEnd(c)))
     .slice(-count)
     .reverse();
+  if (!film.settings.loop || before.length >= count) return before;
+  // Wrapping around: the last pictures of the film, last first (not the one at the cell itself).
+  const after = clips.filter((c) => c.start > cell).reverse();
+  return [...before, ...after].slice(0, count);
+}
+
+/** A cell of a loop film counted from anywhere (negative, or past the end): back inside it. */
+export function wrapCell(film: FilmState, cell: number): number {
+  if (!film.settings.loop || film.length === 0) return cell;
+  return ((cell % film.length) + film.length) % film.length;
 }

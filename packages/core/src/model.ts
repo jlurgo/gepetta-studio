@@ -131,6 +131,8 @@ export interface FilmSettings {
   fps: number;
   width: number;
   height: number;
+  /** A loop: the first cell comes after the last one (playing never ends, the onion skin wraps). */
+  loop?: boolean;
 }
 
 export interface FilmState {

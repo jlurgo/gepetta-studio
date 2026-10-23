@@ -12,6 +12,7 @@ import { PHOTO_TRACK, clipEnd } from "./model";
 export type Op =
   | { type: "film.rename"; name: string }
   | { type: "film.setFps"; fps: number }
+  | { type: "film.setLoop"; loop: boolean }
   | { type: "film.setSize"; width: number; height: number }
   /** Makes the grid at least this long (it never cuts clips). */
   | { type: "film.setLength"; length: number }
@@ -143,6 +144,8 @@ export function applyOp(film: FilmState, op: Op): FilmState {
       return { ...film, settings: { ...film.settings, fps: op.fps } };
     case "film.setSize":
       return { ...film, settings: { ...film.settings, width: op.width, height: op.height } };
+    case "film.setLoop":
+      return { ...film, settings: { ...film.settings, loop: op.loop } };
     case "film.setLength":
       if (!Number.isInteger(op.length) || op.length < 0) throw new OpError("Duración inválida");
       return { ...film, length: Math.max(op.length, ...Object.values(film.clips).map(clipEnd), 0) };
@@ -242,6 +245,8 @@ export function describeOp(op: Op): string {
       return `Velocidad: ${op.fps} cuadros/s`;
     case "film.setSize":
       return `Tamaño: ${op.width}×${op.height}`;
+    case "film.setLoop":
+      return op.loop ? "Película en loop" : "Película sin loop";
     case "film.setLength":
       return `Largo: ${op.length} celdas`;
     case "clip.place":
