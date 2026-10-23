@@ -11,6 +11,7 @@ import {
   readyRigs,
   selectRelative, stopAllRecordings } from "../state/actions";
 import { useLasso } from "../state/lasso";
+import { useGamepad } from "../state/gamepad";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
@@ -379,6 +380,7 @@ export function Editor() {
   const [past, setPast] = useState<{ film: FilmState; release: Release } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   useShortcuts();
+  useGamepad();
 
   useEffect(() => {
     void useCamera.getState().start();

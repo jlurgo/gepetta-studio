@@ -21,6 +21,7 @@
 - [x] Celular: página web por QR, modo en vivo (HTTPS con certificado local) y modo foto simple; vista previa, disparo remoto o desde el teléfono, ajustes, papel de cebolla en el teléfono. Probado con celular simulado
 - [ ] Probar con celulares reales (iPhone con certificado instalado, Android)
 - [x] Réflex en Windows vía gphoto2 de MSYS2 + WinUSB (Zadig) (falta probar en una PC real)
+- [x] Control de Xbox (Bluetooth o USB) como control remoto: foto, celdas y tracks, vivo de la cámara, cebolla, reproducir, foto/video
 - [ ] Empaquetar gphoto2 dentro del instalador de Windows (hoy hace falta MSYS2)
 - [ ] Canon EDSDK (registro trabado: el portal de Canon USA tiene el enlace roto)
 - [ ] Empaquetar gphoto2 dentro de la app de Mac (hoy hace falta `brew install gphoto2`)
