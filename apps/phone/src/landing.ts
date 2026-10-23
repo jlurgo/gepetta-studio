@@ -59,7 +59,7 @@ export function renderLanding(root: HTMLElement) {
       h(
         "header",
         { class: "landing-head" },
-        h("img", { class: "logo", src: "./icon.svg", alt: "" }),
+        h("img", { class: "logo", src: "./icon-192.png", alt: "Gepetta Studio" }),
         h("h1", {}, "Gepetta Studio · Cámara"),
         h("p", { class: "muted" }, "¿Cómo querés usar el celu?"),
       ),

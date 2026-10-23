@@ -117,6 +117,7 @@ function TopBar({
       <button className="icon-btn" onClick={() => void close()} title="Volver a mis películas">
         <Icon name="back" />
       </button>
+      <img className="topbar-logo" src="./logo.png" alt="Gepetta Studio" />
       <input
         className="film-name"
         value={name}

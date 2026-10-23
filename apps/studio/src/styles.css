@@ -210,8 +210,22 @@ input[type="range"] {
 }
 
 .library-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   font-size: 32px;
   letter-spacing: -0.02em;
+}
+
+.library-header .logo {
+  width: 88px;
+  height: 88px;
+}
+
+.topbar-logo {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
 }
 
 .library-header h1 span {

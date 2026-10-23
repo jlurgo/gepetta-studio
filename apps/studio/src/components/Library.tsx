@@ -101,6 +101,7 @@ export function Library() {
     <div className="library">
       <header className="library-header">
         <h1>
+          <img className="logo" src="./logo.png" alt="" />
           Gepetta <span>Studio</span>
         </h1>
         <button className="btn primary big" onClick={() => setCreating(true)}>

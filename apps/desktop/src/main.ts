@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { BrowserWindow, app, dialog, ipcMain, session, shell, systemPreferences } from "electron";
@@ -6,6 +7,8 @@ import { registerDslrIpc } from "./dslr/ipc";
 import { registerRemoteIpc } from "./remote/ipc";
 import { registerUpdates } from "./updates";
 
+/** Gepetta Studio's logo: the renderer ships it (studio's public/logo.png). */
+const APP_ICON = path.join(__dirname, "..", "renderer", "logo.png");
 const DEV_URL = process.env.GEPETTA_DEV_URL;
 const library = new FilmLibrary(path.join(app.getPath("documents"), "Gepetta Studio"));
 let mainWindow: BrowserWindow | null = null;
@@ -57,6 +60,8 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: "#1b1916",
     title: "Gepetta Studio",
+    // The window's icon on Windows and Linux (the app's own icon comes from build/icon.png).
+    ...(existsSync(APP_ICON) && { icon: APP_ICON }),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -78,6 +83,8 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // While developing (not packaged) the Dock shows Electron's icon otherwise.
+  if (process.platform === "darwin" && !app.isPackaged && existsSync(APP_ICON)) app.dock?.setIcon(APP_ICON);
   // Only the camera/microphone permission is granted to the renderer.
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === "media");
