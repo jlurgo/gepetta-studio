@@ -17,14 +17,13 @@ export function cropRect(size: Size, look?: Look): { x: number; y: number; width
 }
 
 /**
- * Size the kept part of a picture is drawn at in the film (before the
- * picture's own scale): inside the film, or filling it.
+ * Size the whole picture is drawn at in the film (before its own scale):
+ * inside the film, or filling it. A crop only hides part of it, in place.
  */
 export function lookBox(size: Size, look: Look | undefined, film: Size): Size {
-  const r = cropRect(size, look);
-  const fits = [film.width / r.width, film.height / r.height];
+  const fits = [film.width / size.width, film.height / size.height];
   const s = look?.fit === "cover" ? Math.max(...fits) : Math.min(...fits);
-  return { width: r.width * s, height: r.height * s };
+  return { width: size.width * s, height: size.height * s };
 }
 
 const COMPOSITE: Record<BlendMode, GlobalCompositeOperation> = {

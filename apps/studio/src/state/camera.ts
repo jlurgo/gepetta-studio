@@ -1,4 +1,4 @@
-import { IDENTITY_TRANSFORM, type Look, type Track, type Transform2D, composeTransforms, newId } from "@gepetta/core";
+import { IDENTITY_TRANSFORM, type Look, type Track, type Transform2D, composeTransforms, newId, wrapCell } from "@gepetta/core";
 import type { CameraControl, ControlValue } from "@gepetta/protocol";
 import { create } from "zustand";
 import { dslrAvailable, listDslrs, openDslr } from "../capture/dslr";
@@ -361,7 +361,7 @@ export const useCamera = create<CameraState>((set, get) => {
     useFocusProbes.getState().clear();
     mirror();
     const next = rig(rigId);
-    if (next && prev !== rigId) useEditor.getState().moveTo(next.target.cell, next.target.track);
+    if (next && prev !== rigId) useEditor.getState().moveTo(inLoop(next.target).cell, next.target.track);
   }
 
   return {
@@ -414,14 +414,15 @@ export const useCamera = create<CameraState>((set, get) => {
     },
 
     targetOf(r) {
-      return r.target;
+      return inLoop(r.target);
     },
 
-    setTarget(rigId, target) {
+    setTarget(rigId, to) {
       const r = rig(rigId);
       if (!r) return;
+      const target = inLoop(to);
       const { cursor, moveTo } = useEditor.getState();
-      const watching = cursor.track === r.target.track && cursor.cell === r.target.cell;
+      const watching = cursor.track === r.target.track && cursor.cell === inLoop(r.target).cell;
       patch(rigId, { target });
       if (watching) moveTo(target.cell, target.track, true);
     },
@@ -432,7 +433,8 @@ export const useCamera = create<CameraState>((set, get) => {
       set({ picking: rigId });
     },
 
-    pick(target) {
+    pick(to) {
+      const target = inLoop(to);
       const rigId = get().picking;
       set({ picking: null });
       if (!rigId || !rig(rigId)) return;
@@ -574,6 +576,12 @@ function snapshot(): string | null {
   canvas.height = Math.round(live.height * scale);
   canvas.getContext("2d")!.drawImage(live.image, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/jpeg", 0.8);
+}
+
+/** In a loop film there is no "after the end": the cell after the last one is the first. */
+function inLoop(target: GridCursor): GridCursor {
+  const film = useEditor.getState().film;
+  return film ? { ...target, cell: wrapCell(film, target.cell) } : target;
 }
 
 /** A phone that disconnects stops being a camera. */

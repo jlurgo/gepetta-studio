@@ -9,6 +9,7 @@ import {
   clipAt,
   IDENTITY_TRANSFORM,
   composeTransforms,
+  cropRect,
   lookBox,
   moveVanishingPoint,
   outerTransform,
@@ -24,7 +25,7 @@ import { peekPicture } from "../media/composed";
 import type { LiveFrame } from "../capture/types";
 import { type Drawable, type Size, containScale, drawStack, pictureMatrix } from "../render/frame";
 import { pickedStrokes, selectStrokes, strokeAt, useStrokes } from "../state/strokes";
-import { drawHandles, dragTransform, hitHandle, type HandleKind } from "../render/handles";
+import { type CropSide, type HandleKind, dragCrop, drawHandles, dragTransform, hitHandle } from "../render/handles";
 import { type HandleTarget, commitTransform, selectedClipId, useLayers } from "../state/layers";
 import { shotOn, useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
@@ -35,7 +36,7 @@ import { drawGuides, hitVanishingPoint } from "../render/guides";
 import { magnifyControl } from "./MagnifyPanel";
 import { capturePointer } from "./pointer";
 import { StageTools } from "./StageTools";
-import { withShotPreview } from "../state/shot";
+import { type ShotChange, commitShot, useShotPreview, withShotPreview } from "../state/shot";
 
 const PREFETCH = 12;
 
@@ -283,26 +284,41 @@ function liveRigAt(track: string, cell: number) {
   });
 }
 
+/** What the stage handles act on: the shown part's corners, how it is drawn, and how a drag is kept. */
+interface OnStage {
+  corners: Point[];
+  transform: Transform2D;
+  target: HandleTarget;
+  stored(composite: Transform2D): Transform2D;
+  /** Pictures and cameras can be cropped from their sides (tracks cannot). */
+  crop?: { media: Size; look: Look };
+}
+
+/** Corners of the shown part (the crop) of a picture drawn with `transform`, in film coordinates. */
+function shownCorners(media: Size, look: Look | undefined, transform: Transform2D, film: Size): Point[] {
+  const m = pictureMatrix({ media: media as MediaRef, transform, look }, film, media);
+  const r = cropRect(media, look);
+  return [
+    [r.x, r.y],
+    [r.x + r.width, r.y],
+    [r.x + r.width, r.y + r.height],
+    [r.x, r.y + r.height],
+  ].map(([x, y]) => {
+    const q = m.transformPoint(new DOMPoint(x, y));
+    return { x: q.x, y: q.y };
+  });
+}
+
 /**
- * The selected track as it shows on the stage now (its picture, and the
- * transform it is drawn with), or null when nothing of it is on screen.
- * `trackTransform` is what dragging changes.
+ * What the handles act on now, or null: the camera's live picture (camera
+ * tool), the picture picked in the timeline (when the cursor is on it), or a
+ * track picked by its name. Never while columns are picked.
  */
-function targetOnStage(): { box: Size; transform: Transform2D; target: HandleTarget; stored(composite: Transform2D): Transform2D } | null {
-  const { film: raw, cursor, playback } = useEditor.getState();
-  if (!raw || playback) return null;
+function targetOnStage(): OnStage | null {
+  const { film: raw, cursor, playback, columns } = useEditor.getState();
+  if (!raw || playback || columns) return null;
   const film = withPreview(raw);
-  // The selected picture: its handles move just that picture.
-  const focus = useLayers.getState().detail === "clip" ? focusedClip(film) : null;
-  if (focus) {
-    const { clip, track } = focus;
-    return {
-      box: lookBox(clip.media, clip.look, film.settings),
-      transform: composeTransforms(track.transform, clip.transform),
-      target: { kind: "clip", id: clip.id },
-      stored: (composite) => relativeTransform(track.transform, composite),
-    };
-  }
+  const layers = useLayers.getState();
   // The camera tool: the active camera's live picture, to place it.
   if (usePaint.getState().tool === "camera") {
     const camera = useCamera.getState();
@@ -310,31 +326,48 @@ function targetOnStage(): { box: Size; transform: Transform2D; target: HandleTar
     const live = rig ? camera.liveOf(rig) : null;
     const track = rig && film.tracks.find((t) => t.id === rig.target.track);
     const magnified = (magnifyControl(camera.controls)?.value ?? "1") !== "1";
-    if (!rig || !live || !track?.visible || rig.target.cell !== cursor.cell || camera.pointerTool !== "none" || magnified) return null;
+    if (!rig || !live || !track?.visible || camera.targetOf(rig).cell !== cursor.cell || camera.pointerTool !== "none" || magnified) return null;
+    const transform = composeTransforms(track.transform, rig.shot.transform);
+    const media = { width: live.width, height: live.height };
     return {
-      box: lookBox(live, rig.shot.look, film.settings),
-      transform: composeTransforms(track.transform, rig.shot.transform),
+      corners: shownCorners(media, rig.shot.look, transform, film.settings),
+      transform,
       target: { kind: "rig", id: rig.id },
       stored: (composite) => relativeTransform(track.transform, composite),
+      crop: { media, look: rig.shot.look },
     };
   }
-  // Otherwise the selected track, through its picture at the cursor.
-  const track = film.tracks.find((t) => t.id === useLayers.getState().trackId);
+  // The picture picked in the timeline: its handles change just that picture.
+  const focus = layers.detail === "clip" ? focusedClip(film) : null;
+  if (focus) {
+    const { clip, track } = focus;
+    const transform = composeTransforms(track.transform, clip.transform);
+    return {
+      corners: shownCorners(clip.media, clip.look, transform, film.settings),
+      transform,
+      target: { kind: "clip", id: clip.id },
+      stored: (composite) => relativeTransform(track.transform, composite),
+      crop: { media: clip.media, look: clip.look ?? {} },
+    };
+  }
+  // A track picked by its name, through its picture at the cursor: moving it moves all its pictures.
+  if (layers.detail !== "track" || layers.panel !== "detail") return null;
+  const track = film.tracks.find((t) => t.id === layers.trackId);
   if (!track || !track.visible || liveRigAt(track.id, cursor.cell)) return null;
   const clip = clipAt(film, track.id, cursor.cell);
   if (!clip) return null;
+  const transform = composeTransforms(track.transform, clip.transform);
   return {
-    box: lookBox(clip.media, clip.look, film.settings),
-    transform: composeTransforms(track.transform, clip.transform),
+    corners: shownCorners(clip.media, clip.look, transform, film.settings),
+    transform,
     target: { kind: "track", id: track.id },
-    // Moving the track moves its pictures: the track's transform is what changes.
     stored: (composite) => outerTransform(clip.transform, composite),
   };
 }
 
-/** Moving, scaling and rotating the selected layer with its handles. */
+/** Moving, scaling, turning and cropping the picked layer with its handles. */
 function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
-  const drag = useRef<{ kind: HandleKind; start: Point; t0: Transform2D; target: HandleTarget; stored(c: Transform2D): Transform2D } | null>(null);
+  const drag = useRef<{ kind: HandleKind; start: Point; t0: Transform2D; target: HandleTarget; stored(c: Transform2D): Transform2D; crop?: OnStage["crop"]; change?: ShotChange } | null>(null);
 
   const filmPoint = (e: React.PointerEvent): Point => {
     const r = filmRect.current!;
@@ -347,10 +380,10 @@ function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
     const shown = targetOnStage();
     if (!film || !shown || !filmRect.current) return false;
     const p = filmPoint(e);
-    const kind = hitHandle(shown.box, shown.transform, film.settings, p, 1 / filmRect.current.s);
+    const kind = hitHandle(shown.corners, p, 1 / filmRect.current.s, !!shown.crop);
     if (!kind) return false;
     capturePointer(e);
-    drag.current = { kind, start: p, t0: shown.transform, target: shown.target, stored: shown.stored };
+    drag.current = { kind, start: p, t0: shown.transform, target: shown.target, stored: shown.stored, crop: shown.crop };
     return true;
   };
 
@@ -358,6 +391,20 @@ function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
     const d = drag.current;
     const { film } = useEditor.getState();
     if (!d || !film) return false;
+    if (d.kind.startsWith("crop-") && d.crop) {
+      // The side goes where the pointer is, in the picture's own pixels.
+      const { media, look } = d.crop;
+      const m = pictureMatrix({ media: media as MediaRef, transform: d.t0, look }, film.settings, media).inverse();
+      const p = filmPoint(e);
+      const q = m.transformPoint(new DOMPoint(p.x, p.y));
+      const crop0 = look.crop ?? { x: 0, y: 0, width: 1, height: 1 };
+      const c = dragCrop(d.kind.slice(5) as CropSide, crop0, q, media);
+      const whole = c.x < 0.001 && c.y < 0.001 && c.width > 0.999 && c.height > 0.999;
+      d.change = { look: { crop: whole ? undefined : c } };
+      if (d.target.kind === "rig") useCamera.getState().setShot(d.target.id, { look: { ...look, crop: d.change.look!.crop } });
+      else if (d.target.kind === "clip") useShotPreview.setState({ preview: { ids: [d.target.id], change: d.change } });
+      return true;
+    }
     const composite = dragTransform(d.kind, d.t0, film.settings, d.start, filmPoint(e), e.shiftKey);
     // A camera changes live, outside the history.
     if (d.target.kind === "rig") useCamera.getState().setShot(d.target.id, { transform: d.stored(composite) });
@@ -366,8 +413,13 @@ function useLayerDrag(filmRect: React.RefObject<FilmRect | null>) {
   };
 
   const onPointerUp = (): boolean => {
-    if (!drag.current) return false;
+    const d = drag.current;
+    if (!d) return false;
     drag.current = null;
+    if (d.kind.startsWith("crop-")) {
+      if (d.target.kind === "clip" && d.change) commitShot([d.target.id], d.change);
+      return true;
+    }
     const { preview, setPreview } = useLayers.getState();
     if (preview) commitTransform(preview.target, preview.transform);
     setPreview(null);
@@ -694,7 +746,7 @@ export function Stage() {
       ctx.restore();
       if (showGuides) drawGuides(ctx, guides, size, dpr / s, placing);
       const handles = layerHandles.current();
-      if (handles && !placing && !isPainting(tool)) drawHandles(ctx, handles.box, handles.transform, size, dpr / s);
+      if (handles && !placing && !isPainting(tool)) drawHandles(ctx, handles.corners, dpr / s, !!handles.crop);
       if (tool === "move") drawPickedStrokes(ctx, shown, dpr / s);
       const outline = brushOutline();
       if (outline) {

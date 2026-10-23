@@ -10,10 +10,9 @@ describe("lookBox", () => {
   it("fills the film with cover", () => {
     expect(lookBox({ width: 1000, height: 1000 }, { fit: "cover" }, film)).toEqual({ width: 1920, height: 1920 });
   });
-  it("fits only the kept part of a crop", () => {
-    // The left half of a 16:9 picture is 8:9: it fits by height.
+  it("keeps the picture's size when cropped (the crop hides part of it in place)", () => {
     const box = lookBox({ width: 1920, height: 1080 }, { crop: { x: 0, y: 0, width: 0.5, height: 1 } }, film);
-    expect(box).toEqual({ width: 960, height: 1080 });
+    expect(box).toEqual({ width: 1920, height: 1080 });
   });
 });
 

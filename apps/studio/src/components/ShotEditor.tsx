@@ -18,18 +18,7 @@ const EFFECTS: { kind: Effect["kind"]; label: string }[] = [
   { kind: "saturation", label: "Saturación" },
 ];
 
-const DEG = 180 / Math.PI;
 
-/** Crop as the four sides cut, in fractions. */
-function sidesOf(look: Look) {
-  const c = look.crop ?? { x: 0, y: 0, width: 1, height: 1 };
-  return { left: c.x, top: c.y, right: 1 - c.x - c.width, bottom: 1 - c.y - c.height };
-}
-
-function cropOf(s: { left: number; top: number; right: number; bottom: number }): Look["crop"] {
-  if (s.left + s.top + s.right + s.bottom < 0.001) return undefined;
-  return { x: s.left, y: s.top, width: Math.max(0.05, 1 - s.left - s.right), height: Math.max(0.05, 1 - s.top - s.bottom) };
-}
 
 function Slider({
   label,
@@ -110,8 +99,6 @@ export function ShotEditor({
 
   const t = shown.transform;
   const look = shown.look;
-  const sides = sidesOf(look);
-  const setSide = (side: keyof typeof sides, pct: number) => update({ look: { crop: cropOf({ ...sides, [side]: pct / 100 }) } });
   const effect = (kind: Effect["kind"]) => look.effects?.find((e) => e.kind === kind)?.amount ?? 0;
   const setEffect = (kind: Effect["kind"], pct: number) => {
     const effects = (look.effects ?? []).filter((e) => e.kind !== kind);
@@ -125,8 +112,9 @@ export function ShotEditor({
     <div className="shot-editor" onPointerUp={finish} onKeyUp={finish} onBlur={finish}>
       {mixed && <p className="hint">Los cambios van a todas las imágenes elegidas.</p>}
 
-      <h4>Tamaño</h4>
-      <Slider label="Escala" value={t.scale * 100} min={10} max={400} unit=" %" onChange={(v) => update({ transform: { scale: v / 100 } })} />
+      <p className="hint">
+        En la pantalla grande: arrastrala para moverla, las esquinas la agrandan, el círculo la gira (con ⇧, en pasos) y las barras de los costados la recortan.
+      </p>
       <div className="segmented tool-choice">
         <button className={(look.fit ?? "contain") === "contain" ? "active" : ""} onClick={() => now({ look: { fit: undefined } })} title="Se ve entera, con bordes si no tiene la forma de la película">
           Entera
@@ -135,22 +123,24 @@ export function ShotEditor({
           Llenar
         </button>
       </div>
-
-      <h4>Recorte</h4>
-      <Slider label="Izquierda" value={sides.left * 100} min={0} max={90} unit=" %" onChange={(v) => setSide("left", v)} />
-      <Slider label="Derecha" value={sides.right * 100} min={0} max={90} unit=" %" onChange={(v) => setSide("right", v)} />
-      <Slider label="Arriba" value={sides.top * 100} min={0} max={90} unit=" %" onChange={(v) => setSide("top", v)} />
-      <Slider label="Abajo" value={sides.bottom * 100} min={0} max={90} unit=" %" onChange={(v) => setSide("bottom", v)} />
-
-      <h4>Rotación y espejo</h4>
-      <Slider label="Rotación" value={t.rotation * DEG} min={-180} max={180} unit="°" onChange={(v) => update({ transform: { rotation: v / DEG } })} />
       <div className="action-row">
+        <button className="btn small" onClick={() => now({ transform: { rotation: t.rotation - Math.PI / 2 } })} title="Girar un cuarto a la izquierda">
+          ⟲ 90°
+        </button>
+        <button className="btn small" onClick={() => now({ transform: { rotation: t.rotation + Math.PI / 2 } })} title="Girar un cuarto a la derecha">
+          ⟳ 90°
+        </button>
         <button className={`btn small${look.flipX ? " active" : ""}`} aria-pressed={!!look.flipX} onClick={() => now({ look: { flipX: !look.flipX || undefined } })}>
           ⇋ Espejo
         </button>
         <button className={`btn small${look.flipY ? " active" : ""}`} aria-pressed={!!look.flipY} onClick={() => now({ look: { flipY: !look.flipY || undefined } })}>
           ⇵ Dar vuelta
         </button>
+        {look.crop && (
+          <button className="btn small" onClick={() => now({ look: { crop: undefined } })}>
+            Quitar recorte
+          </button>
+        )}
       </div>
 
       <h4>Transparencia y mezcla</h4>

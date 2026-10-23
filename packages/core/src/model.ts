@@ -52,7 +52,7 @@ export interface Effect {
  * changed later): which part of it, which way, and how it mixes.
  */
 export interface Look {
-  /** Part kept, in fractions of the picture (0–1). */
+  /** Part shown, in fractions of the picture (0–1); the rest is hidden, the picture stays where it is. */
   crop?: { x: number; y: number; width: number; height: number };
   /** "contain": all of it inside the film (default); "cover": it fills the film, cut where it overflows. */
   fit?: "contain" | "cover";

@@ -348,7 +348,8 @@ export function Timeline() {
     return out;
   };
   // Results row: the film at each cell on screen, with every camera live where it aims.
-  const liveTargets = rigs.filter((r) => r.source).map((r) => ({ id: r.id, target: r.target }));
+  // A loop film: a camera aims inside the drum.
+  const liveTargets = rigs.filter((r) => r.source).map((r) => ({ id: r.id, target: { ...r.target, cell: wrap(r.target.cell) } }));
   const resultCells: { cell: number; items: CellItem[] }[] = [];
   for (let c = firstCell; c < lastCell; c++) {
     const stack = wrap(c) < film.length ? stackAt(film, wrap(c), { index }) : [];
@@ -399,7 +400,7 @@ export function Timeline() {
       const { setColumns, moveTo } = useEditor.getState();
       const shownRun = runs.find((r) => p.v >= r.start && p.v < r.end);
       // An empty cell (or a camera's live one) is a column of its own.
-      const live = rigs.some((r) => r.source && r.target.cell === p.cell);
+      const live = rigs.some((r) => r.source && wrap(r.target.cell) === p.cell);
       const run = shownRun
         ? { start: wrap(shownRun.start), end: wrap(shownRun.start) + shownRun.end - shownRun.start }
         : p.cell < film!.length || live
@@ -709,7 +710,7 @@ export function Timeline() {
               if (!r.source) return null;
               const target = r.target;
               const row = tracks.findIndex((t) => t.id === target.track);
-              const v = target.cell + l * period;
+              const v = wrap(target.cell) + l * period;
               if (row < 0 || v < firstCell || v > lastCell) return null;
               const track = tracks[row]!;
               return (
@@ -726,7 +727,7 @@ export function Timeline() {
               if (row < 0) return null;
               const color = rigColor(i);
               return (
-                <div key={`${l}-${r.id}`} className={`tl-rig${r.id === activeRig ? " active" : ""}`} style={{ left: r.target.cell * cw + lapX(l), width: cw, top: rowTop(row), height: TRACK_H, borderColor: color }}>
+                <div key={`${l}-${r.id}`} className={`tl-rig${r.id === activeRig ? " active" : ""}`} style={{ left: wrap(r.target.cell) * cw + lapX(l), width: cw, top: rowTop(row), height: TRACK_H, borderColor: color }}>
                   <span style={{ background: color }}>{i + 1}</span>
                 </div>
               );

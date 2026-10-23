@@ -10,6 +10,7 @@ import {
   cellsInColumns,
   removeColumnsOps,
   isPlainLook,
+  wrapCell,
   type MediaRef,
   type Op,
   type Track,
@@ -185,7 +186,7 @@ export function startRecording(rigId?: string) {
           amend: rec.step ?? undefined,
         });
         rec.cells++;
-        rec.next = { track: rec.next.track, cell: clipEnd(clip!) };
+        rec.next = { track: rec.next.track, cell: wrapCell(useEditor.getState().film!, clipEnd(clip!)) };
         useCamera.getState().setTarget(id, rec.next);
         // Only while still recording (pictures stored after the stop leave it stopped).
         if (recorders.get(id) === rec) useCamera.getState().setRecording(id, { cells: rec.cells });

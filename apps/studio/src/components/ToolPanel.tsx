@@ -188,7 +188,7 @@ function CameraTarget({ rig, color }: { rig: Rig; color: string }) {
   return (
     <div className="camera-target" style={{ ["--rig" as string]: color }}>
       <span>
-        Sus fotos van a <strong>{track?.name ?? "—"}</strong>, celda {rig.target.cell + 1}
+        Sus fotos van a <strong>{track?.name ?? "—"}</strong>, celda {useCamera.getState().targetOf(rig).cell + 1}
       </span>
       <button className={`btn small${picking ? " active" : ""}`} onClick={() => chooseCamera(rig.id)}>
         {picking ? "Elegí la celda… (Esc)" : "Elegir celda"}
@@ -361,11 +361,11 @@ export function ToolPanel() {
   const meta = TOOLS.find((t) => t.id === tool);
   return (
     <div className="tool-panel">
-      <h3>{tool === "camera" ? "Cámara" : tool === "addCamera" ? "Agregar cámara" : (meta?.label ?? "Herramienta")}</h3>
+      <h3>{tool === "camera" ? "Cámara" : tool === "addCamera" ? "Agregar cámara" : tool === "move" ? "Nada elegido" : (meta?.label ?? "Herramienta")}</h3>
       {tool === "move" ? (
         <p className="hint">
-          Tocá una imagen en la línea de tiempo para elegirla: en la pantalla grande la movés, la agrandás con las esquinas y la girás con el círculo. Sus ajustes están en
-          «Detalle».
+          Tocá una celda con imagen en la línea de tiempo: en la pantalla grande la arrastrás para moverla, la agrandás con las esquinas, la girás con el círculo y la
+          recortás con las barras de los costados. Tocá un trazo para cambiarlo. O elegí una herramienta en la barra.
         </p>
       ) : tool === "camera" ? (
         <CameraToolPanel />

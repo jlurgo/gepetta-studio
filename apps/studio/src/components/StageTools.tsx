@@ -6,7 +6,7 @@ import { type StageTool, usePaint } from "../state/paint";
 import { Icon, type IconName } from "./Icon";
 
 export const TOOLS: { id: StageTool; icon: IconName; label: string; key: string }[] = [
-  { id: "move", icon: "pointer", label: "Mover y elegir", key: "V" },
+  { id: "move", icon: "pointer", label: "Editar lo elegido", key: "V" },
   { id: "import", icon: "image", label: "Imágenes y videos", key: "M" },
   { id: "draw", icon: "brush", label: "Dibujar", key: "B" },
   { id: "erase", icon: "eraser", label: "Borrar", key: "E" },
@@ -33,9 +33,12 @@ export function useFreeCameras(): { id: string; label: string; group: string }[]
   }, [rigs, webcams, dslrs, devices]);
 }
 
-/** Choosing a tool shows its properties in the detail panel (also when it was already the one in use). */
+/**
+ * Choosing a tool shows its properties in the detail panel; choosing the one
+ * in use lets it go (back to editing: a picked cell shows its handles).
+ */
 function showTool(tool: StageTool) {
-  usePaint.getState().setTool(tool);
+  usePaint.getState().setTool(usePaint.getState().tool === tool ? "move" : tool);
   useLayers.setState({ panel: "tool" });
 }
 
@@ -74,7 +77,8 @@ export function StageTools() {
   const tool = usePaint((s) => s.tool);
   const rigs = useCamera((s) => s.rigs);
   const free = useFreeCameras();
-  const [move, importer, ...paint] = TOOLS;
+  // "move" is no tool at all: editing what is picked, with its handles.
+  const [, importer, ...paint] = TOOLS;
   const button = (t: (typeof TOOLS)[number]) => (
     <button key={t.id} className={tool === t.id ? "active" : ""} aria-pressed={tool === t.id} title={`${t.label} (${t.key})`} onClick={() => showTool(t.id)}>
       <Icon name={t.icon} size={18} />
@@ -84,7 +88,6 @@ export function StageTools() {
   return (
     <div className="stage-tools" onPointerDown={(e) => e.stopPropagation()}>
       <div className="tool-buttons" role="toolbar" aria-label="Herramientas">
-        {button(move!)}
         {button(importer!)}
         <span className="tool-sep" />
         {rigs.map((r, i) => (

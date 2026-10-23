@@ -30,19 +30,18 @@ export function imageSize(img: CanvasImageSource, fallback: Size): Size {
 
 /**
  * Where a picture's pixels land in the film: from an image of `real` size (the
- * picture, or a copy of it at another size) to film coordinates.
+ * picture, or a copy of it at another size) to film coordinates. The crop does
+ * not move it: it only hides what is outside (see drawStack).
  */
 export function pictureMatrix(item: Omit<Drawable, "opacity">, film: Size, real: Size): DOMMatrix {
   const { x, y, rotation, scale } = item.transform;
   const box = lookBox(item.media, item.look, film);
-  const r = cropRect(real, item.look);
   return new DOMMatrix()
     .translate(film.width / 2 + x, film.height / 2 + y)
     .rotate((rotation * 180) / Math.PI)
     .scale(scale * (item.look?.flipX ? -1 : 1), scale * (item.look?.flipY ? -1 : 1))
     .translate(-box.width / 2, -box.height / 2)
-    .scale(box.width / r.width, box.height / r.height)
-    .translate(-r.x, -r.y);
+    .scale(box.width / real.width, box.height / real.height);
 }
 
 /**
@@ -63,7 +62,7 @@ export function drawStack(
     const img = lookup(item);
     if (!img) continue;
     const look = item.look;
-    // The crop, in the decoded image's own pixels.
+    // Only the part shown (the crop), in the decoded image's own pixels, where it is.
     const real = imageSize(img, item.media);
     const r = cropRect(real, look);
     ctx.save();

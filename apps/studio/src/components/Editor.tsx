@@ -75,6 +75,7 @@ function useShortcuts() {
         guides.update(s.filmId, { visible: !guides.get(s.filmId).visible });
       }
       else if (e.key === "Escape" && useStrokes.getState().ids.length) selectStrokes(null, []);
+      else if (e.key === "Escape" && usePaint.getState().tool !== "move") usePaint.getState().setTool("move");
       else if (e.key === "Escape" && (s.selection.length || s.columns)) {
         s.setSelection([]);
         s.setColumns(null);
