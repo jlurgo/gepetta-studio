@@ -224,9 +224,15 @@ puede tomar la cámara por USB: el botón "Liberar cámara" lo resuelve.
 - Exportar el resultado, un track solo, o cada track por separado.
 - Exportación de video con WebCodecs (librería `mediabunny`): MP4 (H.264), WebM
   (VP9). Luego ffmpeg (Electron) para ProRes, GIF, secuencias PNG, etc.
-- Dispositivos: zootropo (port de `~/Repos/zootropo`), fenakitoscopio (port de
-  `~/Repos/amariskoper`: geometría del disco, ranuras, export SVG/DXF/STL, más
-  distribución configurable de cuadros e impresión en papel), flipbook.
+- **Juguetes ópticos** (botón «Juguetes»): flipbook, zootropo y fenakitoscopio.
+  La geometría, en mm sobre la hoja, es pura y con tests (`packages/core/src/toys.ts`:
+  imposición del flipbook, tira de π·d en pedazos con pestañas, ranuras y base del
+  zootropo, dibujos en el anillo y contorno con ranuras del disco, escritores de SVG
+  y DXF). `apps/studio/src/export/toys.ts` dibuja cada hoja con un «Painter» en mm
+  que escribe PDF (jsPDF, tamaño real, A4/Carta) o SVG; los cuadros salen de
+  `export/frames.ts` (`renderCells`, el mismo dibujo que el video). Cada hoja trae
+  instrucciones y una raya de 5 cm para comprobar que se imprimió al 100 %.
+  Pendiente: STL del disco (lo tiene `~/Repos/amariskoper`).
 
 ## Reutilización de proyectos existentes
 

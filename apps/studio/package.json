@@ -11,12 +11,13 @@
   },
   "dependencies": {
     "@gepetta/core": "workspace:*",
+    "@gepetta/protocol": "workspace:*",
     "idb": "8.0.3",
+    "jspdf": "4.2.1",
     "mediabunny": "1.61.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "zustand": "5.0.8",
-    "@gepetta/protocol": "workspace:*"
+    "zustand": "5.0.8"
   },
   "devDependencies": {
     "@types/react": "19.2.2",

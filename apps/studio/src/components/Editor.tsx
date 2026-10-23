@@ -27,6 +27,7 @@ import { HistoryPanel } from "./HistoryPanel";
 import { Icon } from "./Icon";
 import { Stage } from "./Stage";
 import { Timeline } from "./Timeline";
+import { ToysDialog } from "./ToysDialog";
 
 const FPS_OPTIONS = [6, 8, 10, 12, 15, 24, 25, 30];
 
@@ -92,11 +93,13 @@ function useShortcuts() {
 
 function TopBar({
   onExport,
+  onToys,
   onToggleHistory,
   onVersions,
   historyOpen,
 }: {
   onExport(): void;
+  onToys(): void;
   onToggleHistory(): void;
   onVersions(): void;
   historyOpen: boolean;
@@ -159,6 +162,9 @@ function TopBar({
       </button>
       <button className="btn" onClick={onVersions} title="Versiones publicadas: fecha, archivo, exportar de nuevo">
         <Icon name="tag" /> Versiones{releaseCount ? ` (${releaseCount})` : ""}
+      </button>
+      <button className="btn" onClick={onToys} disabled={film.length === 0} title="Flipbook, zootropo y fenakitoscopio para imprimir y armar">
+        <Icon name="film" /> Juguetes
       </button>
       <button className="btn primary" onClick={onExport} disabled={film.length === 0}>
         <Icon name="export" /> Exportar
@@ -367,6 +373,7 @@ function SidePanel() {
 
 export function Editor() {
   const [exporting, setExporting] = useState(false);
+  const [toysOpen, setToysOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
   /** A published version being exported again: the film as it was. */
   const [past, setPast] = useState<{ film: FilmState; release: Release } | null>(null);
@@ -385,6 +392,7 @@ export function Editor() {
     <div className="editor">
       <TopBar
         onExport={() => setExporting(true)}
+        onToys={() => setToysOpen(true)}
         onToggleHistory={() => setHistoryOpen(!historyOpen)}
         onVersions={() => setVersionsOpen(true)}
         historyOpen={historyOpen}
@@ -401,6 +409,7 @@ export function Editor() {
       <Transport />
       <Timeline />
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
+      {toysOpen && <ToysDialog onClose={() => setToysOpen(false)} />}
       {versionsOpen && (
         <VersionsDialog
           onClose={() => setVersionsOpen(false)}

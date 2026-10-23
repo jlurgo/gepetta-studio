@@ -1,4 +1,4 @@
-import { type FilmState, type TrackId, cellIndex, exportedCells, stackAt } from "@gepetta/core";
+import { type FilmState, type TrackId, exportedCells } from "@gepetta/core";
 import {
   BufferTarget,
   CanvasSource,
@@ -10,14 +10,7 @@ import {
   WebMOutputFormat,
   canEncodeVideo,
 } from "mediabunny";
-import { picture, strokesKey } from "../media/composed";
-import { type Drawable, drawStack } from "../render/frame";
-import { storage } from "../storage";
-
-/** One decoded picture per image and strokes. */
-function pictureId(item: Pick<Drawable, "media" | "strokes">): string {
-  return `${item.media.original}#${strokesKey(item.strokes)}`;
-}
+import { renderCells } from "./frames";
 
 export type VideoFormat = "mp4" | "webm";
 export type VideoQuality = "medium" | "high" | "max";
@@ -54,9 +47,6 @@ export async function exportVideo(
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext("2d")!;
-  ctx.imageSmoothingQuality = "high";
-
   const output = new Output({
     format: opts.format === "mp4" ? new Mp4OutputFormat({ fastStart: "in-memory" }) : new WebMOutputFormat(),
     target: new BufferTarget(),
@@ -66,53 +56,13 @@ export async function exportVideo(
   output.addVideoTrack(source, { frameRate: fps });
   await output.start();
 
-  const scale = { x: width / film.settings.width, y: height / film.settings.height };
   try {
-    const index = cellIndex(film);
-    const only = opts.tracks;
-    // Decoded originals, kept while consecutive cells still show them.
-    let bitmaps = new Map<string, CanvasImageSource>();
-    let shown: string | null = null;
     // A ping-pong goes there and back once (a player repeating it keeps going).
-    const order = exportedCells(film);
-    for (let i = 0; i < order.length; i++) {
-      const cell = order[i]!;
-      // A track exported on its own goes out even if it is only a reference.
-      const stack = stackAt(film, cell, { index, ...(only ? { tracks: only } : { exportOnly: true }) });
-      const key = stack.map((s) => `${s.clipId}:${pictureId(s)}`).join("|");
-      if (key !== shown) {
-        const next = new Map<string, CanvasImageSource>();
-        for (const item of stack) {
-          const id = pictureId(item);
-          if (next.has(id)) continue;
-          // A picture with drawing strokes goes out with them, at full size.
-          next.set(
-            id,
-            bitmaps.get(id) ??
-              (item.strokes?.length
-                ? await picture(filmId, item.media, item.strokes, "original")
-                : await createImageBitmap(await storage.getAsset(filmId, item.media.original))),
-          );
-        }
-        // A lasso's background plate goes at full size too (see Mask.plate).
-        for (const item of stack) {
-          const plate = item.look?.mask?.plate;
-          const id = plate && pictureId({ media: plate.media });
-          if (plate && id && !next.has(id)) next.set(id, bitmaps.get(id) ?? (await createImageBitmap(await storage.getAsset(filmId, plate.media.original))));
-        }
-        bitmaps.forEach((b, id) => !next.has(id) && b instanceof ImageBitmap && b.close());
-        bitmaps = next;
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, width, height);
-        ctx.setTransform(scale.x, 0, 0, scale.y, 0, 0);
-        drawStack(ctx, stack, film.settings, (item) => bitmaps.get(pictureId(item)));
-        shown = key;
-      }
-      await source.add(i / fps, 1 / fps);
-      progress(i + 1);
+    // The canvas only changes when the picture does; a held one is added again.
+    for await (const { index } of renderCells(filmId, film, { width, height, cells: exportedCells(film), tracks: opts.tracks, canvas })) {
+      await source.add(index / fps, 1 / fps);
+      progress(index + 1);
     }
-    bitmaps.forEach((b) => b instanceof ImageBitmap && b.close());
     await output.finalize();
   } catch (e) {
     await output.cancel();

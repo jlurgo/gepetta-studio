@@ -13,3 +13,4 @@ export * from "./look";
 export * from "./columns";
 export * from "./sequences";
 export * from "./mask";
+export * from "./toys";

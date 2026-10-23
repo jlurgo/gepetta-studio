@@ -1,0 +1,56 @@
+/* Optical toys dialog: controls on the left, a playing preview on the right. */
+.dialog:has(.toys) {
+  width: min(1000px, 100%);
+}
+
+.toys {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.toys-body {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.toys-controls {
+  flex: 1 1 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toys-controls .row {
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.toys-preview {
+  flex: 0 1 460px;
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.toy-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.mm-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mm-input input {
+  width: 72px;
+}
