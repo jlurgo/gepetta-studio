@@ -65,6 +65,8 @@ interface EditorState {
   errors: Record<string, string>;
   /** Where the camera (and later every tool) puts its picture. */
   cursor: GridCursor;
+  /** The cursor last moved on by itself (photos, recording): the timeline keeps it centered. */
+  cursorAlong: boolean;
   /** Pictures selected in the timeline (to move, delete, lengthen…). */
   selection: ClipId[];
   /**
@@ -103,8 +105,8 @@ interface EditorState {
   setEntryEnabled(id: string, enabled: boolean): void;
   removeEntry(id: string): void;
   updateEntryOp(id: string, opIndex: number, op: Op): void;
-  /** Moves the grid cursor; keeps the track when not given. */
-  moveTo(cell: number, track?: TrackId): void;
+  /** Moves the grid cursor; keeps the track when not given. `along`: it moves on by itself. */
+  moveTo(cell: number, track?: TrackId, along?: boolean): void;
   setSelection(ids: ClipId[]): void;
   addRelease(release: Release): void;
   setColumns(columns: { start: number; end: number } | null): void;
@@ -181,6 +183,7 @@ export const useEditor = create<EditorState>((set, get) => {
       film,
       errors,
       cursor: fixCursor(film, after?.cursor ?? get().cursor),
+      cursorAlong: false,
       selection,
       saveStatus: "pending",
     });
@@ -195,6 +198,7 @@ export const useEditor = create<EditorState>((set, get) => {
     film: null,
     errors: {},
     cursor: { track: PHOTO_TRACK, cell: 0 },
+    cursorAlong: false,
     selection: [],
     columns: null,
     onion: { enabled: true, count: 1, opacity: 0.4 },
@@ -222,6 +226,7 @@ export const useEditor = create<EditorState>((set, get) => {
         film,
         errors,
         cursor: { track: PHOTO_TRACK, cell: nextPhotoCell(film) },
+        cursorAlong: false,
         selection: [],
         columns: null,
         playback: null,
@@ -277,9 +282,9 @@ export const useEditor = create<EditorState>((set, get) => {
       if (history) setHistory(updateEntryOp(history, id, opIndex, op));
     },
 
-    moveTo(cell, track) {
+    moveTo(cell, track, along = false) {
       const cursor = { track: track ?? get().cursor.track, cell: Math.max(0, cell) };
-      set({ cursor, playback: null });
+      set({ cursor, cursorAlong: along, playback: null });
     },
     setSelection(ids) {
       // Pictures or columns: one kind of selection at a time.
@@ -312,7 +317,7 @@ export const useEditor = create<EditorState>((set, get) => {
       const { playback, film, cursor } = get();
       if (!playback || !film) return;
       const cell = Math.min(film.length - 1, playbackCell(playback, film.settings.fps));
-      set({ playback: null, cursor: { ...cursor, cell } });
+      set({ playback: null, cursor: { ...cursor, cell }, cursorAlong: false });
     },
     stop() {
       set({ playback: null });

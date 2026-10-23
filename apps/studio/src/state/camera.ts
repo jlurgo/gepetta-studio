@@ -371,7 +371,7 @@ export const useCamera = create<CameraState>((set, get) => {
       const { cursor, moveTo } = useEditor.getState();
       const watching = cursor.track === r.target.track && cursor.cell === r.target.cell;
       patch(rigId, { target });
-      if (watching) moveTo(target.cell, target.track);
+      if (watching) moveTo(target.cell, target.track, true);
     },
 
     startPicking(rigId) {

@@ -188,14 +188,17 @@ export function Timeline() {
     el.scrollLeft = Math.max(0, a.cell * cw - a.x);
   }, [cw]);
 
-  // Keep the cursor in view when it moves (by keys, captures…).
+  // Keep the cursor in view when it moves: centered when it moves on by itself
+  // (photos, recording), the timeline running under it; just in view otherwise (keys, clicks).
+  const cursorAlong = useEditor((s) => s.cursorAlong);
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
     const x = cursor.cell * cw;
-    if (x < el.scrollLeft) el.scrollLeft = x - cw;
+    if (cursorAlong) el.scrollLeft = Math.max(0, x + cw / 2 - el.clientWidth / 2);
+    else if (x < el.scrollLeft) el.scrollLeft = x - cw;
     else if (x + cw > el.scrollLeft + el.clientWidth) el.scrollLeft = x + 2 * cw - el.clientWidth;
-  }, [cursor.cell, cw]);
+  }, [cursor.cell, cw, cursorAlong]);
 
   // While playing, a line runs over the cells being shown (outside React: it moves every frame).
   const playing = useEditor((s) => s.playback !== null);
@@ -213,8 +216,8 @@ export function Timeline() {
       const x = cell * cw;
       line.style.transform = `translateX(${x}px)`;
       line.style.width = `${cw}px`;
-      // Page along, like a video editor, when the line reaches an edge.
-      if (x < el.scrollLeft || x + cw > el.scrollLeft + el.clientWidth) el.scrollLeft = Math.max(0, x - el.clientWidth * 0.1);
+      // The line stays in the middle and the timeline runs under it.
+      el.scrollLeft = Math.max(0, x + cw / 2 - el.clientWidth / 2);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);

@@ -64,7 +64,7 @@ function placeStill(rigId: string | null, image: Blob, raw: Blob | null, label: 
     state.commit([{ type: "clip.place", clips: [clip!], label }], undefined, { selection: [] });
     const next = { track: clip!.track, cell: clipEnd(clip!) };
     if (rig) useCamera.getState().setTarget(rig.id, next);
-    else state.moveTo(next.cell, next.track);
+    else state.moveTo(next.cell, next.track, true);
   };
   const next = placeQueue.then(run);
   placeQueue = next.catch(() => undefined);
