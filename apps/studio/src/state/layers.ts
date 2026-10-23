@@ -2,6 +2,7 @@ import type { Clip, ClipId, Op, Track, TrackId, Transform2D } from "@gepetta/cor
 import { create } from "zustand";
 import { useCamera } from "./camera";
 import { useEditor } from "./editor";
+import { usePaint } from "./paint";
 
 /**
  * What the stage handles move: a whole track, one picture, a camera's live
@@ -48,7 +49,8 @@ export const useLayers = create<LayersState>((set) => ({
   panel: "tool",
   preview: null,
   select: (trackId) => set({ trackId, detail: "track", preview: null, panel: trackId ? "detail" : "tool" }),
-  showCell: (trackId) => set({ trackId, detail: "cell", preview: null, panel: "detail" }),
+  // With the lasso, going from cell to cell (to draw its outline on several pictures) keeps its panel.
+  showCell: (trackId) => set({ trackId, detail: "cell", preview: null, panel: usePaint.getState().tool === "lasso" ? "tool" : "detail" }),
   showClip: (trackId) => set({ trackId, detail: "clip", preview: null, panel: "detail" }),
   setPreview: (preview) => set({ preview }),
   showSequence: (seq) => set({ seq, detail: "sequence", preview: null, panel: "detail" }),
@@ -75,6 +77,8 @@ export function sequenceMoved(clips: Record<ClipId, Clip>, seq: string, ref: Cli
 // Picking several pictures shows them (their settings change together).
 useEditor.subscribe((state, prev) => {
   if (state.selection === prev.selection || state.selection.join() === prev.selection.join()) return;
+  // The lasso keeps its panel while pictures are picked (see showCell).
+  if (usePaint.getState().tool === "lasso") return;
   if (state.selection.length > 1) useLayers.setState({ detail: "clip", panel: "detail" });
   else if (state.selection.length === 1) useLayers.setState({ panel: "detail" });
   // Nothing picked any more: the panel goes back to the tool.

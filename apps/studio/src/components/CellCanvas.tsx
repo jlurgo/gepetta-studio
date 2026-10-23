@@ -95,6 +95,8 @@ export const CellCanvas = memo(function CellCanvas({ filmId, film, items }: { fi
     const loads = pictures.map((p) =>
       (p.strokes?.length ? picture(filmId, p.media, p.strokes, "thumb") : thumbImage(filmId, p.media.thumb)).catch(() => undefined),
     );
+    // A lasso's background plate (see Mask.plate).
+    for (const p of pictures) if (p.look?.mask?.plate) loads.push(thumbImage(filmId, p.look.mask.plate.media.thumb).catch(() => undefined));
     void Promise.all(loads).then(() => {
       if (alive && !live) draw(canvas, filmId, film, items);
     });

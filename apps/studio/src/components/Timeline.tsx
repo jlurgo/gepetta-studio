@@ -7,6 +7,7 @@ import { updateTrack, useLayers } from "../state/layers";
 import { type Rig, rigColor, shotOn, useCamera } from "../state/camera";
 import { Icon } from "./Icon";
 import { sequenceColor } from "./SequencePanel";
+import { pickPlateAt } from "../state/lasso";
 import { capturePointer } from "./pointer";
 import { OpacitySlider } from "./TrackPanel";
 
@@ -456,6 +457,8 @@ export function Timeline() {
       setHover(null);
       return;
     }
+    // Picking the lasso's background plate: this click only does that.
+    if (p.track && pickPlateAt(p.track.id, p.cell)) return;
     if (p.y < RULER_H) {
       if (loop) {
         // A loop: drag where it starts again to make it longer or shorter; drag the ruler to turn the drum.

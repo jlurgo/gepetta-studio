@@ -1,7 +1,7 @@
 import { type Clip, clipAt, sequenceClips } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import { useEditor } from "../state/editor";
-import { clearMasks, reblend, setKey, setMaskOptions, takeToNewTrack, useLasso } from "../state/lasso";
+import { clearMasks, clearPlate, reblend, setKey, setMaskOptions, setTolerance, takeToNewTrack, useLasso } from "../state/lasso";
 import { Icon } from "./Icon";
 
 /** Soft edge, changed live and kept when let go. */
@@ -35,6 +35,79 @@ function FeatherSlider({ clip }: { clip: Clip }) {
   );
 }
 
+/** How different from the background plate a color must be to stay, changed live and kept when let go. */
+function ToleranceSlider({ clip }: { clip: Clip }) {
+  const value = clip.look?.mask?.plate?.tolerance ?? 0.12;
+  const [draft, setDraft] = useState(value);
+  const dirty = useRef(false);
+  useEffect(() => setDraft(value), [value]);
+  const finish = () => {
+    if (dirty.current) setTolerance(clip, draft);
+    dirty.current = false;
+  };
+  return (
+    <label className="control">
+      <span>Sensibilidad: {Math.round((1 - draft / 0.4) * 100)} %</span>
+      <input
+        type="range"
+        min={0.02}
+        max={0.4}
+        step={0.01}
+        value={0.42 - draft}
+        title="Más: deja también lo que cambió poco (sombras); menos: solo lo que cambió mucho"
+        onChange={(e) => {
+          dirty.current = true;
+          setDraft(Math.round((0.42 - Number(e.target.value)) * 100) / 100);
+        }}
+        onPointerUp={finish}
+        onKeyUp={finish}
+        onBlur={finish}
+      />
+    </label>
+  );
+}
+
+/**
+ * Taking the background away: with a photo of the empty set (from the same
+ * place), only what differs from it stays, inside the outline.
+ */
+function PlateSection({ clip }: { clip: Clip }) {
+  const plate = clip.look?.mask?.plate;
+  const picking = useLasso((s) => s.pickingPlate === clip.id);
+  const plateName = useEditor((s) => (plate ? Object.values(s.film?.clips ?? {}).find((c) => c.media.original === plate.media.original)?.name : undefined));
+  return (
+    <>
+      <h4>Sacar el fondo</h4>
+      {!plate ? (
+        <p className="hint">
+          Con una foto del decorado vacío, sacada desde el mismo lugar, queda solo lo que cambió: el personaje, sin el fondo (dentro del lazo, si hay uno).
+        </p>
+      ) : (
+        <>
+          <p className="hint">
+            Fondo vacío: <strong>{plateName ?? "una imagen"}</strong>. Si se come partes del personaje, subí la sensibilidad; si quedan pedazos del fondo, bajala o
+            ajustá el lazo.
+          </p>
+          <ToleranceSlider key={clip.id} clip={clip} />
+        </>
+      )}
+      <div className="action-row">
+        <button
+          className={`btn small${picking ? " active" : ""}`}
+          onClick={() => useLasso.setState({ pickingPlate: picking ? null : clip.id })}
+        >
+          {picking ? "Tocá la celda del fondo vacío… (Esc)" : plate ? "Cambiar el fondo vacío" : "Elegir el fondo vacío"}
+        </button>
+        {plate && (
+          <button className="btn small ghost" onClick={() => clearPlate(clip)}>
+            Quitar
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
 /** The lasso's options and what to do with what it cut out (see state/lasso). */
 export function LassoPanel() {
   const mode = useLasso((s) => s.mode);
@@ -61,7 +134,10 @@ export function LassoPanel() {
       {!clip ? (
         <p className="hint">Elegí en la línea de tiempo la celda de una imagen y dibujá alrededor de lo que quieras dejar (un personaje, un objeto).</p>
       ) : !mask ? (
-        <p className="hint">Dibujá alrededor de lo que quieras dejar. La foto no se toca: el lazo se cambia o se quita cuando quieras.</p>
+        <>
+          <p className="hint">Dibujá alrededor de lo que quieras dejar. La foto no se toca: el lazo se cambia o se quita cuando quieras.</p>
+          <PlateSection clip={clip} />
+        </>
       ) : (
         <>
           <p className="hint">
@@ -101,6 +177,7 @@ export function LassoPanel() {
             </button>
           </div>
           <FeatherSlider key={clip.id} clip={clip} />
+          <PlateSection clip={clip} />
           <h4>Llevar a otro track</h4>
           <p className="hint">Lo recortado pasa a un track nuevo arriba («Personaje»), donde lo podés mover, agrandar o girar. Uno por personaje.</p>
           <label className="control toggle">

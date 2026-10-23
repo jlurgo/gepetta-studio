@@ -10,6 +10,7 @@ import {
   nudgeSelected,
   readyRigs,
   selectRelative, stopAllRecordings } from "../state/actions";
+import { useLasso } from "../state/lasso";
 import { useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
@@ -55,6 +56,7 @@ function useShortcuts() {
       else if (e.key === "Enter") (s.playback ? s.pause() : s.play());
       else if (key === "p") (s.playback ? s.stop() : s.play(true));
       else if (e.key === "Escape" && useCamera.getState().picking) useCamera.getState().cancelPicking();
+      else if (e.key === "Escape" && useLasso.getState().pickingPlate) useLasso.setState({ pickingPlate: null });
       else if (e.key === "Escape" && s.playback) s.stop();
       else if (e.key === "ArrowLeft") (e.altKey ? nudgeSelected(-1) : selectRelative(-1));
       else if (e.key === "ArrowRight") (e.altKey ? nudgeSelected(1) : selectRelative(1));

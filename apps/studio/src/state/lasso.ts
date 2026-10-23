@@ -56,6 +56,8 @@ interface LassoState {
   whole: boolean;
   /** The outline being drawn or pushed, in fractions of the picture, before it is kept. */
   draft: { clip: ClipId; points: Pt[]; closed: boolean } | null;
+  /** Waiting for a cell to be touched in the timeline: the background plate for this picture. */
+  pickingPlate: ClipId | null;
   set(patch: Partial<Pick<LassoState, "mode" | "whole">>): void;
 }
 
@@ -63,6 +65,7 @@ export const useLasso = create<LassoState>((set) => ({
   mode: remembered<LassoMode>("mode", "free"),
   whole: remembered("whole", true),
   draft: null,
+  pickingPlate: null,
   set(patch) {
     for (const [k, v] of Object.entries(patch)) {
       try {
@@ -225,6 +228,71 @@ export function setMaskOptions(clip: Clip, patch: Partial<Pick<Mask, "invert" | 
     .filter((c) => c.look?.mask)
     .map((c) => ({ type: "clip.update", id: c.id, patch: { look: withMask(c.look, { ...c.look!.mask!, ...patch }) } }));
   if (ops.length) commit(ops, patch.invert !== undefined ? "Lazo: qué se deja" : "Lazo: borde");
+}
+
+/** Default of how different a color must be from the background plate to be kept. */
+const DEFAULT_TOLERANCE = 0.12;
+
+/**
+ * Uses a picture as the background plate (the set without what is cut out):
+ * only what differs from it shows, inside the outline — the whole picture
+ * when there is no outline yet.
+ */
+export function setPlate(clip: Clip, plate: Clip) {
+  const { film, commit } = useEditor.getState();
+  if (!film) return;
+  const whole = rectOutline([0, 0], [1, 1]);
+  const ops: Op[] = lassoScope(film, clip).map((c) => {
+    const mask: Mask = c.look?.mask ?? { points: whole, key: true };
+    return {
+      type: "clip.update",
+      id: c.id,
+      patch: { look: withMask(c.look, { ...mask, plate: { media: plate.media, tolerance: mask.plate?.tolerance ?? DEFAULT_TOLERANCE } }) },
+    };
+  });
+  if (ops.length) commit(ops, "Lazo: fondo vacío");
+}
+
+/** How different from the background plate a color must be to stay. */
+export function setTolerance(clip: Clip, tolerance: number) {
+  const { film, commit } = useEditor.getState();
+  if (!film) return;
+  const ops: Op[] = lassoScope(film, clip)
+    .filter((c) => c.look?.mask?.plate)
+    .map((c) => {
+      const mask = c.look!.mask!;
+      return { type: "clip.update", id: c.id, patch: { look: withMask(c.look, { ...mask, plate: { ...mask.plate!, tolerance } }) } };
+    });
+  if (ops.length) commit(ops, "Lazo: sensibilidad");
+}
+
+/** Stops comparing with the background plate (the outline stays). */
+export function clearPlate(clip: Clip) {
+  const { film, commit } = useEditor.getState();
+  if (!film) return;
+  const ops: Op[] = lassoScope(film, clip)
+    .filter((c) => c.look?.mask?.plate)
+    .map((c) => {
+      const mask = { ...c.look!.mask! };
+      delete mask.plate;
+      return { type: "clip.update", id: c.id, patch: { look: withMask(c.look, mask) } };
+    });
+  if (ops.length) commit(ops, "Lazo: sin fondo vacío");
+}
+
+/** A cell touched while picking the background plate; true when it was that. */
+export function pickPlateAt(track: string, cell: number): boolean {
+  const id = useLasso.getState().pickingPlate;
+  if (!id) return false;
+  useLasso.setState({ pickingPlate: null });
+  const film = useEditor.getState().film;
+  const clip = film?.clips[id];
+  const plate = film && clipAt(film, track, cell);
+  if (!clip) return true;
+  if (!plate) useBusy.getState().notify("Esa celda está vacía: elegí una con el fondo sin el personaje.");
+  else if (plate.id === clip.id) useBusy.getState().notify("Elegí otra celda: una donde se vea el fondo sin el personaje.");
+  else setPlate(clip, plate);
+  return true;
 }
 
 /** Takes the outlines off (the pictures show whole again). */

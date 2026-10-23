@@ -94,6 +94,12 @@ export async function exportVideo(
                 : await createImageBitmap(await storage.getAsset(filmId, item.media.original))),
           );
         }
+        // A lasso's background plate goes at full size too (see Mask.plate).
+        for (const item of stack) {
+          const plate = item.look?.mask?.plate;
+          const id = plate && pictureId({ media: plate.media });
+          if (plate && id && !next.has(id)) next.set(id, bitmaps.get(id) ?? (await createImageBitmap(await storage.getAsset(filmId, plate.media.original))));
+        }
         bitmaps.forEach((b, id) => !next.has(id) && b instanceof ImageBitmap && b.close());
         bitmaps = next;
         ctx.setTransform(1, 0, 0, 1, 0, 0);

@@ -78,6 +78,12 @@ export interface Mask {
   feather?: number;
   /** Drawn or changed by hand on this picture (the ones between are blended from these). */
   key?: boolean;
+  /**
+   * The background without what is cut out (a photo of the empty set, taken
+   * from the same place): only what differs from it is kept, inside the
+   * outline. `tolerance` (0–1) is how different a color must be to count.
+   */
+  plate?: { media: MediaRef; tolerance: number };
 }
 
 /**
