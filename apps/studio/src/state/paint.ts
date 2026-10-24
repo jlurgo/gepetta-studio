@@ -320,6 +320,61 @@ interface LiveStroke {
 }
 
 let stroke: LiveStroke | null = null;
+/** The last stroke's layer, cleared, for the next one of the same size (a new one each time piles up memory with big photos). */
+let spareLayer: OffscreenCanvas | null = null;
+
+function takeLayer(width: number, height: number): OffscreenCanvas {
+  const spare = spareLayer;
+  spareLayer = null;
+  return spare && spare.width === width && spare.height === height ? spare : new OffscreenCanvas(width, height);
+}
+
+function giveBackLayer(layer: OffscreenCanvas) {
+  layer.getContext("2d")!.clearRect(0, 0, layer.width, layer.height);
+  spareLayer = layer;
+}
+
+type Box = { x: number; y: number; width: number; height: number };
+
+/** The part of a surface a clone stroke went over, in its pixels (whole pixels, inside it), or null if none. */
+function cloneBox(s: LiveStroke, surf: Surface): Box | null {
+  const { film } = useEditor.getState();
+  if (!film) return null;
+  const clip = surf.clipId ? film.clips[surf.clipId] : undefined;
+  const m = new DOMMatrix().scale(surfaceScale(surf)).multiply(filmToPicture(film, surf.track, clip));
+  const k = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c));
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [x, y, w] of s.points) {
+    const q = m.transformPoint(new DOMPoint(x, y));
+    const r = (w / 2) * k + 2;
+    x0 = Math.min(x0, q.x - r);
+    y0 = Math.min(y0, q.y - r);
+    x1 = Math.max(x1, q.x + r);
+    y1 = Math.max(y1, q.y + r);
+  }
+  return clampBox(x0, y0, x1, y1, surf.canvas);
+}
+
+function clampBox(x0: number, y0: number, x1: number, y1: number, size: Size): Box | null {
+  const x = Math.max(0, Math.floor(x0));
+  const y = Math.max(0, Math.floor(y0));
+  const width = Math.min(size.width, Math.ceil(x1)) - x;
+  const height = Math.min(size.height, Math.ceil(y1)) - y;
+  return width > 0 && height > 0 ? { x, y, width, height } : null;
+}
+
+/** A box of a surface in its picture's pixels. */
+function pictureBox(b: Box, surf: Surface): Box {
+  const k = surfaceScale(surf);
+  const r = (v: number) => Math.round((v / k) * 100) / 100;
+  return { x: r(b.x), y: r(b.y), width: r(b.width), height: r(b.height) };
+}
+
+/** Says in the console when keeping a stroke took long (to find out where painting lags). */
+function timed(what: string, t0: number) {
+  const ms = performance.now() - t0;
+  if (ms > 30) console.info(`[gepetta] paint: ${what} ${Math.round(ms)} ms`);
+}
 /** The picture with the stroke on it, as the stage shows it while painting. */
 let view: { canvas: OffscreenCanvas; dirty: boolean } | null = null;
 /** Where the pointer is over the film, for the brush outline. */
@@ -517,7 +572,7 @@ export function beginStroke(p: Point, pressure: number, pen: boolean, mods: { al
       if (!source.offset) usePaint.getState().setCloneSource({ ...source, offset });
       s.clone = { picture: pic, offset };
     }
-    s.layer = new OffscreenCanvas(surf.canvas.width, surf.canvas.height);
+    s.layer = takeLayer(surf.canvas.width, surf.canvas.height);
     s.surface = surf;
     drawPending(s);
     if (stroke !== s) finish(s);
@@ -540,15 +595,26 @@ const round = (v: number) => Math.round(v * 100) / 100;
 function finish(s: LiveStroke) {
   const surf = s.surface!;
   if (!s.layer) return;
+  const t0 = performance.now();
   layOn(surf.canvas.getContext("2d")!, s);
   const layer = s.layer;
   s.layer = null;
   const base = { id: newId(), tool: s.tool, strength: s.strength } as const;
   if (s.tool === "clone") {
-    // Its pixels: it copied what was there.
-    void keep(surf, layer.convertToBlob({ type: "image/png" }).then((png) => ({ ...base, layer: png })));
+    // Its pixels (it copied what was there): only the part it went over.
+    const box = cloneBox(s, surf);
+    let png: Promise<Blob> | null = null;
+    if (box) {
+      const part = new OffscreenCanvas(box.width, box.height);
+      part.getContext("2d")!.drawImage(layer, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
+      png = part.convertToBlob({ type: "image/png" });
+    }
+    giveBackLayer(layer);
+    timed("sello", t0);
+    if (box && png) void keep(surf, png.then((blob) => ({ ...base, layer: blob, box: pictureBox(box, surf) })));
     return;
   }
+  giveBackLayer(layer);
   const points = (s.tool === "shape" ? shapeCorners(s) : s.points).map(([x, y, w, p]): StrokePoint => [round(x), round(y), round(w), round(p)]);
   const kept: Omit<Stroke, "layer"> = {
     ...base,
@@ -558,6 +624,7 @@ function finish(s: LiveStroke) {
     ...(s.tool === "shape" && { shape: s.shape, filled: s.shapeFill }),
   };
   void keep(surf, Promise.resolve(kept));
+  timed("trazo", t0);
 }
 
 function hexColor(hex: string): [number, number, number] {
@@ -582,21 +649,39 @@ async function fillAt(p: Point) {
   const img = ctx.getImageData(0, 0, w, h);
   const mask = fillMask(img.data, w, h, x, y, Math.round(fillTolerance * 2.55));
   const [r, g, b] = hexColor(color);
-  const layer = new ImageData(w, h);
-  const d = layer.data;
+  // Only the part filled is kept.
+  let x0 = w, y0 = h, x1 = 0, y1 = 0;
   for (let i = 0; i < mask.length; i++) {
     if (!mask[i]) continue;
-    d[i * 4] = r;
-    d[i * 4 + 1] = g;
-    d[i * 4 + 2] = b;
-    d[i * 4 + 3] = 255;
+    const px = i % w;
+    const py = (i - px) / w;
+    if (px < x0) x0 = px;
+    if (px >= x1) x1 = px + 1;
+    if (py < y0) y0 = py;
+    if (py >= y1) y1 = py + 1;
   }
-  const canvas = new OffscreenCanvas(w, h);
+  const box = clampBox(x0, y0, x1, y1, surf.canvas);
+  if (!box) return;
+  const layer = new ImageData(box.width, box.height);
+  const d = layer.data;
+  for (let yy = 0; yy < box.height; yy++) {
+    for (let xx = 0; xx < box.width; xx++) {
+      if (!mask[(box.y + yy) * w + box.x + xx]) continue;
+      const o = (yy * box.width + xx) * 4;
+      d[o] = r;
+      d[o + 1] = g;
+      d[o + 2] = b;
+      d[o + 3] = 255;
+    }
+  }
+  const canvas = new OffscreenCanvas(box.width, box.height);
   canvas.getContext("2d")!.putImageData(layer, 0, 0);
-  ctx.drawImage(canvas, 0, 0);
+  ctx.drawImage(canvas, box.x, box.y);
   void keep(
     surf,
-    canvas.convertToBlob({ type: "image/png" }).then((png) => ({ id: newId(), tool: "fill" as const, strength: 1, color, layer: png })),
+    canvas
+      .convertToBlob({ type: "image/png" })
+      .then((png) => ({ id: newId(), tool: "fill" as const, strength: 1, color, layer: png, box: pictureBox(box, surf) })),
   );
 }
 
@@ -669,6 +754,7 @@ function keep(surf: Surface, pending: Promise<Omit<Stroke, "layer"> & { layer?: 
     const stroke: Stroke = { ...rest, ...(layer && { layer: await storeBlob(filmId, layer) }) };
     const state = useEditor.getState();
     if (state.filmId !== filmId || !state.film) return;
+    const t0 = performance.now();
     const label = LABELS[stroke.tool];
     let clip = surf.clipId ? state.film.clips[surf.clipId] : undefined;
     if (clip) {
@@ -695,6 +781,7 @@ function keep(surf: Surface, pending: Promise<Omit<Stroke, "layer"> & { layer?: 
     if (!clip) return;
     surf.key = clipKey(clip);
     seedPicture(filmId, clip.media, clip.strokes ?? [], surf.canvas);
+    timed("guardar el trazo", t0);
   };
   const next = saving.then(run);
   saving = next.catch((e: unknown) => {

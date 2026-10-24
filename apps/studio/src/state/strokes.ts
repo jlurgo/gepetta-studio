@@ -127,8 +127,9 @@ export function touchesStroke(stroke: Stroke, x: number, y: number, reach: numbe
 async function paintedAt(filmId: string, stroke: Stroke, picture: Size, x: number, y: number): Promise<boolean> {
   if (!stroke.layer) return false;
   const bmp = await createImageBitmap(await storage.getAsset(filmId, stroke.layer));
-  const px = Math.floor((x / picture.width) * bmp.width);
-  const py = Math.floor((y / picture.height) * bmp.height);
+  const b = stroke.box ?? { x: 0, y: 0, ...picture };
+  const px = Math.floor(((x - b.x) / b.width) * bmp.width);
+  const py = Math.floor(((y - b.y) / b.height) * bmp.height);
   if (px < 0 || py < 0 || px >= bmp.width || py >= bmp.height) return false;
   const c = new OffscreenCanvas(1, 1);
   const ctx = c.getContext("2d")!;

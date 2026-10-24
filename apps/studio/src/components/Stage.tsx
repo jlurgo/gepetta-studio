@@ -491,6 +491,9 @@ function usePaintPointer(filmRect: React.RefObject<FilmRect | null>, canvasRef: 
       if (color) pickColor(color);
       return true;
     }
+    // No text selection or drag-and-drop starting under the pen (which also keeps focus where it was: let it go).
+    e.preventDefault();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     const [p] = filmPoints(e);
     if (!p || !beginStroke(p, e.pressure, e.pointerType === "pen", { alt: e.altKey, shift: e.shiftKey })) return false;
     capturePointer(e);
@@ -1104,6 +1107,7 @@ export function Stage() {
         if (hasSource) handlers.onPointerUp(e);
       }}
       onPointerCancel={() => paintPointer.onPointerUp()}
+      onDragStart={(e) => e.preventDefault()}
       onPointerLeave={() => {
         leaveStage();
         sculptHover = null;

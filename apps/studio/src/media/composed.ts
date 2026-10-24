@@ -51,6 +51,7 @@ function layerBitmap(filmId: string, asset: AssetId): Promise<ImageBitmap> {
     p = storage.getAsset(filmId, asset).then((b) => createImageBitmap(b));
     p.catch(() => layerBitmaps.delete(key));
     layerBitmaps.set(key, p);
+    while (layerBitmaps.size > LIMIT) layerBitmaps.delete(layerBitmaps.keys().next().value!);
   }
   return p;
 }

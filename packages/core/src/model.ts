@@ -137,8 +137,10 @@ export interface Stroke {
   color?: string;
   /** How strongly it is laid on, 0–1. */
   strength: number;
-  /** Fill and clone stamp: the stroke's own pixels, an image the size of the picture. */
+  /** Fill and clone stamp: the stroke's own pixels, an image of the picture (or of `box` in it). */
   layer?: AssetId;
+  /** Where `layer` goes, in the picture's pixels (missing: over the whole picture). */
+  box?: { x: number; y: number; width: number; height: number };
   hidden?: boolean;
 }
 

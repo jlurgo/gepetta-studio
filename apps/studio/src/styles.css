@@ -358,9 +358,15 @@ input[type="range"] {
   min-width: 0;
   /* Lighter than the film's black, so the frame shows where it ends. */
   background: #2a2723;
+  /* A pen or finger drags here to draw, never to scroll, select or drag-and-drop
+     (Windows would cancel the stroke halfway and show the "no" cursor). */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .stage canvas {
+  -webkit-user-drag: none;
   position: absolute;
   inset: 0;
   width: 100%;

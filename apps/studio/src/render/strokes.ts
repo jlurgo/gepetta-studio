@@ -98,12 +98,13 @@ export function drawShape(ctx: Ctx, stroke: Pick<Stroke, "shape" | "filled" | "c
 /**
  * Draws a whole stroke at full strength on a clear layer whose transform takes
  * picture pixels to the layer's. A fill or clone stroke is its kept image
- * (`layer`), stretched over the picture; a fill takes its color again.
+ * (`layer`), stretched over its box of the picture; a fill takes its color again.
  */
 export function drawStroke(ctx: Ctx, stroke: Stroke, picture: { width: number; height: number }, layer?: CanvasImageSource) {
   if (stroke.layer) {
     if (!layer) return;
-    ctx.drawImage(layer, 0, 0, picture.width, picture.height);
+    const b = stroke.box ?? { x: 0, y: 0, ...picture };
+    ctx.drawImage(layer, b.x, b.y, b.width, b.height);
     if (stroke.tool === "fill" && stroke.color) {
       ctx.save();
       ctx.globalCompositeOperation = "source-in";
