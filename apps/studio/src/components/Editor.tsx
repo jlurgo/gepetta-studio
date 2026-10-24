@@ -37,6 +37,7 @@ import { HistoryPanel } from "./HistoryPanel";
 import { fitStage, zoomBy } from "../state/stageView";
 import { Icon } from "./Icon";
 import { Stage } from "./Stage";
+import { FORMATS, formatOf, ratioLabel } from "./formats";
 import { Timeline, hoveredCell } from "./Timeline";
 import { ToysDialog } from "./ToysDialog";
 
@@ -125,6 +126,42 @@ function useShortcuts() {
   }, []);
 }
 
+/** The film's frame shape: the usual ones, or the camera's (so its photos fill the frame). */
+function FormatControl() {
+  const film = useEditor((s) => s.film)!;
+  const commit = useEditor((s) => s.commit);
+  const { width, height } = film.settings;
+  // The camera in use, if its picture is there: its shape (as turned).
+  const camera = useCamera((s) => {
+    const rig = s.rigs.find((r) => r.id === s.activeRig);
+    const live = rig && s.liveOf(rig);
+    return live ? `${live.width}x${live.height}` : null;
+  });
+  const cam = camera ? formatOf(Number(camera.split("x")[0]), Number(camera.split("x")[1])) : null;
+  const current = `${width}x${height}`;
+  const set = (value: string) => {
+    const [w, h] = value.split("x").map(Number) as [number, number];
+    if (w && h && value !== current) commit([{ type: "film.setSize", width: w, height: h }], `Formato ${ratioLabel(w, h)}`);
+  };
+  return (
+    <label className="inline-control" title="Forma del cuadro de la película (las imágenes se acomodan adentro)">
+      <select value={current} onChange={(e) => set(e.target.value)}>
+        {!FORMATS.some((f) => f.id === current) && <option value={current}>Cuadro {ratioLabel(width, height)}</option>}
+        {FORMATS.map((f) => (
+          <option key={f.id} value={f.id}>
+            {f.label}
+          </option>
+        ))}
+        {cam && (
+          <option value={`${cam.width}x${cam.height}`} disabled={`${cam.width}x${cam.height}` === current}>
+            Igual a la cámara ({ratioLabel(cam.width, cam.height)})
+          </option>
+        )}
+      </select>
+    </label>
+  );
+}
+
 function TopBar({
   onExport,
   onToys,
@@ -181,6 +218,7 @@ function TopBar({
           ))}
         </select>
       </label>
+      <FormatControl />
       <label className="inline-control" title="Loop: después del último cuadro viene el primero. Ping-pong: va hasta el final y vuelve.">
         <select
           value={!film.settings.loop ? "none" : film.settings.pingpong ? "pingpong" : "loop"}

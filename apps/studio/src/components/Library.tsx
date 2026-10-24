@@ -3,15 +3,8 @@ import { useEffect, useState } from "react";
 import { thumbUrl } from "../media/cache";
 import { type FilmMeta, storage } from "../storage";
 import { useEditor } from "../state/editor";
+import { FORMATS } from "./formats";
 import { Icon } from "./Icon";
-
-const SIZES = [
-  { id: "1920x1080", label: "Horizontal Full HD (16:9)", width: 1920, height: 1080 },
-  { id: "3840x2160", label: "Horizontal 4K (16:9)", width: 3840, height: 2160 },
-  { id: "1440x1080", label: "Clásico (4:3)", width: 1440, height: 1080 },
-  { id: "1080x1080", label: "Cuadrado (1:1)", width: 1080, height: 1080 },
-  { id: "1080x1920", label: "Vertical (9:16)", width: 1080, height: 1920 },
-];
 
 const FPS_OPTIONS = [6, 8, 10, 12, 15, 24, 25, 30];
 
@@ -25,13 +18,13 @@ function Thumb({ meta }: { meta: FilmMeta }) {
 
 function NewFilmForm({ onCancel }: { onCancel(): void }) {
   const [name, setName] = useState("");
-  const [sizeId, setSizeId] = useState(SIZES[0]!.id);
+  const [sizeId, setSizeId] = useState(FORMATS[0]!.id);
   const [fps, setFps] = useState(DEFAULT_FPS);
   const open = useEditor((s) => s.open);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
-    const size = SIZES.find((s) => s.id === sizeId)!;
+    const size = FORMATS.find((s) => s.id === sizeId)!;
     const id = newId();
     const settings = { name: name.trim() || "Película sin nombre", fps, width: size.width, height: size.height };
     const history = createHistory(settings);
@@ -52,7 +45,7 @@ function NewFilmForm({ onCancel }: { onCancel(): void }) {
       <label>
         Formato
         <select value={sizeId} onChange={(e) => setSizeId(e.target.value)}>
-          {SIZES.map((s) => (
+          {FORMATS.map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
             </option>
