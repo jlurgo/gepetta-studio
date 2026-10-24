@@ -25,7 +25,7 @@
 - [x] Borrar como al escribir (Supr / ⌫ / B del control): saca la celda y corre lo que sigue; en una vacía o en la del vivo, la anterior (y el vivo va ahí)
 - [x] Arrastrar la celda del vivo a otra celda; teclas 1–9: la cámara 1, 2… va a la celda bajo el puntero
 - [x] Zoom en la pantalla grande: pellizcar, Ctrl + rueda, botones, Ctrl + − 0; desplazar con dos dedos, la rueda o el botón del medio
-- [x] La línea de tiempo como un texto: ⇧ + flechas, Ctrl + flechas (series y huecos), Inicio / Fin, Ctrl + A; Ctrl + ⌫ borra la serie; Ctrl + X / C / V
+- [x] La línea de tiempo como un texto: ⇧ + flechas (también entre tracks), Ctrl + flechas (series y huecos), Inicio / Fin, Ctrl + A; Ctrl + ⌫ borra la serie; Ctrl + X / C / V; la barra mete un espacio (en el vivo, saca la foto); I o «Ir al vivo» vuelven a la celda del vivo
 - [x] Forma del cuadro de la película (16:9, 3:2, 4:3, 1:1, vertical o igual a la cámara), cambiable en cualquier momento
 - [ ] Empaquetar gphoto2 dentro del instalador de Windows (hoy hace falta MSYS2)
 - [ ] Canon EDSDK (registro trabado: el portal de Canon USA tiene el enlace roto)

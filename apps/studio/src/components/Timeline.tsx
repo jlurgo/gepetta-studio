@@ -779,11 +779,14 @@ export function Timeline() {
             ))}
 
             {/* Cells picked with ⇧ + arrows, as picked text. */}
-            {span && span.track === cursor.track &&
+            {span &&
+              tracks.some((t) => t.id === span.track) &&
               laps.map((l) => {
                 const a = Math.min(span.anchor, cursor.cell);
                 const b = Math.max(span.anchor, cursor.cell) + 1;
-                return <div key={`span-${l}`} className="tl-span" style={{ left: a * cw + lapX(l), width: (b - a) * cw, top: rowTop(cursorRow), height: TRACK_H }} />;
+                const r0 = Math.min(cursorRow, tracks.findIndex((t) => t.id === span.track));
+                const r1 = Math.max(cursorRow, tracks.findIndex((t) => t.id === span.track));
+                return <div key={`span-${l}`} className="tl-span" style={{ left: a * cw + lapX(l), width: (b - a) * cw, top: rowTop(r0), height: rowTop(r1) + TRACK_H - rowTop(r0) }} />;
               })}
 
             {/* The cell looked at (where an import goes). */}

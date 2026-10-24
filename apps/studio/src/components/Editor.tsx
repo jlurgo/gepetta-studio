@@ -9,6 +9,8 @@ import {
   cutCells,
   deleteBack,
   deleteRun,
+  goToLive,
+  spaceBar,
   moveCursor,
   moveToEdge,
   pasteCells,
@@ -74,7 +76,8 @@ function useShortcuts() {
       else if (mod && key === "v") pasteCells();
       else if (mod && key === "a") pickWholeTrack();
       else if (mod) return;
-      else if (e.key === " ") shoot();
+      else if (e.key === " ") spaceBar();
+      else if (key === "i") goToLive();
       else if (e.key === "Enter") (s.playback ? s.pause() : s.play());
       else if (key === "p") (s.playback ? s.stop() : s.play(true));
       else if (e.key === "Escape" && useCamera.getState().picking) useCamera.getState().cancelPicking();
@@ -83,8 +86,8 @@ function useShortcuts() {
       else if (e.key === "ArrowLeft") (e.altKey ? nudgeSelected(-1) : moveCursor(-1, { extend: e.shiftKey }));
       else if (e.key === "ArrowRight") (e.altKey ? nudgeSelected(1) : moveCursor(1, { extend: e.shiftKey }));
       else if (e.key === "Home" || e.key === "End") moveToEdge(e.key === "Home" ? "start" : "end", e.shiftKey);
-      else if (e.key === "ArrowUp") moveRow("up");
-      else if (e.key === "ArrowDown") moveRow("down");
+      else if (e.key === "ArrowUp") moveRow("up", e.shiftKey);
+      else if (e.key === "ArrowDown") moveRow("down", e.shiftKey);
       else if (e.key === "Delete" || e.key === "Backspace") deleteBack();
       else if (key === "d") duplicateSelected();
       else if (/^[1-9]$/.test(e.key) && useCamera.getState().rigs[Number(e.key) - 1]) {
@@ -265,6 +268,13 @@ function Transport() {
   const captureStep = useEditor((s) => s.captureStep);
   const ready = useCamera((s) => readyRigs(s.rigs).length);
   const recording = useCamera((s) => s.rigs.some((r) => r.recording));
+  const hasCamera = useCamera((s) => s.rigs.length > 0);
+  // The cursor is on the cell the camera in use shoots to.
+  const atLive = useCamera((s) => {
+    const rig = s.rigs.find((r) => r.id === s.activeRig);
+    const t = rig && s.targetOf(rig);
+    return !!t && t.track === cursor.track && t.cell === cursor.cell;
+  });
   const captureMode = useEditor((s) => s.captureMode);
   const { play, pause, stop, setOnion, set } = useEditor.getState();
   const atCursor = clipAt(film, cursor.track, cursor.cell);
@@ -290,11 +300,14 @@ function Transport() {
                 : ready > 1
                   ? `Sacar foto con las ${ready} cámaras habilitadas a la vez, cada una en su celda`
                   : "Sacar foto"
-            } (barra espaciadora)`}
+            } (barra espaciadora, estando en la celda del vivo)`}
           >
             <Icon name={captureMode === "video" ? "record" : "camera"} size={28} />
           </button>
         )}
+        <button className="btn small" onClick={goToLive} disabled={!hasCamera || atLive} title="Ir a la celda del vivo de la cámara (I; en el control, apretar la palanca izquierda)">
+          <span className="live-dot static" /> Ir al vivo
+        </button>
         <div className="segmented capture-mode" role="radiogroup" aria-label="Foto o video">
           {(["photo", "video"] as const).map((m) => (
             <button key={m} role="radio" aria-checked={captureMode === m} className={captureMode === m ? "active" : ""} disabled={recording} onClick={() => set({ captureMode: m })}>

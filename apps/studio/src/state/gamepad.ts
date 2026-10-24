@@ -1,6 +1,6 @@
 import { wrapCell } from "@gepetta/core";
 import { useEffect } from "react";
-import { deleteBack, moveRow, shoot } from "./actions";
+import { deleteBack, goToLive, moveRow, shoot } from "./actions";
 import { useBusy } from "./busy";
 import { useCamera } from "./camera";
 import { useEditor } from "./editor";
@@ -119,8 +119,7 @@ function act(control: Control, pad: Gamepad) {
     case "view":
       return editor.undo();
     case "stickPress":
-      if (rig) editor.moveTo(camera.targetOf(rig).cell, camera.targetOf(rig).track);
-      return;
+      return goToLive();
     case "menu":
       if (camera.rigs.some((r) => r.recording)) return;
       editor.set({ captureMode: editor.captureMode === "photo" ? "video" : "photo" });

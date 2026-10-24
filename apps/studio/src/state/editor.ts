@@ -79,8 +79,9 @@ interface EditorState {
    */
   columns: ColumnRange[] | null;
   /**
-   * Cells picked with ⇧ + arrows, as text is: from `anchor` to the cursor's
-   * cell (both in), in the cursor's track.
+   * Cells picked with ⇧ + arrows, as text is: from the `anchor` cell of the
+   * `track` it started in to the cursor (both corners in), across the tracks
+   * between them.
    */
   span: { track: TrackId; anchor: number } | null;
   onion: OnionSettings;
@@ -302,9 +303,8 @@ export const useEditor = create<EditorState>((set, get) => {
       const film = get().film;
       const at = Math.max(0, cell);
       const cursor = { track: track ?? get().cursor.track, cell: film ? wrapCell(film, at) : at };
-      // Picked cells are of one track: going to another lets them go.
-      const span = get().span && get().span!.track === cursor.track ? get().span : null;
-      set({ cursor, cursorAlong: along, playback: null, span });
+      // Moving on by itself (shooting, recording) lets picked cells go.
+      set({ cursor, cursorAlong: along, playback: null, ...(along && { span: null }) });
     },
     setSelection(ids) {
       // Pictures or columns: one kind of selection at a time.

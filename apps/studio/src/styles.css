@@ -411,6 +411,18 @@ input[type="range"] {
   animation: live-blink 1s ease-in-out infinite;
 }
 
+.live-dot.static {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  animation: none;
+}
+
+.btn:disabled .live-dot {
+  background: var(--muted);
+  box-shadow: none;
+}
+
 @keyframes live-blink {
   50% {
     opacity: 0.15;
