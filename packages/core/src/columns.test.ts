@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellAfterRemoving, extendColumns, insertColumnsOps, removeCellOps, removeColumnsOps, toggleColumns } from "./columns";
+import { cellAfterRemoving, extendColumns, insertCellsOps, insertColumnsOps, nextRunEdge, removeCellOps, removeCellsOps, removeColumnsOps, toggleColumns } from "./columns";
 import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, emptyFilm } from "./model";
 import { applyOp } from "./ops";
 
@@ -128,5 +128,38 @@ describe("removing one cell of a track", () => {
       ["a", 0, 2],
       ["b", 2, 1],
     ]);
+  });
+});
+
+describe("moving and editing a track as a text", () => {
+  // a b _ _ c d _ (a@0 b@1 c@4 d@5), length 7
+  const words = () =>
+    applyOp(emptyFilm({ name: "t", fps: 12, width: 160, height: 90 }), { type: "clip.place", clips: [pic("a", 0), pic("b", 1), pic("c", 4), pic("d", 5)] });
+  const sized = () => applyOp(words(), { type: "film.setLength", length: 7 });
+
+  it("Ctrl + arrow goes from run to run", () => {
+    const f = sized();
+    expect(nextRunEdge(f, PHOTO_TRACK, 0, 1)).toBe(2);
+    expect(nextRunEdge(f, PHOTO_TRACK, 2, 1)).toBe(4);
+    expect(nextRunEdge(f, PHOTO_TRACK, 4, 1)).toBe(6);
+    expect(nextRunEdge(f, PHOTO_TRACK, 6, 1)).toBe(7);
+    expect(nextRunEdge(f, PHOTO_TRACK, 5, -1)).toBe(4);
+    expect(nextRunEdge(f, PHOTO_TRACK, 4, -1)).toBe(2);
+    expect(nextRunEdge(f, PHOTO_TRACK, 3, -1)).toBe(2);
+    expect(nextRunEdge(f, PHOTO_TRACK, 2, -1)).toBe(0);
+  });
+
+  it("takes out a stretch of cells, closing up", () => {
+    let f = sized();
+    for (const op of removeCellsOps(f, PHOTO_TRACK, 1, 3)) f = applyOp(f, op);
+    expect(order(f)).toEqual(["a@0", "c@1", "d@2"]);
+  });
+
+  it("opens empty cells, the film growing if needed", () => {
+    let f = words();
+    expect(f.length).toBe(6);
+    for (const op of insertCellsOps(f, PHOTO_TRACK, 4, 3)) f = applyOp(f, op);
+    expect(order(f)).toEqual(["a@0", "b@1", "c@7", "d@8"]);
+    expect(f.length).toBe(9);
   });
 });

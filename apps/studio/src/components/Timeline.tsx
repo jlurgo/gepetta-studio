@@ -143,6 +143,7 @@ export function Timeline() {
   const rigs = useCamera((s) => s.rigs);
   const activeRig = useCamera((s) => s.activeRig);
   const picking = useCamera((s) => s.picking);
+  const span = useEditor((s) => s.span);
   const shownSeq = useLayers((s) => (s.detail === "sequence" ? s.seq : null));
   /** While picking a camera's cell: the cell under the pointer. */
   const [hover, setHover] = useState<{ track: string; cell: number; v: number } | null>(null);
@@ -459,6 +460,8 @@ export function Timeline() {
 
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
+    // A click lets picked cells go, as in a text.
+    useEditor.getState().setSpan(null);
     const p = at(e);
     if (picking) {
       // Picking where a camera's photos go: this click only does that.
@@ -774,6 +777,14 @@ export function Timeline() {
                 style={{ top: rowTop(i), height: TRACK_H, backgroundSize: `${cw}px 100%` }}
               />
             ))}
+
+            {/* Cells picked with ⇧ + arrows, as picked text. */}
+            {span && span.track === cursor.track &&
+              laps.map((l) => {
+                const a = Math.min(span.anchor, cursor.cell);
+                const b = Math.max(span.anchor, cursor.cell) + 1;
+                return <div key={`span-${l}`} className="tl-span" style={{ left: a * cw + lapX(l), width: (b - a) * cw, top: rowTop(cursorRow), height: TRACK_H }} />;
+              })}
 
             {/* The cell looked at (where an import goes). */}
             {laps.map((l) => (

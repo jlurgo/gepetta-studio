@@ -9,12 +9,18 @@ import {
   cellAfterRemoving,
   cellsInColumns,
   removeCellOps,
+  removeCellsOps,
+  insertCellsOps,
+  nextRunEdge,
+  runAt,
+  extendColumns,
   removeColumnsOps,
   insertColumnsOps,
   isPlainLook,
   setSequenceOps,
   wrapCell,
   type MediaRef,
+  applyOp,
   type Op,
   type Track,
   type TrackId,
@@ -404,6 +410,8 @@ export function deleteSelected() {
 export function deleteBack() {
   const { film, cursor, selection } = useEditor.getState();
   if (!film) return;
+  const span = spanCells();
+  if (span) return removeCells(span.track, span.start, span.end - span.start);
   const here = clipAt(film, cursor.track, cursor.cell);
   if (pickedStrokes(film) || useEditor.getState().columns || selection.some((id) => id !== here?.id)) return deleteSelected();
   const camera = useCamera.getState();
@@ -422,6 +430,178 @@ export function deleteBack() {
     const t = camera.targetOf(r);
     if (t.track === cursor.track && t.cell > cell) useCamera.getState().setTarget(r.id, { track: t.track, cell: t.cell - 1 });
   }
+}
+
+/** Takes cells out of a track, closing up; the cursor goes to where they were, and cameras shooting after them come along. */
+function removeCells(track: TrackId, start: number, count: number) {
+  const { film, commit } = useEditor.getState();
+  if (!film || count <= 0) return;
+  const ops = removeCellsOps(film, track, start, count);
+  if (!ops.length) return;
+  useEditor.getState().setSpan(null);
+  commit(ops, count === 1 ? `Borrar la celda ${start + 1}` : `Borrar ${count} celdas`, { cursor: { track, cell: start }, selection: [] });
+  const camera = useCamera.getState();
+  for (const r of camera.rigs) {
+    const t = camera.targetOf(r);
+    if (t.track === track && t.cell > start) camera.setTarget(r.id, { track, cell: Math.max(start, t.cell - count) });
+  }
+}
+
+/** Ctrl + ⌫ / Supr: takes out the whole run the cursor is in (pictures one after another, or a gap), as a word. */
+export function deleteRun() {
+  const { film, cursor, columns } = useEditor.getState();
+  if (!film || columns) return;
+  const span = spanCells();
+  if (span) return removeCells(span.track, span.start, span.end - span.start);
+  const run = runAt(film, cursor.track, cursor.cell);
+  removeCells(cursor.track, run.start, Math.min(run.end, film.length) - run.start);
+}
+
+/** The cells picked with ⇧ + arrows: [start, end) in a track. */
+export function spanCells(): { track: TrackId; start: number; end: number } | null {
+  const { span, cursor } = useEditor.getState();
+  if (!span || span.track !== cursor.track) return null;
+  return { track: span.track, start: Math.min(span.anchor, cursor.cell), end: Math.max(span.anchor, cursor.cell) + 1 };
+}
+
+/** The pictures under the picked cells are picked too (so holding, repeating… work on them). */
+function pickSpanClips() {
+  const { film } = useEditor.getState();
+  const span = spanCells();
+  if (!film) return;
+  const ids = span ? Object.values(film.clips).filter((c) => c.track === span.track && c.start < span.end && clipEnd(c) > span.start).map((c) => c.id) : [];
+  useEditor.getState().setSelection(ids);
+}
+
+/**
+ * ← → in the timeline, as in a text: one cell, or with `word` (Ctrl) to the
+ * next run of pictures or gap; with `extend` (⇧) picking the cells on the way.
+ * Without ⇧, picked cells let go (the cursor goes to their side first).
+ */
+export function moveCursor(dir: -1 | 1, opts: { extend?: boolean; word?: boolean } = {}) {
+  const { film, cursor, span, columns, moveTo, setSpan, setColumns } = useEditor.getState();
+  if (!film) return;
+  if (columns) {
+    // The results row: the picked columns go along (⇧: grow).
+    const cell = opts.word ? nextRunEdge(film, cursor.track, cursor.cell, dir) : Math.max(0, cursor.cell + dir);
+    moveTo(cell);
+    const here = { start: useEditor.getState().cursor.cell, end: useEditor.getState().cursor.cell + 1 };
+    setColumns(opts.extend ? extendColumns(columns, here) : [here]);
+    return;
+  }
+  const picked = spanCells();
+  if (!opts.extend && picked && !opts.word) {
+    setSpan(null);
+    moveTo(dir < 0 ? picked.start : picked.end - 1);
+    return pickSpanClips();
+  }
+  if (opts.extend && !span) setSpan({ track: cursor.track, anchor: cursor.cell });
+  if (!opts.extend) setSpan(null);
+  let cell = cursor.cell + dir;
+  if (opts.word) {
+    const end = Math.max(film.length, cursor.cell + 1);
+    // Picking forward stops on the run's last cell (so the gap after it is not taken).
+    cell = dir > 0 ? (opts.extend ? Math.max(cursor.cell, nextRunEdge(film, cursor.track, cursor.cell + 1, 1, end) - 1) : nextRunEdge(film, cursor.track, cursor.cell, 1, end)) : nextRunEdge(film, cursor.track, cursor.cell, -1);
+  }
+  moveTo(Math.max(0, cell));
+  if (opts.extend || span) pickSpanClips();
+}
+
+/** Inicio / Fin: the first cell, or the one after the track's last picture (⇧: picking the way). */
+export function moveToEdge(edge: "start" | "end", extend = false) {
+  const { film, cursor, span, moveTo, setSpan } = useEditor.getState();
+  if (!film) return;
+  if (extend && !span) setSpan({ track: cursor.track, anchor: cursor.cell });
+  if (!extend) setSpan(null);
+  const last = afterLastPicture(film, cursor.track);
+  moveTo(edge === "start" ? 0 : extend ? Math.max(0, last - 1) : last);
+  pickSpanClips();
+}
+
+/** Ctrl + A: every cell of the track with something, up to its last picture. */
+export function pickWholeTrack() {
+  const { film, cursor, moveTo, setSpan } = useEditor.getState();
+  if (!film) return;
+  const last = afterLastPicture(film, cursor.track);
+  if (!last) return;
+  setSpan({ track: cursor.track, anchor: 0 });
+  moveTo(last - 1);
+  pickSpanClips();
+}
+
+/** Cells copied (Ctrl + C / X), to paste as text is: their pictures (starts from 0) and how many cells. */
+let clipboard: { clips: Clip[]; cells: number } | null = null;
+
+/** The picked cells, or else the picked pictures (or the one at the cursor), as cells to paste. */
+function copied(): { clips: Clip[]; cells: number; from: { track: TrackId; start: number; end: number } | null } | null {
+  const { film } = useEditor.getState();
+  if (!film) return null;
+  const span = spanCells();
+  if (span) {
+    // Pictures cut to the picked cells.
+    const clips = Object.values(film.clips)
+      .filter((c) => c.track === span.track && c.start < span.end && clipEnd(c) > span.start)
+      .map((c) => {
+        const start = Math.max(c.start, span.start);
+        return { ...c, start: start - span.start, length: Math.min(clipEnd(c), span.end) - start };
+      });
+    return { clips, cells: span.end - span.start, from: span };
+  }
+  const clips = targets();
+  if (!clips.length) return null;
+  const start = Math.min(...clips.map((c) => c.start));
+  const end = Math.max(...clips.map(clipEnd));
+  return { clips: clips.map((c) => ({ ...c, start: c.start - start })), cells: end - start, from: null };
+}
+
+export function copyCells(): boolean {
+  const c = copied();
+  if (!c) return false;
+  clipboard = { clips: c.clips, cells: c.cells };
+  useBusy.getState().notify(c.cells === 1 ? "Celda copiada." : `${c.cells} celdas copiadas.`);
+  return true;
+}
+
+export function cutCells() {
+  const c = copied();
+  if (!c) return;
+  clipboard = { clips: c.clips, cells: c.cells };
+  if (c.from) return removeCells(c.from.track, c.from.start, c.from.end - c.from.start);
+  // Picked pictures: their cells go, as with the picked cells.
+  const { cursor } = useEditor.getState();
+  const track = c.clips[0]!.track;
+  const start = Math.min(...targets().map((k) => k.start));
+  removeCells(track ?? cursor.track, start, c.cells);
+}
+
+/**
+ * Ctrl + V: the copied cells go in at the cursor in its track, moving what is
+ * there later (picked cells are replaced); the cursor ends after them.
+ */
+export function pasteCells() {
+  const state = useEditor.getState();
+  if (!state.film || !clipboard) return;
+  let film = state.film;
+  const track = state.cursor.track;
+  const ops: Op[] = [];
+  let at = state.cursor.cell;
+  const span = spanCells();
+  if (span) {
+    ops.push(...removeCellsOps(film, track, span.start, span.end - span.start));
+    for (const op of ops) film = applyOp(film, op);
+    at = span.start;
+  }
+  const opening = insertCellsOps(film, track, at, clipboard.cells);
+  ops.push(...opening);
+  // Copies are new pictures; ones of a sequence make a new sequence together.
+  const seqs = new Map<string, string>();
+  const clips = clipboard.clips.map((c) => {
+    const seq = c.seq && (seqs.get(c.seq) ?? seqs.set(c.seq, newId()).get(c.seq)!);
+    return { ...c, id: newId(), track, start: at + c.start, ...(seq ? { seq } : {}) };
+  });
+  if (clips.length) ops.push({ type: "clip.place", clips, label: "Pegar" });
+  state.setSpan(null);
+  state.commit(ops, clipboard.cells === 1 ? "Pegar una celda" : `Pegar ${clipboard.cells} celdas`, { cursor: { track, cell: at + clipboard.cells }, selection: [] });
 }
 
 /** Copies the selected pictures right after themselves (as a block), and selects the copies. */
@@ -464,17 +644,6 @@ export function nudgeSelected(dir: -1 | 1) {
   moveClips(clips.map((c) => ({ id: c.id, track: c.track, start: c.start + dir })));
   const { cursor, moveTo } = useEditor.getState();
   if (clips.length) moveTo(cursor.cell + dir);
-}
-
-/** Moves the cursor one cell, showing the film there. */
-export function selectRelative(dir: -1 | 1) {
-  const { cursor, moveTo, columns, setColumns } = useEditor.getState();
-  moveTo(Math.max(0, cursor.cell + dir));
-  // On the results row the picked column goes along.
-  if (columns) {
-    const cell = useEditor.getState().cursor.cell;
-    setColumns([{ start: cell, end: cell + 1 }]);
-  }
 }
 
 /**

@@ -78,6 +78,11 @@ interface EditorState {
    * can be moved as a whole; effects will go here).
    */
   columns: ColumnRange[] | null;
+  /**
+   * Cells picked with ⇧ + arrows, as text is: from `anchor` to the cursor's
+   * cell (both in), in the cursor's track.
+   */
+  span: { track: TrackId; anchor: number } | null;
   onion: OnionSettings;
   loop: boolean;
   tailSeconds: number;
@@ -116,6 +121,7 @@ interface EditorState {
   setSelection(ids: ClipId[]): void;
   addRelease(release: Release): void;
   setColumns(columns: ColumnRange[] | null): void;
+  setSpan(span: EditorState["span"]): void;
   setOnion(patch: Partial<OnionSettings>): void;
   set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep" | "captureMode" | "focusOpacity">>): void;
   /** Plays from the cursor (from the start if the cursor is past the end), or the last seconds. */
@@ -208,6 +214,7 @@ export const useEditor = create<EditorState>((set, get) => {
     cursorAlong: false,
     selection: [],
     columns: null,
+    span: null,
     onion: { enabled: true, count: 1, opacity: 0.4 },
     loop: true,
     tailSeconds: 3,
@@ -237,6 +244,7 @@ export const useEditor = create<EditorState>((set, get) => {
         cursorAlong: false,
         selection: [],
         columns: null,
+        span: null,
         playback: null,
         saveStatus: converted ? "pending" : "saved",
       });
@@ -294,7 +302,9 @@ export const useEditor = create<EditorState>((set, get) => {
       const film = get().film;
       const at = Math.max(0, cell);
       const cursor = { track: track ?? get().cursor.track, cell: film ? wrapCell(film, at) : at };
-      set({ cursor, cursorAlong: along, playback: null });
+      // Picked cells are of one track: going to another lets them go.
+      const span = get().span && get().span!.track === cursor.track ? get().span : null;
+      set({ cursor, cursorAlong: along, playback: null, span });
     },
     setSelection(ids) {
       // Pictures or columns: one kind of selection at a time.
@@ -305,6 +315,9 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!filmId || !history || !film) return;
       set({ releases: [...get().releases, release], saveStatus: "pending" });
       scheduleSave(filmId, history, film);
+    },
+    setSpan(span) {
+      set({ span });
     },
     setColumns(columns) {
       const picked = columns?.length ? columns : null;

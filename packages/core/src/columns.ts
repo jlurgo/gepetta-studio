@@ -1,5 +1,5 @@
 import { type FilmState, type TrackId, clipEnd } from "./model";
-import type { Op } from "./ops";
+import { type Op, applyOp } from "./ops";
 
 /** Cells [start, end) of every track: a stretch of the film as it comes out. */
 export interface ColumnRange {
@@ -111,5 +111,69 @@ export function removeCellOps(film: FilmState, track: TrackId, cell: number): Op
   const ops: Op[] = held ? [{ type: "clip.update", id: held.id, patch: { length: held.length - 1 } }] : [{ type: "cells.clear", start: cell, length: 1, tracks: [track] }];
   const from = held ? clipEnd(held) : cell + 1;
   if (film.length > from) ops.push({ type: "cells.move", start: from, length: film.length - from, to: from - 1, tracks: [track] });
+  return ops;
+}
+
+/** Whether a track shows a picture at a cell. */
+function filled(film: FilmState, track: TrackId, cell: number): boolean {
+  return Object.values(film.clips).some((c) => c.track === track && c.start <= cell && cell < clipEnd(c));
+}
+
+/** The run a cell is in: pictures one after another, or empty cells ([start, end), within [0, end]). */
+export function runAt(film: FilmState, track: TrackId, cell: number, end = film.length): { start: number; end: number; filled: boolean } {
+  const kind = filled(film, track, cell);
+  let a = cell;
+  while (a > 0 && filled(film, track, a - 1) === kind) a--;
+  let b = cell + 1;
+  while (b < end && filled(film, track, b) === kind) b++;
+  return { start: a, end: Math.max(b, cell + 1), filled: kind };
+}
+
+/**
+ * Where Ctrl + arrow goes, as from word to word in a text: runs of pictures
+ * are words and runs of empty cells the spaces between them. Forward
+ * (`dir` 1): the first cell of the next run; back: the first cell of this run,
+ * or of the one before if already there. Stays within [0, end].
+ */
+export function nextRunEdge(film: FilmState, track: TrackId, cell: number, dir: -1 | 1, end = film.length): number {
+  if (dir > 0) {
+    if (cell >= end) return end;
+    const here = filled(film, track, cell);
+    let c = cell + 1;
+    while (c < end && filled(film, track, c) === here) c++;
+    return c;
+  }
+  if (cell <= 0) return 0;
+  let c = cell - 1;
+  const kind = filled(film, track, c);
+  while (c > 0 && filled(film, track, c - 1) === kind) c--;
+  return c;
+}
+
+/** Ops that take `count` cells out of a track from `start` on, closing up (see removeCellOps). */
+export function removeCellsOps(film: FilmState, track: TrackId, start: number, count: number): Op[] {
+  const ops: Op[] = [];
+  let f = film;
+  for (let i = 0; i < count; i++) {
+    const step = removeCellOps(f, track, start);
+    if (!step.length) break;
+    for (const op of step) f = applyOp(f, op);
+    ops.push(...step);
+  }
+  return ops;
+}
+
+/**
+ * Ops that open `count` empty cells in a track at `at`, as typing into a
+ * text: what comes from there on moves later (a picture held across `at` is
+ * split there), and the film gets longer if that track then needs it.
+ */
+export function insertCellsOps(film: FilmState, track: TrackId, at: number, count: number): Op[] {
+  if (count <= 0) return [];
+  const ops: Op[] = [];
+  if (film.length > at) ops.push({ type: "cells.move", start: at, length: film.length - at, to: at + count, tracks: [track] });
+  let end = 0;
+  for (const c of Object.values(film.clips)) if (c.track === track) end = Math.max(end, clipEnd(c));
+  if (end + count > film.length && end > at) ops.push({ type: "film.setLength", length: end + count });
   return ops;
 }

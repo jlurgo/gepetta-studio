@@ -5,13 +5,20 @@ import { useEffect, useRef, useState } from "react";
 import {
   shoot,
   changeHold,
+  copyCells,
+  cutCells,
   deleteBack,
+  deleteRun,
+  moveCursor,
+  moveToEdge,
+  pasteCells,
+  pickWholeTrack,
   moveRow,
   deleteSelected,
   duplicateSelected,
   nudgeSelected,
   readyRigs,
-  selectRelative, stopAllRecordings } from "../state/actions";
+  stopAllRecordings } from "../state/actions";
 import { useLasso } from "../state/lasso";
 import { useGamepad } from "../state/gamepad";
 import { useCamera } from "../state/camera";
@@ -59,6 +66,12 @@ function useShortcuts() {
       else if (mod && key === "0") fitStage();
       else if (mod && (e.key === "+" || e.key === "=")) zoomBy(1.5);
       else if (mod && e.key === "-") zoomBy(1 / 1.5);
+      else if (mod && (e.key === "ArrowLeft" || e.key === "ArrowRight")) moveCursor(e.key === "ArrowLeft" ? -1 : 1, { word: true, extend: e.shiftKey });
+      else if (mod && (e.key === "Backspace" || e.key === "Delete")) deleteRun();
+      else if (mod && key === "c") copyCells();
+      else if (mod && key === "x") cutCells();
+      else if (mod && key === "v") pasteCells();
+      else if (mod && key === "a") pickWholeTrack();
       else if (mod) return;
       else if (e.key === " ") shoot();
       else if (e.key === "Enter") (s.playback ? s.pause() : s.play());
@@ -66,8 +79,9 @@ function useShortcuts() {
       else if (e.key === "Escape" && useCamera.getState().picking) useCamera.getState().cancelPicking();
       else if (e.key === "Escape" && useLasso.getState().pickingPlate) useLasso.setState({ pickingPlate: null });
       else if (e.key === "Escape" && s.playback) s.stop();
-      else if (e.key === "ArrowLeft") (e.altKey ? nudgeSelected(-1) : selectRelative(-1));
-      else if (e.key === "ArrowRight") (e.altKey ? nudgeSelected(1) : selectRelative(1));
+      else if (e.key === "ArrowLeft") (e.altKey ? nudgeSelected(-1) : moveCursor(-1, { extend: e.shiftKey }));
+      else if (e.key === "ArrowRight") (e.altKey ? nudgeSelected(1) : moveCursor(1, { extend: e.shiftKey }));
+      else if (e.key === "Home" || e.key === "End") moveToEdge(e.key === "Home" ? "start" : "end", e.shiftKey);
       else if (e.key === "ArrowUp") moveRow("up");
       else if (e.key === "ArrowDown") moveRow("down");
       else if (e.key === "Delete" || e.key === "Backspace") deleteBack();
@@ -92,6 +106,10 @@ function useShortcuts() {
       else if (key === "g" && s.filmId) {
         const guides = useGuides.getState();
         guides.update(s.filmId, { visible: !guides.get(s.filmId).visible });
+      }
+      else if (e.key === "Escape" && s.span) {
+        s.setSpan(null);
+        s.setSelection([]);
       }
       else if (e.key === "Escape" && useStrokes.getState().ids.length) selectStrokes(null, []);
       else if (e.key === "Escape" && usePaint.getState().tool !== "move") usePaint.getState().setTool("move");
