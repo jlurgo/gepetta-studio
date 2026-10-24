@@ -6,6 +6,7 @@ import {
   shoot,
   changeHold,
   deleteBack,
+  moveRow,
   deleteSelected,
   duplicateSelected,
   nudgeSelected,
@@ -67,6 +68,8 @@ function useShortcuts() {
       else if (e.key === "Escape" && s.playback) s.stop();
       else if (e.key === "ArrowLeft") (e.altKey ? nudgeSelected(-1) : selectRelative(-1));
       else if (e.key === "ArrowRight") (e.altKey ? nudgeSelected(1) : selectRelative(1));
+      else if (e.key === "ArrowUp") moveRow("up");
+      else if (e.key === "ArrowDown") moveRow("down");
       else if (e.key === "Delete" || e.key === "Backspace") deleteBack();
       else if (key === "d") duplicateSelected();
       else if (/^[1-9]$/.test(e.key) && useCamera.getState().rigs[Number(e.key) - 1]) {

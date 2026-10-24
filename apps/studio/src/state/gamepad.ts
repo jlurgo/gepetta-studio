@@ -1,6 +1,6 @@
 import { wrapCell } from "@gepetta/core";
 import { useEffect } from "react";
-import { deleteBack, shoot } from "./actions";
+import { deleteBack, moveRow, shoot } from "./actions";
 import { useBusy } from "./busy";
 import { useCamera } from "./camera";
 import { useEditor } from "./editor";
@@ -18,7 +18,7 @@ const BTN = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, lt: 6, rt: 7, view: 8, menu:
 export const GAMEPAD_HELP: [string, string][] = [
   ["A o gatillo derecho", "sacar foto (o empezar y parar el video, como el botón grande)"],
   ["Cruz ← →", "celda anterior / siguiente (mantenela para ir rápido)"],
-  ["Cruz ↑ ↓", "track de arriba / de abajo"],
+  ["Cruz ↑ ↓", "track de arriba / de abajo (arriba de todo, el resultado; abajo de todo, un track nuevo)"],
   ["Palanca derecha ← →", "un segundo para atrás / adelante"],
   ["X", "poner el vivo de la cámara en esta celda"],
   ["Y", "papel cebolla sí / no"],
@@ -66,15 +66,6 @@ function moveCells(by: number) {
   moveTo(film.settings.loop ? wrapCell(film, cursor.cell + by) : Math.max(0, cursor.cell + by), cursor.track);
 }
 
-/** Moves the cursor to the track above (`by` = 1) or below. */
-function moveTracks(by: number) {
-  const { film, cursor, moveTo } = useEditor.getState();
-  if (!film) return;
-  const i = film.tracks.findIndex((t) => t.id === cursor.track);
-  const next = film.tracks[Math.max(0, Math.min(film.tracks.length - 1, i + by))];
-  if (next) moveTo(cursor.cell, next.id);
-}
-
 /** The next (or previous) camera becomes the active one. */
 function cycleCamera(by: number) {
   const { rigs, activeRig, activate } = useCamera.getState();
@@ -106,10 +97,10 @@ function act(control: Control, pad: Gamepad) {
       return moveCells(editor.film?.settings.fps ?? 12);
     case "up":
     case "stickUp":
-      return moveTracks(1);
+      return moveRow("up");
     case "down":
     case "stickDown":
-      return moveTracks(-1);
+      return moveRow("down");
     case "x":
       if (!rig) return useBusy.getState().notify("No hay una cámara elegida.");
       camera.setTarget(rig.id, { ...editor.cursor });

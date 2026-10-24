@@ -468,8 +468,46 @@ export function nudgeSelected(dir: -1 | 1) {
 
 /** Moves the cursor one cell, showing the film there. */
 export function selectRelative(dir: -1 | 1) {
-  const { cursor, moveTo } = useEditor.getState();
+  const { cursor, moveTo, columns, setColumns } = useEditor.getState();
   moveTo(Math.max(0, cursor.cell + dir));
+  // On the results row the picked column goes along.
+  if (columns) {
+    const cell = useEditor.getState().cursor.cell;
+    setColumns([{ start: cell, end: cell + 1 }]);
+  }
+}
+
+/**
+ * ↑ / ↓ through the timeline's rows, as they are on screen: above the top
+ * track is the results row (its column gets picked); below the bottom one a
+ * new empty track is made (unless that one is empty already).
+ */
+export function moveRow(dir: "up" | "down") {
+  const { film, cursor, columns, moveTo, setColumns, setSelection, commit } = useEditor.getState();
+  if (!film) return;
+  const top = film.tracks[film.tracks.length - 1]!;
+  const goTo = (track: TrackId) => {
+    setColumns(null);
+    moveTo(cursor.cell, track);
+    useLayers.getState().showCell(track);
+  };
+  if (columns) {
+    if (dir === "down") goTo(top.id);
+    return;
+  }
+  const i = film.tracks.findIndex((t) => t.id === cursor.track);
+  if (dir === "up") {
+    if (i < film.tracks.length - 1) return goTo(film.tracks[i + 1]!.id);
+    setSelection([]);
+    setColumns([{ start: cursor.cell, end: cursor.cell + 1 }]);
+    return;
+  }
+  if (i > 0) return goTo(film.tracks[i - 1]!.id);
+  const bottom = film.tracks[0]!;
+  if (!Object.values(film.clips).some((c) => c.track === bottom.id)) return;
+  const { id, op } = newTrackOp(`Capa ${film.tracks.length}`);
+  commit([op, { type: "track.move", trackId: id, index: 0 }], "Track nuevo abajo", { cursor: { track: id, cell: cursor.cell } });
+  useLayers.getState().showCell(id);
 }
 
 /** Adds seconds of empty cells at the end. */
