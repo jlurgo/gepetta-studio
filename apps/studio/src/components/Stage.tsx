@@ -925,8 +925,9 @@ export function Stage() {
     const c = id ? s.film?.clips[id] : undefined;
     return !!c && s.cursor.cell >= c.start && s.cursor.cell < c.start + c.length;
   });
-  // Whether a camera shows live at the cell on screen (the chosen one always aims at the cursor).
-  const liveHere = useCamera((s) => s.rigs.some((r) => r.source));
+  // Whether the big picture shows a camera live: one aimed at the cell on screen (or magnified).
+  const cursorCell = useEditor((s) => s.cursor.cell);
+  const liveHere = useCamera((s) => s.rigs.some((r) => r.source && s.targetOf(r).cell === cursorCell));
   const cameraError = useCamera((s) => s.error?.message ?? null);
   const recording = useCamera((s) => s.rigs.some((r) => r.recording));
   const playing = useEditor((s) => s.playback !== null);
@@ -1200,7 +1201,12 @@ export function Stage() {
         <div className="stage-note">{cameraError ?? "Conectando la cámara…"}</div>
       )}
       {playing && <div className="stage-badge">▶ Reproduciendo</div>}
-      {!playing && liveHere && <div className="stage-badge live">{recording ? "● Grabando · espacio o el botón grande para detener" : "● En vivo"}</div>}
+      {!playing && (liveHere || magnified || recording) && (
+        <div className="stage-badge live">
+          <span className="live-dot" />
+          {recording ? "Grabando · espacio o el botón grande para detener" : "En vivo"}
+        </div>
+      )}
       {!playing && focused && (
         <label className="focus-opacity" onPointerDown={(e) => e.stopPropagation()} title="Solo para ver lo que hay debajo: no cambia la película">
           <span>Imagen elegida</span>

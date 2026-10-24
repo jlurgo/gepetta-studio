@@ -395,7 +395,26 @@ input[type="range"] {
 }
 
 .stage-badge.live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--danger);
+}
+
+/* Blinks while the big picture shows a camera live. */
+.live-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff3b30;
+  box-shadow: 0 0 6px #ff3b30;
+  animation: live-blink 1s ease-in-out infinite;
+}
+
+@keyframes live-blink {
+  50% {
+    opacity: 0.15;
+  }
 }
 
 .side-panel {
