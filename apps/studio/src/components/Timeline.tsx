@@ -1,4 +1,4 @@
-import { type CellIndex, type Clip, type ClipId, type Track, cellIndex, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
+import { type CellIndex, type Clip, type ClipId, type Track, type TrackId, cellIndex, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addTrack, extendFilm, resizeDrum, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
@@ -106,7 +106,9 @@ type Gesture =
   | { kind: "columns"; x0: number; dx: number; moved: boolean }
   /** A loop film: turning the drum (dragging the ruler), or its length (dragging the mark where the drum ends). */
   | { kind: "turn"; cx0: number; rot0: number; moved: boolean }
-  | { kind: "length"; x0: number; dx: number };
+  | { kind: "length"; x0: number; dx: number }
+  /** Dragging a camera's live cell (where its photos go) to another cell. */
+  | { kind: "live"; rig: string; x0: number; y0: number; moved: boolean; to: { track: TrackId; cell: number; v: number } | null };
 
 function loadZoom(): number {
   try {
@@ -495,6 +497,13 @@ export function Timeline() {
       return;
     }
     if (!p.track) return;
+    // A camera's live cell: dragging it takes its photos elsewhere.
+    const liveRig = rigs.find((r) => r.target.track === p.track!.id && wrap(r.target.cell) === p.cell);
+    if (liveRig) {
+      capturePointer(e);
+      setGesture({ kind: "live", rig: liveRig.id, x0: p.x, y0: p.y, moved: false, to: null });
+      return;
+    }
     const target = (e.target as HTMLElement).closest<HTMLElement>("[data-clip]");
     const id = target?.dataset.clip;
     const { setSelection } = useEditor.getState();
@@ -548,6 +557,12 @@ export function Timeline() {
       }
       return;
     }
+    if (gesture.kind === "live") {
+      const moved = gesture.moved || Math.abs(p.x - gesture.x0) + Math.abs(p.y - gesture.y0) > 4;
+      const to = p.track && moved ? { track: p.track.id, cell: p.cell, v: p.v } : gesture.to;
+      if (moved !== gesture.moved || to?.track !== gesture.to?.track || to?.v !== gesture.to?.v) setGesture({ ...gesture, moved, to });
+      return;
+    }
     if (gesture.kind === "length") {
       const dx = Math.max(1 - shown, Math.round((p.x - gesture.x0) / cw));
       if (dx !== gesture.dx) setGesture({ ...gesture, dx });
@@ -591,6 +606,21 @@ export function Timeline() {
     }
     if (g.kind === "length") {
       if (g.dx) resizeAtEnd(g.dx);
+      return;
+    }
+    if (g.kind === "live") {
+      const rig = rigs.find((r) => r.id === g.rig);
+      if (g.moved && g.to && rig && (g.to.track !== rig.target.track || g.to.cell !== wrap(rig.target.cell))) {
+        // As picking its cell again: it becomes the camera in use, and starts a new sequence there.
+        const camera = useCamera.getState();
+        camera.startPicking(rig.id);
+        camera.pick({ track: g.to.track, cell: g.to.cell });
+      } else if (!g.moved && p.track) {
+        useEditor.getState().setSelection([]);
+        useEditor.getState().setColumns(null);
+        useEditor.getState().moveTo(p.cell, p.track.id);
+        useLayers.getState().showCell(p.track.id);
+      }
       return;
     }
     if (g.kind === "move" && g.moved && (g.dx || g.dy)) {
@@ -817,6 +847,22 @@ export function Timeline() {
                 </div>
               );
             }))}
+
+            {/* Dragging a camera's live cell: where it would go. */}
+            {gesture?.kind === "live" && gesture.moved && gesture.to && (
+              <div
+                className="tl-pick"
+                style={{
+                  left: gesture.to.v * cw,
+                  width: cw,
+                  top: rowTop(tracks.findIndex((t) => t.id === gesture.to!.track)),
+                  height: TRACK_H,
+                  ["--rig" as string]: rigColor(rigs.findIndex((r) => r.id === gesture.rig)),
+                }}
+              >
+                <Icon name="camera" size={Math.min(18, cw - 6)} />
+              </div>
+            )}
 
             {/* While picking a camera's cell: where it would go. */}
             {picking && hover && (
