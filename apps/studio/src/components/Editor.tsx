@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   shoot,
   changeHold,
+  deleteBack,
   deleteSelected,
   duplicateSelected,
   nudgeSelected,
@@ -62,7 +63,7 @@ function useShortcuts() {
       else if (e.key === "Escape" && s.playback) s.stop();
       else if (e.key === "ArrowLeft") (e.altKey ? nudgeSelected(-1) : selectRelative(-1));
       else if (e.key === "ArrowRight") (e.altKey ? nudgeSelected(1) : selectRelative(1));
-      else if (e.key === "Delete" || e.key === "Backspace") deleteSelected();
+      else if (e.key === "Delete" || e.key === "Backspace") deleteBack();
       else if (key === "d") duplicateSelected();
       else if (e.key === "+" || e.key === "=") changeHold(1);
       else if (e.key === "-") changeHold(-1);
@@ -279,7 +280,7 @@ function Transport() {
             <button className="icon-btn" onClick={duplicateSelected} title="Repetir a continuación (D)">
               <Icon name="copy" />
             </button>
-            <button className="icon-btn danger" onClick={deleteSelected} title="Borrar (Supr)">
+            <button className="icon-btn danger" onClick={deleteSelected} title="Borrar la imagen y dejar la celda vacía (Supr o ⌫ la sacan y corren lo que sigue)">
               <Icon name="trash" />
             </button>
             {selection.length > 1 && <span className="hint">{selection.length} imágenes</span>}

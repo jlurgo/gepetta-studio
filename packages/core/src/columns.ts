@@ -98,3 +98,18 @@ export function afterLastPicture(film: FilmState, track: TrackId): number {
   for (const c of Object.values(film.clips)) if (c.track === track) end = Math.max(end, clipEnd(c));
   return end;
 }
+
+/**
+ * Ops that take one cell out of a track, as a letter out of a word: what comes
+ * after it in that track moves one cell earlier (a picture held across it gets
+ * one cell shorter). The other tracks and the film's length stay.
+ */
+export function removeCellOps(film: FilmState, track: TrackId, cell: number): Op[] {
+  if (cell < 0 || cell >= film.length) return [];
+  const held = Object.values(film.clips).find((c) => c.track === track && c.start <= cell && cell < clipEnd(c) && c.length > 1);
+  // A held picture just gets shorter (it stays one picture).
+  const ops: Op[] = held ? [{ type: "clip.update", id: held.id, patch: { length: held.length - 1 } }] : [{ type: "cells.clear", start: cell, length: 1, tracks: [track] }];
+  const from = held ? clipEnd(held) : cell + 1;
+  if (film.length > from) ops.push({ type: "cells.move", start: from, length: film.length - from, to: from - 1, tracks: [track] });
+  return ops;
+}

@@ -8,6 +8,7 @@ import {
   afterLastPicture,
   cellAfterRemoving,
   cellsInColumns,
+  removeCellOps,
   removeColumnsOps,
   insertColumnsOps,
   isPlainLook,
@@ -391,6 +392,36 @@ export function deleteSelected() {
   if (columns) return removeColumns(columns);
   const clips = targets();
   if (clips.length) useEditor.getState().commit([{ type: "clip.remove", ids: clips.map((c) => c.id) }], undefined, { selection: [] });
+}
+
+/**
+ * Backspace / Delete, as when writing: takes the cell at the cursor out of its
+ * track (what comes after moves one earlier). An empty cell, or the one a
+ * camera is shooting to, takes out the one before instead and goes there,
+ * taking the camera along (so the next photo replaces the one taken out).
+ * Picked strokes, columns or several pictures picked go as before.
+ */
+export function deleteBack() {
+  const { film, cursor, selection } = useEditor.getState();
+  if (!film) return;
+  const here = clipAt(film, cursor.track, cursor.cell);
+  if (pickedStrokes(film) || useEditor.getState().columns || selection.some((id) => id !== here?.id)) return deleteSelected();
+  const camera = useCamera.getState();
+  const shooting = camera.rigs.filter((r) => {
+    const t = camera.targetOf(r);
+    return t.track === cursor.track && t.cell === cursor.cell;
+  });
+  const back = !here || shooting.length > 0;
+  const cell = back ? cursor.cell - 1 : cursor.cell;
+  if (cell < 0) return;
+  const ops = removeCellOps(film, cursor.track, cell);
+  if (!ops.length) return;
+  useEditor.getState().commit(ops, `Borrar la celda ${cell + 1}`, { cursor: { track: cursor.track, cell }, selection: [] });
+  // Cameras shooting to this track from there on go one cell earlier too.
+  for (const r of camera.rigs) {
+    const t = camera.targetOf(r);
+    if (t.track === cursor.track && t.cell > cell) useCamera.getState().setTarget(r.id, { track: t.track, cell: t.cell - 1 });
+  }
 }
 
 /** Copies the selected pictures right after themselves (as a block), and selects the copies. */

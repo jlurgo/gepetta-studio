@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellAfterRemoving, extendColumns, insertColumnsOps, removeColumnsOps, toggleColumns } from "./columns";
+import { cellAfterRemoving, extendColumns, insertColumnsOps, removeCellOps, removeColumnsOps, toggleColumns } from "./columns";
 import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, emptyFilm } from "./model";
 import { applyOp } from "./ops";
 
@@ -98,5 +98,35 @@ describe("removing columns", () => {
     expect(cellAfterRemoving(cols, 1)).toBeNull();
     expect(cellAfterRemoving(cols, 2)).toBe(1);
     expect(cellAfterRemoving(cols, 6)).toBe(3);
+  });
+});
+
+describe("removing one cell of a track", () => {
+  const two = () => {
+    let f = film();
+    f = applyOp(f, { type: "track.add", track: { id: "t2", name: "2", visible: true, opacity: 1, transform: IDENTITY_TRANSFORM, exported: true } });
+    return applyOp(f, { type: "clip.place", clips: [{ ...pic("x", 3), track: "t2" }] });
+  };
+
+  it("pulls back what comes after, in that track only", () => {
+    let f = two();
+    for (const op of removeCellOps(f, PHOTO_TRACK, 1)) f = applyOp(f, op);
+    expect(order(f)).toEqual(["a@0", "c@1", "d@2", "x@3", "e@3", "f@4"]);
+    expect(f.length).toBe(6);
+  });
+
+  it("an empty cell closes up too", () => {
+    let f = applyOp(emptyFilm({ name: "t", fps: 12, width: 160, height: 90 }), { type: "clip.place", clips: [pic("a", 0), pic("b", 3)] });
+    for (const op of removeCellOps(f, PHOTO_TRACK, 1)) f = applyOp(f, op);
+    expect(order(f)).toEqual(["a@0", "b@2"]);
+  });
+
+  it("a held picture gets one cell shorter and stays one picture", () => {
+    let f = applyOp(emptyFilm({ name: "t", fps: 12, width: 160, height: 90 }), { type: "clip.place", clips: [pic("a", 0, 3), pic("b", 3)] });
+    for (const op of removeCellOps(f, PHOTO_TRACK, 1)) f = applyOp(f, op);
+    expect(Object.values(f.clips).map((c) => [c.id, c.start, c.length]).sort()).toEqual([
+      ["a", 0, 2],
+      ["b", 2, 1],
+    ]);
   });
 });

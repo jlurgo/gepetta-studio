@@ -1,6 +1,6 @@
 import { wrapCell } from "@gepetta/core";
 import { useEffect } from "react";
-import { shoot } from "./actions";
+import { deleteBack, shoot } from "./actions";
 import { useBusy } from "./busy";
 import { useCamera } from "./camera";
 import { useEditor } from "./editor";
@@ -12,7 +12,7 @@ import { useEditor } from "./editor";
  */
 
 /** Standard mapping button numbers. */
-const BTN = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, lt: 6, rt: 7, view: 8, menu: 9, up: 12, down: 13, left: 14, right: 15 } as const;
+const BTN = { a: 0, b: 1, x: 2, y: 3, lb: 4, rb: 5, lt: 6, rt: 7, view: 8, menu: 9, stickPress: 10, up: 12, down: 13, left: 14, right: 15 } as const;
 
 /** What each button does, as told when a controller connects (and in the docs). */
 export const GAMEPAD_HELP: [string, string][] = [
@@ -22,10 +22,11 @@ export const GAMEPAD_HELP: [string, string][] = [
   ["Palanca derecha ← →", "un segundo para atrás / adelante"],
   ["X", "poner el vivo de la cámara en esta celda"],
   ["Y", "papel cebolla sí / no"],
-  ["B", "deshacer"],
+  ["B", "borrar la celda (como borrar al escribir; en la del vivo, la anterior)"],
   ["LB / RB", "cámara anterior / siguiente"],
   ["Gatillo izquierdo", "reproducir / detener"],
-  ["View (⧉)", "ir a la celda del vivo de la cámara"],
+  ["View (⧉)", "deshacer"],
+  ["Apretar la palanca izquierda", "ir a la celda del vivo de la cámara"],
   ["Menú (☰)", "cambiar entre foto y video"],
 ];
 
@@ -56,7 +57,7 @@ function pressed(pad: Gamepad): Set<Control> {
 }
 
 /** Controls that repeat while held. */
-const REPEATS = new Set<Control>(["left", "right", "up", "down", "stickLeft", "stickRight", "stickUp", "stickDown", "jumpBack", "jumpOn"]);
+const REPEATS = new Set<Control>(["b", "left", "right", "up", "down", "stickLeft", "stickRight", "stickUp", "stickDown", "jumpBack", "jumpOn"]);
 
 /** Moves the cursor by cells (going round in a loop film). */
 function moveCells(by: number) {
@@ -117,7 +118,7 @@ function act(control: Control, pad: Gamepad) {
       editor.setOnion({ enabled: !editor.onion.enabled });
       return useBusy.getState().notify(editor.onion.enabled ? "Papel cebolla apagado." : "Papel cebolla prendido.");
     case "b":
-      return editor.undo();
+      return deleteBack();
     case "lb":
       return cycleCamera(-1);
     case "rb":
@@ -125,6 +126,8 @@ function act(control: Control, pad: Gamepad) {
     case "lt":
       return editor.playback ? editor.stop() : editor.play(true);
     case "view":
+      return editor.undo();
+    case "stickPress":
       if (rig) editor.moveTo(camera.targetOf(rig).cell, camera.targetOf(rig).track);
       return;
     case "menu":
@@ -142,7 +145,7 @@ export function useGamepad() {
     /** When each held control next repeats. */
     const nextRepeat = new Map<string, number>();
     const onConnect = (e: GamepadEvent) => {
-      useBusy.getState().notify(`Control conectado (${e.gamepad.id.replace(/\s*\(.*\)\s*$/, "")}): A foto · cruz para moverte · X vivo acá · Y cebolla · B deshacer · LB/RB cámara · gatillo izq. reproducir`);
+      useBusy.getState().notify(`Control conectado (${e.gamepad.id.replace(/\s*\(.*\)\s*$/, "")}): A foto · cruz para moverte · X vivo acá · Y cebolla · B borrar celda · View deshacer · LB/RB cámara · gatillo izq. reproducir`);
     };
     window.addEventListener("gamepadconnected", onConnect);
     const loop = (now: number) => {
