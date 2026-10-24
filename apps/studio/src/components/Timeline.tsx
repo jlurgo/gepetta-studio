@@ -127,6 +127,13 @@ function saveZoom(z: number) {
   }
 }
 
+/** The track cell under the pointer (null: the pointer is not over one), for the 1–9 keys that send a camera there. */
+let hovered: { track: TrackId; cell: number } | null = null;
+
+export function hoveredCell(): { track: TrackId; cell: number } | null {
+  return hovered;
+}
+
 export function Timeline() {
   const film = useEditor((s) => s.film);
   const filmId = useEditor((s) => s.filmId);
@@ -540,6 +547,10 @@ export function Timeline() {
   }
 
   function onPointerMove(e: React.PointerEvent) {
+    {
+      const p = at(e);
+      hovered = p.track && !(loop && p.v >= r + shown) ? { track: p.track.id, cell: p.cell } : null;
+    }
     if (picking) {
       const p = at(e);
       const next = p.track ? { track: p.track.id, cell: p.cell, v: p.v } : null;
@@ -720,6 +731,7 @@ export function Timeline() {
             style={{ width: loop ? scroll.width : cells * cw + 120, height: height + 40 }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
+            onPointerLeave={() => (hovered = null)}
             onPointerUp={onPointerUp}
             onClick={onClick}
             onDoubleClick={onDoubleClick}

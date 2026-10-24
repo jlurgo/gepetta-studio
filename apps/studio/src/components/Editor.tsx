@@ -29,7 +29,7 @@ import { HistoryPanel } from "./HistoryPanel";
 import { fitStage, zoomBy } from "../state/stageView";
 import { Icon } from "./Icon";
 import { Stage } from "./Stage";
-import { Timeline } from "./Timeline";
+import { Timeline, hoveredCell } from "./Timeline";
 import { ToysDialog } from "./ToysDialog";
 
 const FPS_OPTIONS = [6, 8, 10, 12, 15, 24, 25, 30];
@@ -69,6 +69,13 @@ function useShortcuts() {
       else if (e.key === "ArrowRight") (e.altKey ? nudgeSelected(1) : selectRelative(1));
       else if (e.key === "Delete" || e.key === "Backspace") deleteBack();
       else if (key === "d") duplicateSelected();
+      else if (/^[1-9]$/.test(e.key) && useCamera.getState().rigs[Number(e.key) - 1]) {
+        // Camera 1, 2…: its photos go to the cell under the pointer in the timeline (or the cursor's).
+        const camera = useCamera.getState();
+        const rig = camera.rigs[Number(e.key) - 1]!;
+        camera.startPicking(rig.id);
+        camera.pick(hoveredCell() ?? s.cursor);
+      }
       else if (e.key === "+" || e.key === "=") changeHold(1);
       else if (e.key === "-") changeHold(-1);
       else if (key === "o") s.setOnion({ enabled: !s.onion.enabled });

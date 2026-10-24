@@ -22,6 +22,9 @@
 - [ ] Probar con celulares reales (iPhone con certificado instalado, Android)
 - [x] Réflex en Windows vía gphoto2 de MSYS2 + WinUSB (Zadig) (falta probar en una PC real)
 - [x] Control de Xbox (Bluetooth o USB) como control remoto: foto, celdas y tracks, vivo de la cámara, cebolla, reproducir, foto/video
+- [x] Borrar como al escribir (Supr / ⌫ / B del control): saca la celda y corre lo que sigue; en una vacía o en la del vivo, la anterior (y el vivo va ahí)
+- [x] Arrastrar la celda del vivo a otra celda; teclas 1–9: la cámara 1, 2… va a la celda bajo el puntero
+- [x] Zoom en la pantalla grande: pellizcar, Ctrl + rueda, botones, Ctrl + − 0; desplazar con dos dedos, la rueda o el botón del medio
 - [ ] Empaquetar gphoto2 dentro del instalador de Windows (hoy hace falta MSYS2)
 - [ ] Canon EDSDK (registro trabado: el portal de Canon USA tiene el enlace roto)
 - [ ] Empaquetar gphoto2 dentro de la app de Mac (hoy hace falta `brew install gphoto2`)
