@@ -26,6 +26,7 @@ import { ExportDialog } from "./ExportDialog";
 import { VersionsDialog } from "./VersionsDialog";
 import type { Release } from "../state/releases";
 import { HistoryPanel } from "./HistoryPanel";
+import { fitStage, zoomBy } from "../state/stageView";
 import { Icon } from "./Icon";
 import { Stage } from "./Stage";
 import { Timeline } from "./Timeline";
@@ -54,6 +55,9 @@ function useShortcuts() {
       const key = e.key.toLowerCase();
       if (mod && key === "z") s[e.shiftKey ? "redo" : "undo"]();
       else if (mod && key === "y") s.redo();
+      else if (mod && key === "0") fitStage();
+      else if (mod && (e.key === "+" || e.key === "=")) zoomBy(1.5);
+      else if (mod && e.key === "-") zoomBy(1 / 1.5);
       else if (mod) return;
       else if (e.key === " ") shoot();
       else if (e.key === "Enter") (s.playback ? s.pause() : s.play());

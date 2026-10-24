@@ -21,6 +21,8 @@ import {
   playedCell,
 } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
+import { ZOOM_MAX, ZOOM_MIN, fitStage, panBy, setStageLayout, useStageView, viewTransform, zoomBy } from "../state/stageView";
+import { Icon } from "./Icon";
 import { proxyCache } from "../media/cache";
 import { peekPicture } from "../media/composed";
 import type { LiveFrame } from "../capture/types";
@@ -469,6 +471,76 @@ function stageColor(canvas: HTMLCanvasElement, e: React.PointerEvent): string | 
   return `#${[r, g, b].map((v) => v!.toString(16).padStart(2, "0")).join("")}`;
 }
 
+/** Dragging with the middle button (the wheel) moves the zoomed picture. */
+function usePanDrag() {
+  const last = useRef<{ x: number; y: number } | null>(null);
+  return {
+    onPointerDown(e: React.PointerEvent): boolean {
+      if (e.button !== 1) return false;
+      e.preventDefault();
+      capturePointer(e);
+      last.current = { x: e.clientX, y: e.clientY };
+      return true;
+    },
+    onPointerMove(e: React.PointerEvent): boolean {
+      const l = last.current;
+      if (!l) return false;
+      panBy(e.clientX - l.x, e.clientY - l.y);
+      last.current = { x: e.clientX, y: e.clientY };
+      return true;
+    },
+    onPointerUp(): boolean {
+      if (!last.current) return false;
+      last.current = null;
+      return true;
+    },
+  };
+}
+
+/**
+ * Zoom with the trackpad (pinch) or Ctrl/⌘/Alt + the mouse wheel, about the
+ * pointer; scrolling (two fingers, or the wheel) moves the zoomed picture.
+ */
+function useStageGestures(wrapRef: React.RefObject<HTMLDivElement | null>) {
+  const filmId = useEditor((s) => s.filmId);
+  // Another film starts fitted.
+  useEffect(() => fitStage(), [filmId]);
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const onWheel = (e: WheelEvent) => {
+      // Pinching a trackpad comes as a wheel with Ctrl.
+      const lines = e.deltaMode === 1 ? 16 : 1;
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        const box = wrap.getBoundingClientRect();
+        zoomBy(Math.exp(-Math.max(-50, Math.min(50, e.deltaY * lines)) * 0.01), { x: e.clientX - box.left, y: e.clientY - box.top });
+      } else if (e.shiftKey && !e.deltaX) panBy(-e.deltaY * lines, 0);
+      else panBy(-e.deltaX * lines, -e.deltaY * lines);
+    };
+    wrap.addEventListener("wheel", onWheel, { passive: false });
+    return () => wrap.removeEventListener("wheel", onWheel);
+  }, [wrapRef]);
+}
+
+/** − / percent (back to fitting) / + over the big picture. */
+function ZoomControl() {
+  const zoom = useStageView((s) => s.zoom);
+  return (
+    <div className="zoom-control" onPointerDown={(e) => e.stopPropagation()}>
+      <button className="icon-btn small" title="Alejar (Ctrl + −)" onClick={() => zoomBy(1 / 1.5)} disabled={zoom <= ZOOM_MIN}>
+        <Icon name="minus" size={14} />
+      </button>
+      <button className="zoom-value" title="Ver todo el cuadro (Ctrl + 0)" onClick={fitStage}>
+        {zoom === 1 ? "Ajustado" : `${Math.round(zoom * 100)} %`}
+      </button>
+      <button className="icon-btn small" title="Acercar (Ctrl + +; o pellizcá el trackpad, o Ctrl + rueda)" onClick={() => zoomBy(1.5)} disabled={zoom >= ZOOM_MAX}>
+        <Icon name="plus" size={14} />
+      </button>
+    </div>
+  );
+}
+
 /** Painting tools on the cell at the cursor. */
 function usePaintPointer(filmRect: React.RefObject<FilmRect | null>, canvasRef: React.RefObject<HTMLCanvasElement | null>) {
   const down = useRef(false);
@@ -839,6 +911,8 @@ export function Stage() {
   const strokeDrag = useStrokeDrag(filmRect);
   const sculptPointer = useSculptPointer(filmRect);
   const lassoPointer = useLassoPointer(filmRect);
+  const panDrag = usePanDrag();
+  useStageGestures(wrapRef);
   const painting = usePaint((s) => isPainting(s.tool));
   const layerHandles = useRef(targetOnStage);
   const guideEditing = useGuides((s) => s.editing);
@@ -899,9 +973,10 @@ export function Stage() {
         area = { x: x0, y: y0, width: Math.max(...xs) * size.width - x0, height: Math.max(...ys) * size.height - y0 };
         placingArea = area;
       }
-      const s = containScale(area, { width: cw, height: ch }) * (placing ? 0.9 : 0.98);
-      const ox = (cw - area.width * s) / 2 - area.x * s;
-      const oy = (ch - area.height * s) / 2 - area.y * s;
+      // Fitted in the stage, then zoomed and moved as the view says (see stageView).
+      const layout = { width: cw, height: ch, area, fit: containScale(area, { width: cw, height: ch }) * (placing ? 0.9 : 0.98), dpr };
+      setStageLayout(layout);
+      const { s, ox, oy } = viewTransform(layout);
       ctx.setTransform(s, 0, 0, s, ox, oy);
       filmRect.current = { x: ox / dpr, y: oy / dpr, s: s / dpr };
       ctx.fillStyle = "#000";
@@ -1093,15 +1168,18 @@ export function Stage() {
       className={`stage${guideEditing ? " guides-editing" : ""}${painting ? " painting" : hasSource && pointerTool !== "none" ? " tool-focus" : ""}${hasSource && magnified ? " magnified" : ""}`}
       ref={wrapRef}
       onPointerDown={(e) => {
+        if (panDrag.onPointerDown(e)) return;
         if (!playing) strokePick.onPointerDown(e);
         if (playing || guideDrag.onPointerDown(e) || paintPointer.onPointerDown(e) || sculptPointer.onPointerDown(e) || lassoPointer.onPointerDown(e) || strokeDrag.onPointerDown(e) || layerDrag.onPointerDown(e)) return;
         if (hasSource) handlers.onPointerDown(e);
       }}
       onPointerMove={(e) => {
+        if (panDrag.onPointerMove(e)) return;
         if (playing || guideDrag.onPointerMove(e) || paintPointer.onPointerMove(e) || sculptPointer.onPointerMove(e) || lassoPointer.onPointerMove(e) || strokeDrag.onPointerMove(e) || layerDrag.onPointerMove(e)) return;
         if (hasSource) handlers.onPointerMove(e);
       }}
       onPointerUp={(e) => {
+        if (panDrag.onPointerUp()) return;
         if (!playing) strokePick.onPointerUp(e);
         if (playing || guideDrag.onPointerUp() || paintPointer.onPointerUp() || sculptPointer.onPointerUp() || lassoPointer.onPointerUp() || strokeDrag.onPointerUp() || layerDrag.onPointerUp()) return;
         if (hasSource) handlers.onPointerUp(e);
@@ -1115,6 +1193,7 @@ export function Stage() {
     >
       <canvas ref={canvasRef} />
       {!playing && <StageTools />}
+      <ZoomControl />
       {marker && <div className="focus-marker" style={{ left: marker.x, top: marker.y }} />}
       {!playing && magnified && <div className="stage-badge zoom">🔍 Lupa · arrastrá para mover</div>}
       {!playing && !hasSource && (

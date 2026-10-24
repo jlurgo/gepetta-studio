@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { BrowserWindow, app, dialog, ipcMain, session, shell, systemPreferences } from "electron";
+import { BrowserWindow, Menu, app, dialog, ipcMain, session, shell, systemPreferences } from "electron";
 import { type FilmMeta, FilmLibrary } from "./films";
 import { registerDslrIpc } from "./dslr/ipc";
 import { registerRemoteIpc } from "./remote/ipc";
@@ -52,6 +52,22 @@ function registerIpc() {
   disposers.push(registerRemoteIpc(getWindow).dispose, dslr.dispose);
 }
 
+/**
+ * Electron's usual menu without zooming the whole window: Ctrl/⌘ with + − 0
+ * zoom the big picture instead (the studio handles them). Developer tools stay.
+ */
+function setMenu() {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+      { role: "fileMenu" },
+      { role: "editMenu" },
+      { label: "Ver", submenu: [{ role: "reload" }, { role: "forceReload" }, { role: "toggleDevTools" }, { type: "separator" }, { role: "togglefullscreen" }] },
+      { role: "windowMenu" },
+    ]),
+  );
+}
+
 function createWindow() {
   const win = (mainWindow = new BrowserWindow({
     width: 1440,
@@ -94,6 +110,7 @@ app.whenReady().then(async () => {
   }
   registerIpc();
   disposers.push(registerUpdates(getWindow));
+  setMenu();
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
