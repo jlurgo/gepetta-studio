@@ -127,8 +127,15 @@ function saveZoom(z: number) {
   }
 }
 
-/** The track cell under the pointer (null: the pointer is not over one), for the 1–9 keys that send a camera there. */
+/**
+ * The track cell under the pointer, if it moved there after the cursor last
+ * moved (null otherwise), for the 1–9 keys that send a camera there.
+ */
 let hovered: { track: TrackId; cell: number } | null = null;
+// Moving the cursor (arrows, a click, the controller) makes it the place again, until the pointer moves.
+useEditor.subscribe((s, prev) => {
+  if (s.cursor !== prev.cursor) hovered = null;
+});
 
 export function hoveredCell(): { track: TrackId; cell: number } | null {
   return hovered;
