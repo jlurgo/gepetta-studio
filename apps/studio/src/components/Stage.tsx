@@ -924,7 +924,7 @@ export function Stage() {
   const focused = useEditor((s) => {
     const id = s.selection.length === 1 ? s.selection[0]! : null;
     const c = id ? s.film?.clips[id] : undefined;
-    return !!c && s.cursor.cell >= c.start && s.cursor.cell < c.start + c.length;
+    return !!c && !c.sound && s.cursor.cell >= c.start && s.cursor.cell < c.start + c.length;
   });
   // Whether the big picture shows a camera live: one aimed at the cell on screen (or magnified).
   const cursorCell = useEditor((s) => s.cursor.cell);

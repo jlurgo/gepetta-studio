@@ -2675,3 +2675,36 @@ input[type="range"] {
   background: color-mix(in srgb, var(--accent) 28%, transparent);
   box-shadow: inset 0 0 0 2px var(--accent);
 }
+
+.sound-spectrum {
+  position: relative;
+  align-self: flex-start;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #14121d;
+}
+
+.sound-spectrum canvas {
+  display: block;
+}
+
+.sound-spectrum span {
+  position: absolute;
+  right: 6px;
+  font-size: 10px;
+  color: rgb(255 255 255 / 0.6);
+  pointer-events: none;
+}
+
+.sound-spectrum .top {
+  top: 3px;
+}
+
+.sound-spectrum .bottom {
+  bottom: 3px;
+}
+
+/* Above the sound strip when both show. */
+.stage:has(.stage-sound) .focus-opacity {
+  bottom: 66px;
+}

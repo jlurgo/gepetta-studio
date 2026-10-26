@@ -8,6 +8,8 @@ import { type Playback, playbackCell, useEditor } from "./editor";
  * and, standing still, the slice of the cell the cursor goes to (to find the
  * frame where a word or a hit is).
  */
+export type SoundView = "wave" | "spectrum";
+
 interface SoundState {
   /** Moving the cursor plays the slice of its cell. */
   scrub: boolean;
@@ -15,6 +17,9 @@ interface SoundState {
   /** The sound of the cells around the one shown, under the picture. */
   strip: boolean;
   setStrip(on: boolean): void;
+  /** How sound shows in cells: its loudness (a waveform) or its spectrum. */
+  view: SoundView;
+  setView(view: SoundView): void;
   /** The sound effects library, beside the picture. */
   effects: boolean;
   setEffects(on: boolean): void;
@@ -23,6 +28,15 @@ interface SoundState {
 const SCRUB_KEY = "gepetta.soundScrub";
 const STRIP_KEY = "gepetta.soundStrip";
 const EFFECTS_KEY = "gepetta.soundEffects";
+const VIEW_KEY = "gepetta.soundView";
+
+function loadView(): SoundView {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "spectrum" ? "spectrum" : "wave";
+  } catch {
+    return "wave";
+  }
+}
 
 function load(key: string, fallback = true): boolean {
   try {
@@ -51,6 +65,15 @@ export const useSound = create<SoundState>((set) => ({
   setStrip: (strip) => {
     set({ strip });
     save(STRIP_KEY, strip);
+  },
+  view: loadView(),
+  setView: (view) => {
+    set({ view });
+    try {
+      localStorage.setItem(VIEW_KEY, view);
+    } catch {
+      // Only a convenience.
+    }
   },
   effects: load(EFFECTS_KEY, false),
   setEffects: (effects) => {

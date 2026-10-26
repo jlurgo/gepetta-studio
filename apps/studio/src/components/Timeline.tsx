@@ -4,6 +4,7 @@ import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addTrack, extendFilm, resizeDrum, importImages, importSounds, moveClips, moveColumns, setCellImage, spanCells } from "../state/actions";
 import { SFX_DRAG, insertSfx } from "../media/sfx";
 import { isSoundFile, peaksNow, useSoundPeaks } from "../media/sound";
+import { sampleSpectrum, spectrumImage, spectrumNow, useSpectra } from "../media/spectrum";
 import { useSound } from "../state/sound";
 import { toggleVoice, useVoice } from "../state/voice";
 import { renameGroup, setLinked, toggleGroup, useGroups } from "../state/groups";
@@ -185,11 +186,13 @@ function GroupHead({ row, current, height, pickTo, depth, drag, setDrag, drop }:
 
 /**
  * A sound clip's cells on screen: in each, its slice's loudness as a few
- * bars (more when the cells are wider).
+ * bars (more when the cells are wider), or its spectrum.
  */
 function SoundStrip({ filmId, clip, from, count, cw, fps }: { filmId: string; clip: Clip; from: number; count: number; cw: number; fps: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const version = useSoundPeaks((s) => s.version);
+  const spectra = useSpectra((s) => s.version);
+  const view = useSound((s) => s.view);
   const h = TRACK_H - 10;
   useLayoutEffect(() => {
     const canvas = ref.current;
@@ -199,6 +202,18 @@ function SoundStrip({ filmId, clip, from, count, cw, fps }: { filmId: string; cl
     canvas.width = Math.max(1, Math.round(count * cw * dpr));
     canvas.height = Math.round(h * dpr);
     const ctx = canvas.getContext("2d")!;
+    if (view === "spectrum") {
+      const spectrum = spectrumNow(filmId, sound.ref);
+      if (!spectrum) return;
+      const levels = new Uint8Array(canvas.width * canvas.height);
+      for (let i = 0; i < count; i++) {
+        const t0 = sound.from + (from + i - clip.start) / fps;
+        const x = Math.round(i * cw * dpr) + 1;
+        sampleSpectrum(levels, canvas.width, x, Math.max(1, Math.round((i + 1) * cw * dpr) - x - 1), spectrum, t0, t0 + 1 / fps);
+      }
+      ctx.putImageData(spectrumImage(levels, canvas.width), 0, 0);
+      return;
+    }
     ctx.scale(dpr, dpr);
     const peaks = peaksNow(filmId, sound.ref);
     ctx.fillStyle = getComputedStyle(canvas).color;
@@ -215,7 +230,7 @@ function SoundStrip({ filmId, clip, from, count, cw, fps }: { filmId: string; cl
         ctx.fillRect(i * cw + 1 + b * (bw + 1), (h - bh) / 2, bw, bh);
       }
     }
-  }, [version, clip, from, count, cw, fps, filmId, h]);
+  }, [version, spectra, view, clip, from, count, cw, fps, filmId, h]);
   return <canvas ref={ref} className="tl-sound" style={{ left: (from - clip.start) * cw, width: count * cw, height: h }} />;
 }
 
@@ -320,6 +335,7 @@ export function Timeline() {
   const cellInput = useRef<HTMLInputElement>(null);
   const soundInput = useRef<HTMLInputElement>(null);
   const scrub = useSound((s) => s.scrub);
+  const soundView = useSound((s) => s.view);
   const pickAt = useRef<{ track: string; cell: number } | null>(null);
   const index: CellIndex = useMemo(() => (film ? cellIndex(film) : new Map()), [film]);
 
@@ -979,6 +995,15 @@ export function Timeline() {
                 title={scrub ? "Al moverte de celda suena su pedacito de sonido (tocá para que no suene)" : "Al moverte de celda no suena nada (tocá para escuchar el pedacito de cada celda)"}
               >
                 <Icon name={scrub ? "sound" : "mute"} size={14} />
+              </button>
+            )}
+            {film.tracks.some((t) => t.kind === "sound") && (
+              <button
+                className={`icon-btn small${soundView === "spectrum" ? " on" : ""}`}
+                onClick={() => useSound.getState().setView(soundView === "spectrum" ? "wave" : "spectrum")}
+                title={soundView === "spectrum" ? "El sonido se ve como espectro: abajo los graves, arriba los agudos (tocá para ver la onda)" : "El sonido se ve como onda (tocá para ver su espectro: graves y agudos)"}
+              >
+                <Icon name="spectrum" size={14} />
               </button>
             )}
           </div>

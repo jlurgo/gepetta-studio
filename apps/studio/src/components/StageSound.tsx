@@ -1,8 +1,9 @@
 import { type FilmState, PEAKS_PER_SECOND, cellIndex, clipIn, playedCell, wrapCell } from "@gepetta/core";
 import { useEffect, useRef } from "react";
 import { peaksNow, useSoundPeaks } from "../media/sound";
+import { sampleSpectrum, spectrumImage, spectrumNow, useSpectra } from "../media/spectrum";
 import { playbackCell, useEditor } from "../state/editor";
-import { useSound } from "../state/sound";
+import { type SoundView, useSound } from "../state/sound";
 import { Icon } from "./Icon";
 
 /** Cells shown before and after the one on screen. */
@@ -12,7 +13,7 @@ const BARS = 4;
 const H = 40;
 
 /** Draws the sound around `cell`: each sound track's slices, mixed (the loudest), the cell on screen marked. */
-function draw(canvas: HTMLCanvasElement, filmId: string, film: FilmState, cell: number) {
+function draw(canvas: HTMLCanvasElement, filmId: string, film: FilmState, cell: number, view: SoundView) {
   const dpr = window.devicePixelRatio || 1;
   const w = (2 * AROUND + 1) * CELL_W;
   if (canvas.width !== Math.round(w * dpr)) {
@@ -25,6 +26,7 @@ function draw(canvas: HTMLCanvasElement, filmId: string, film: FilmState, cell: 
   const fps = film.settings.fps;
   const index = cellIndex(film);
   const tracks = film.tracks.filter((t) => t.kind === "sound" && t.visible);
+  if (view === "spectrum") return drawSpectrum(ctx, filmId, film, cell, dpr);
   const bw = (CELL_W - 2) / BARS - 1;
   for (let i = -AROUND; i <= AROUND; i++) {
     const c = film.settings.loop ? wrapCell(film, cell + i) : cell + i;
@@ -54,6 +56,32 @@ function draw(canvas: HTMLCanvasElement, filmId: string, film: FilmState, cell: 
   }
 }
 
+/** The same, as the spectrum of the sound (louder track wins in each band). */
+function drawSpectrum(ctx: CanvasRenderingContext2D, filmId: string, film: FilmState, cell: number, dpr: number) {
+  const fps = film.settings.fps;
+  const index = cellIndex(film);
+  const tracks = film.tracks.filter((t) => t.kind === "sound" && t.visible);
+  const width = ctx.canvas.width;
+  const levels = new Uint8Array(width * ctx.canvas.height);
+  for (let i = -AROUND; i <= AROUND; i++) {
+    const c = film.settings.loop ? wrapCell(film, cell + i) : cell + i;
+    if (c < 0 || c >= film.length) continue;
+    const x = Math.round((i + AROUND) * CELL_W * dpr) + 1;
+    const cw = Math.round((i + AROUND + 1) * CELL_W * dpr) - x - 1;
+    for (const t of tracks) {
+      const clip = clipIn(index.get(t.id) ?? [], c);
+      const spectrum = clip?.sound && spectrumNow(filmId, clip.sound.ref);
+      if (!clip?.sound || !spectrum) continue;
+      const t0 = clip.sound.from + (c - clip.start) / fps;
+      sampleSpectrum(levels, width, x, cw, spectrum, t0, t0 + 1 / fps, Math.min(1, t.opacity * clip.opacity));
+    }
+  }
+  ctx.putImageData(spectrumImage(levels, width), 0, 0);
+  ctx.strokeStyle = "#ff7a45";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(AROUND * CELL_W + 1, 1, CELL_W - 2, H - 2);
+}
+
 /**
  * Under the picture: the sound of the cells around the one shown, following
  * the cursor or the film while it plays. Hides with its ×.
@@ -65,6 +93,8 @@ export function StageSound() {
   const playback = useEditor((s) => s.playback);
   const shown = useSound((s) => s.strip);
   const version = useSoundPeaks((s) => s.version);
+  const spectra = useSpectra((s) => s.version);
+  const view = useSound((s) => s.view);
   const ref = useRef<HTMLCanvasElement>(null);
   const hasSound = !!film?.tracks.some((t) => t.kind === "sound");
 
@@ -72,7 +102,7 @@ export function StageSound() {
     const canvas = ref.current;
     if (!canvas || !film || !filmId) return;
     if (!playback) {
-      draw(canvas, filmId, film, cursorCell);
+      draw(canvas, filmId, film, cursorCell, view);
       return;
     }
     // While playing: the cell being shown, drawn again when it changes.
@@ -81,11 +111,11 @@ export function StageSound() {
     const step = () => {
       raf = requestAnimationFrame(step);
       const cell = playedCell(film, playbackCell(playback, film.settings.fps));
-      if (cell !== last) draw(canvas, filmId, film, (last = Math.min(cell, film.length - 1)));
+      if (cell !== last) draw(canvas, filmId, film, (last = Math.min(cell, film.length - 1)), view);
     };
     step();
     return () => cancelAnimationFrame(raf);
-  }, [film, filmId, cursorCell, playback, version, shown]);
+  }, [film, filmId, cursorCell, playback, version, spectra, view, shown]);
 
   if (!hasSound) return null;
   if (!shown)
