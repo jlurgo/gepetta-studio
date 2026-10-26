@@ -23,6 +23,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { ZOOM_MAX, ZOOM_MIN, fitStage, panBy, setStageLayout, useStageView, viewTransform, zoomBy } from "../state/stageView";
 import { Icon } from "./Icon";
+import { StageSound } from "./StageSound";
 import { proxyCache } from "../media/cache";
 import { peekPicture } from "../media/composed";
 import type { LiveFrame } from "../capture/types";
@@ -1195,6 +1196,7 @@ export function Stage() {
       <canvas ref={canvasRef} />
       {!playing && <StageTools />}
       <ZoomControl />
+      <StageSound />
       {marker && <div className="focus-marker" style={{ left: marker.x, top: marker.y }} />}
       {!playing && magnified && <div className="stage-badge zoom">🔍 Lupa · arrastrá para mover</div>}
       {!playing && !hasSource && (

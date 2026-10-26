@@ -16,7 +16,7 @@ export async function mixSound(filmId: string, film: FilmState, cells: readonly 
   const volume = new Map(film.tracks.map((t) => [t.id, t.opacity]));
   for (const run of runs) {
     const buffer = await soundBuffer(filmId, run.clip.sound!.ref);
-    playRun(ctx, ctx.destination, buffer, run, fps, run.at / fps, volume.get(run.track) ?? 1);
+    playRun(ctx, ctx.destination, buffer, run, fps, run.at / fps, (volume.get(run.track) ?? 1) * run.clip.opacity);
   }
   return ctx.startRendering();
 }

@@ -10,9 +10,10 @@ import { ShotEditor } from "./ShotEditor";
 import { STROKE_ICONS, StrokesPanel } from "./StrokesPanel";
 import { SequenceLink, SequencePanel, sequenceColor } from "./SequencePanel";
 import { Icon } from "./Icon";
+import { SoundDetails } from "./SoundPanel";
 
 /** Slider that shows changes live and records one history step when released. */
-export function OpacitySlider({ value, onCommit, label = true }: { value: number; onCommit(v: number): void; label?: boolean }) {
+export function OpacitySlider({ value, onCommit, label = true, what = "Opacidad" }: { value: number; onCommit(v: number): void; label?: boolean; what?: string }) {
   const [draft, setDraft] = useState(value);
   const dirty = useRef(false);
   useEffect(() => setDraft(value), [value]);
@@ -27,7 +28,7 @@ export function OpacitySlider({ value, onCommit, label = true }: { value: number
       max={1}
       step={0.05}
       value={draft}
-      title={`Opacidad ${Math.round(draft * 100)} %`}
+      title={`${what} ${Math.round(draft * 100)} %`}
       onChange={(e) => {
         dirty.current = true;
         setDraft(Number(e.target.value));
@@ -40,7 +41,9 @@ export function OpacitySlider({ value, onCommit, label = true }: { value: number
   if (!label) return input;
   return (
     <label className="control">
-      <span>Opacidad: {Math.round(draft * 100)} %</span>
+      <span>
+        {what}: {Math.round(draft * 100)} %
+      </span>
       {input}
     </label>
   );
@@ -67,10 +70,10 @@ function Details({ track }: { track: Track }) {
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         />
       </label>
-      <OpacitySlider value={track.opacity} onCommit={(opacity) => update({ opacity })} />
+      <OpacitySlider value={track.opacity} what={track.kind === "sound" ? "Volumen" : "Opacidad"} onCommit={(opacity) => update({ opacity })} />
       <label className="control toggle">
         <input type="checkbox" checked={track.visible} onChange={(e) => update({ visible: e.target.checked })} />
-        <span>Visible</span>
+        <span>{track.kind === "sound" ? "Que suene" : "Visible"}</span>
       </label>
       <label className="control toggle">
         <input type="checkbox" checked={track.exported} onChange={(e) => update({ exported: e.target.checked })} />
@@ -93,7 +96,7 @@ function Details({ track }: { track: Track }) {
         </div>
       </div>
 
-      <div className="control">
+      {track.kind !== "sound" && <div className="control">
         <span>Posición</span>
         <p className="hint">
           Arrastrá el track sobre la imagen para moverlo; las esquinas lo agrandan y el círculo lo gira (con ⇧, en pasos).
@@ -102,7 +105,7 @@ function Details({ track }: { track: Track }) {
         <button className="btn small" onClick={() => update({ transform: IDENTITY_TRANSFORM })} disabled={!moved}>
           Restablecer posición
         </button>
-      </div>
+      </div>}
 
       {track.id !== PHOTO_TRACK && (
         <button
@@ -406,6 +409,7 @@ export function DetailPanel() {
   const clip = useEditor((s) => (s.selection.length === 1 ? (s.film?.clips[s.selection[0]!] ?? null) : null));
   const many = useEditor((s) => s.selection.length > 1);
   const cursorCell = useEditor((s) => s.cursor.cell);
+  const soundTrack = useEditor((s) => s.film?.tracks.find((t) => t.id === s.cursor.track)?.kind === "sound");
 
   // Undo can remove the selected track.
   useEffect(() => {
@@ -425,6 +429,14 @@ export function DetailPanel() {
       <div className="layers-panel">
         <h3>Imágenes</h3>
         <ManyDetails />
+      </div>
+    );
+  }
+  if ((detail === "cell" && !many && soundTrack) || (detail === "clip" && clip?.sound)) {
+    return (
+      <div className="layers-panel">
+        <h3>Sonido</h3>
+        <SoundDetails clip={detail === "clip" ? clip : null} />
       </div>
     );
   }

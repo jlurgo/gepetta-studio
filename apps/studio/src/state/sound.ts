@@ -12,27 +12,40 @@ interface SoundState {
   /** Moving the cursor plays the slice of its cell. */
   scrub: boolean;
   setScrub(on: boolean): void;
+  /** The sound of the cells around the one shown, under the picture. */
+  strip: boolean;
+  setStrip(on: boolean): void;
 }
 
 const SCRUB_KEY = "gepetta.soundScrub";
+const STRIP_KEY = "gepetta.soundStrip";
 
-function loadScrub(): boolean {
+function load(key: string): boolean {
   try {
-    return localStorage.getItem(SCRUB_KEY) !== "0";
+    return localStorage.getItem(key) !== "0";
   } catch {
     return true;
   }
 }
 
+function save(key: string, on: boolean) {
+  try {
+    localStorage.setItem(key, on ? "1" : "0");
+  } catch {
+    // Not remembered.
+  }
+}
+
 export const useSound = create<SoundState>((set) => ({
-  scrub: loadScrub(),
+  scrub: load(SCRUB_KEY),
   setScrub: (scrub) => {
     set({ scrub });
-    try {
-      localStorage.setItem(SCRUB_KEY, scrub ? "1" : "0");
-    } catch {
-      // Not remembered.
-    }
+    save(SCRUB_KEY, scrub);
+  },
+  strip: load(STRIP_KEY),
+  setStrip: (strip) => {
+    set({ strip });
+    save(STRIP_KEY, strip);
   },
 }));
 
@@ -94,7 +107,7 @@ function tick() {
       const buffer = soundBufferNow(filmId, clip.sound.ref);
       if (!buffer) continue;
       // Played to the clip's end, unless cut short by what comes next.
-      const voice = playRun(ctx, ctx.destination, buffer, { track: track.id, clip, at: 0, cell, count: clipEnd(clip) - cell }, fps, t, track.opacity);
+      const voice = playRun(ctx, ctx.destination, buffer, { track: track.id, clip, at: 0, cell, count: clipEnd(clip) - cell }, fps, t, track.opacity * clip.opacity);
       if (voice) voices.set(track.id, Object.assign(voice, { clipId: clip.id, next: cell + 1 }));
     }
     live.n++;
@@ -127,7 +140,7 @@ function scrub(cell: number) {
     const clip = clipIn(idx.get(track.id) ?? [], cell);
     const buffer = clip?.sound && soundBufferNow(filmId, clip.sound.ref);
     if (!clip || !buffer) continue;
-    const v = playRun(ctx, ctx.destination, buffer, { track: track.id, clip, at: 0, cell, count: 1 }, film.settings.fps, ctx.currentTime, track.opacity);
+    const v = playRun(ctx, ctx.destination, buffer, { track: track.id, clip, at: 0, cell, count: 1 }, film.settings.fps, ctx.currentTime, track.opacity * clip.opacity);
     if (v) scrubbing.push(v);
   }
 }
