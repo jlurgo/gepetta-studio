@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { insertCellsOps, removeCellOps } from "./columns";
 import { stackAt } from "./layers";
 import { soundRuns } from "./sound";
-import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, emptyFilm } from "./model";
+import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, cellGain, emptyFilm } from "./model";
 import { type Op, applyOp } from "./ops";
 
 const media = { original: "w", proxy: "w", thumb: "w", width: 10, height: 10 };
@@ -76,5 +76,28 @@ describe("sound clips", () => {
     // Going back (ping-pong) or jumping: one run per cell.
     expect(runs([5, 4, 3])).toEqual(["0:5+1", "1:4+1", "2:3+1"]);
     expect(soundRuns(f, [3, 4], ["photos"])).toEqual([]);
+  });
+
+  it("keeps each cell's volume when it is cut, moved or the speed changes", () => {
+    const gains = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9];
+    let f = film({ type: "clip.update", id: "a", patch: { sound: { ref, from: 0, gains } } });
+    const volumes = (g: FilmState) => {
+      const out: number[] = [];
+      for (const c of Object.values(g.clips).filter((c) => c.sound).sort((x, y) => x.start - y.start)) for (let i = c.start; i < c.start + c.length; i++) out.push(cellGain(c, i));
+      return out;
+    };
+    expect(cellGain(f.clips.a!, 4)).toBe(0.2);
+    // Taking cell 5 (the fourth) out: the cells after it keep theirs.
+    let g = f;
+    for (const op of removeCellOps(g, "s", 5)) g = applyOp(g, op);
+    expect(volumes(g)).toEqual([0, 0.1, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]);
+    // Moving part of it.
+    g = applyOp(f, { type: "cells.move", start: 6, length: 3, to: 20, tracks: ["s"] });
+    expect(volumes(g)).toEqual([0, 0.1, 0.2, 0.3, 0.7, 0.8, 0.9, 0.4, 0.5, 0.6]);
+    // Twice the speed: each cell's volume in two cells.
+    f = applyOp(f, { type: "film.setFps", fps: 24 });
+    expect(volumes(f).slice(0, 6)).toEqual([0, 0, 0.1, 0.1, 0.2, 0.2]);
+    // Only a sound has a sound's volume.
+    expect(() => applyOp(f, { type: "clip.update", id: "p", patch: { sound: { ref, from: 0 } } })).toThrow();
   });
 });

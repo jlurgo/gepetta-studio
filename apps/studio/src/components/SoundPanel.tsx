@@ -1,4 +1,4 @@
-import { type Clip, clipAt, clipEnd } from "@gepetta/core";
+import { type Clip, cellGain, clipAt, clipEnd } from "@gepetta/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { audio, playRun, soundBuffer } from "../media/sound";
 import { sampleSpectrum, spectrumImage, spectrumNow, useSpectra } from "../media/spectrum";
@@ -53,6 +53,58 @@ function ClipSpectrum({ filmId, clip, fps }: { filmId: string; clip: Clip; fps: 
   );
 }
 
+/** The cells of a sound clip that the volume buttons change: the picked ones in it, or all of it. */
+function volumeCells(clip: Clip, span: { start: number; end: number } | null): [number, number] {
+  if (span && span.start < clipEnd(clip) && span.end > clip.start) return [Math.max(span.start, clip.start), Math.min(span.end, clipEnd(clip))];
+  return [clip.start, clipEnd(clip)];
+}
+
+/** The clip's volumes with cells [a, b) set by `f` (0 at a, 1 at the last one). */
+function withGains(clip: Clip, a: number, b: number, f: (t: number) => number): number[] {
+  const gains = Array.from({ length: clip.length }, (_, i) => cellGain(clip, clip.start + i));
+  for (let c = a; c < b; c++) gains[c - clip.start] = Math.round(f(b - a > 1 ? (c - a) / (b - a - 1) : 1) * 100) / 100;
+  return gains;
+}
+
+/**
+ * The volume of each cell: the cursor's one, and fading in or out the picked
+ * cells (or the whole sound).
+ */
+function CellVolume({ clip }: { clip: Clip }) {
+  const cell = useEditor((s) => s.cursor.cell);
+  const span = useEditor((s) => s.span);
+  // Cells picked with ⇧ in the clip's track: from where the picking started to the cursor.
+  const picked = span && span.track === clip.track && span.anchor !== cell ? { start: Math.min(span.anchor, cell), end: Math.max(span.anchor, cell) + 1 } : null;
+  const [a, b] = volumeCells(clip, picked);
+  const inClip = cell >= clip.start && cell < clipEnd(clip);
+  const set = (gains: number[], label: string) => useEditor.getState().commit([{ type: "clip.update", id: clip.id, patch: { sound: { ...clip.sound!, gains } } }], label);
+  const what = a === clip.start && b === clipEnd(clip) ? "todo el sonido" : `las celdas ${a + 1}–${b}`;
+  return (
+    <>
+      {inClip && (
+        <OpacitySlider
+          key={`${clip.id}-${cell}`}
+          what={`Volumen de la celda ${cell + 1}`}
+          value={cellGain(clip, cell)}
+          onCommit={(g) => set(withGains(clip, cell, cell + 1, () => g), "Volumen de una celda")}
+        />
+      )}
+      <div className="action-row" title={`Cambia ${what} (elegí celdas en la línea de tiempo para cambiar solo esas)`}>
+        <button className="btn small" onClick={() => set(withGains(clip, a, b, (t) => t), "Fundido de entrada")}>
+          Fundido de entrada
+        </button>
+        <button className="btn small" onClick={() => set(withGains(clip, a, b, (t) => 1 - t), "Fundido de salida")}>
+          Fundido de salida
+        </button>
+        <button className="btn small" onClick={() => set(withGains(clip, a, b, () => 1), "Volumen parejo")}>
+          Parejo
+        </button>
+      </div>
+      <p className="hint">Con la herramienta «Sonidos», arrastrá sobre las celdas del sonido para dibujar su volumen (arriba, fuerte; abajo, nada).</p>
+    </>
+  );
+}
+
 /**
  * A sound clip's settings (the one picked, or the one at the cursor in a
  * sound track): its name, its own volume, how long it is and where in its
@@ -88,7 +140,8 @@ export function SoundDetails({ clip: picked }: { clip: Clip | null }) {
         />
       </label>
       <ClipSpectrum filmId={filmId} clip={clip} fps={fps} />
-      <OpacitySlider key={clip.id} what="Volumen" value={clip.opacity} onCommit={(opacity) => commit([{ type: "clip.update", id: clip.id, patch: { opacity } }])} />
+      <OpacitySlider key={clip.id} what="Volumen de todo el sonido" value={clip.opacity} onCommit={(opacity) => commit([{ type: "clip.update", id: clip.id, patch: { opacity } }])} />
+      <CellVolume clip={clip} />
       <p className="hint">
         Celdas {clip.start + 1}–{clipEnd(clip)} ({clip.length} {clip.length === 1 ? "celda" : "celdas"}, {seconds(clip.length / fps)}) · desde el segundo {seconds(from)} de un sonido de {seconds(ref.duration)}.
       </p>

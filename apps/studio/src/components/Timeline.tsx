@@ -1,4 +1,4 @@
-import { type CellIndex, type Clip, type ClipId, type GroupId, type Op, PEAKS_PER_SECOND, type TimelineRow, type Track, type TrackId, cellIndex, groupTracks, groupWithin, timelineRows, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
+import { type CellIndex, type Clip, type ClipId, type GroupId, type Op, PEAKS_PER_SECOND, type TimelineRow, type Track, type TrackId, cellGain, cellIndex, clipAt, groupTracks, groupWithin, timelineRows, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addTrack, extendFilm, resizeDrum, importImages, importSounds, moveClips, moveColumns, setCellImage, spanCells } from "../state/actions";
@@ -11,6 +11,7 @@ import { MicLive } from "./MicPanel";
 import { renameGroup, setLinked, toggleGroup, useGroups } from "../state/groups";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
+import { usePaint } from "../state/paint";
 import { type Rig, rigColor, shotOn, useCamera } from "../state/camera";
 import { Icon } from "./Icon";
 import { sequenceColor } from "./SequencePanel";
@@ -186,11 +187,36 @@ function GroupHead({ row, current, height, pickTo, depth, drag, setDrag, drop }:
 }
 
 /**
+ * The volume of each cell, as a line (high is loud): always when some cell
+ * is not at full volume, and to be painted with the «Sonidos» tool.
+ */
+function volumeLine(ctx: CanvasRenderingContext2D, clip: Clip, from: number, count: number, cw: number, h: number, editing: boolean) {
+  const gains = clip.sound?.gains;
+  if (!editing && !gains?.some((g, i) => g !== 1 && i < clip.length)) return;
+  const y = (g: number) => 3 + (1 - Math.min(1, g)) * (h - 6);
+  ctx.strokeStyle = "#ffd84a";
+  ctx.lineWidth = editing ? 2 : 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < count; i++) {
+    const g = cellGain(clip, from + i);
+    ctx[i ? "lineTo" : "moveTo"](i * cw + 1, y(g));
+    ctx.lineTo((i + 1) * cw - 1, y(g));
+  }
+  ctx.stroke();
+  if (!editing || cw < 10) return;
+  ctx.fillStyle = "#ffd84a";
+  for (let i = 0; i < count; i++) ctx.fillRect(i * cw + cw / 2 - 2, y(cellGain(clip, from + i)) - 2, 4, 4);
+}
+
+/**
  * A sound clip's cells on screen: in each, its slice's loudness as a few
  * bars (more when the cells are wider), or its spectrum.
  */
-function SoundStrip({ filmId, clip, from, count, cw, fps }: { filmId: string; clip: Clip; from: number; count: number; cw: number; fps: number }) {
+function SoundStrip({ filmId, clip: shown, from, count, cw, fps, gains }: { filmId: string; clip: Clip; from: number; count: number; cw: number; fps: number; gains?: number[] }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  // While its volume is being painted, as it will be.
+  const clip = useMemo(() => (gains && shown.sound ? { ...shown, sound: { ...shown.sound, gains } } : shown), [shown, gains]);
+  const soundTool = usePaint((s) => s.tool === "sound");
   const version = useSoundPeaks((s) => s.version);
   const spectra = useSpectra((s) => s.version);
   const view = useSound((s) => s.view);
@@ -213,6 +239,8 @@ function SoundStrip({ filmId, clip, from, count, cw, fps }: { filmId: string; cl
         sampleSpectrum(levels, canvas.width, x, Math.max(1, Math.round((i + 1) * cw * dpr) - x - 1), spectrum, t0, t0 + 1 / fps);
       }
       ctx.putImageData(spectrumImage(levels, canvas.width), 0, 0);
+      ctx.scale(dpr, dpr);
+      volumeLine(ctx, clip, from, count, cw, h, soundTool);
       return;
     }
     ctx.scale(dpr, dpr);
@@ -227,11 +255,12 @@ function SoundStrip({ filmId, clip, from, count, cw, fps }: { filmId: string; cl
         const e = Math.max(a + 1, Math.floor((t0 + (b + 1) / (bars * fps)) * PEAKS_PER_SECOND));
         let m = 0;
         if (peaks) for (let k = a; k < e; k++) m = Math.max(m, peaks[k] ?? 0);
-        const bh = Math.max(1, (m / 255) * (h - 2));
+        const bh = Math.max(1, (m / 255) * (h - 2) * Math.min(1, cellGain(clip, from + i)));
         ctx.fillRect(i * cw + 1 + b * (bw + 1), (h - bh) / 2, bw, bh);
       }
     }
-  }, [version, spectra, view, clip, from, count, cw, fps, filmId, h]);
+    volumeLine(ctx, clip, from, count, cw, h, soundTool);
+  }, [version, spectra, view, clip, from, count, cw, fps, filmId, h, soundTool]);
   return <canvas ref={ref} className="tl-sound" style={{ left: (from - clip.start) * cw, width: count * cw, height: h }} />;
 }
 
@@ -244,6 +273,8 @@ type Gesture =
   | { kind: "turn"; cx0: number; rot0: number; moved: boolean }
   | { kind: "length"; x0: number; dx: number }
   /** Dragging a camera's live cell (where its photos go) to another cell. */
+  /** «Sonidos» tool: painting the volume of a sound track's cells (high is loud), not yet committed. */
+  | { kind: "gain"; track: TrackId; last: { cell: number; g: number }; gains: Record<ClipId, number[]> }
   | { kind: "live"; rig: string; mic?: boolean; x0: number; y0: number; moved: boolean; to: { track: TrackId; cell: number; v: number } | null };
 
 function loadZoom(): number {
@@ -632,6 +663,28 @@ export function Timeline() {
 
   // -- pointer gestures ------------------------------------------------------
 
+  /** The volume a height in a sound track's row stands for (top: full; bottom: silent), in steps of 5 %. */
+  const gainAt = (track: TrackId, y: number) => {
+    const h = heightOf(track);
+    const g = 1 - (y - topOf(track) - 8) / Math.max(1, h - 16);
+    return Math.round(Math.max(0, Math.min(1, g)) * 20) / 20;
+  };
+
+  /** Volumes painted from (c0, g0) to (c1, g1) in a track's sound clips, the ones in between in a straight line. */
+  const paintGain = (painted: Record<ClipId, number[]>, track: TrackId, c0: number, g0: number, c1: number, g1: number) => {
+    const out = { ...painted };
+    const [a, b] = c0 <= c1 ? [c0, c1] : [c1, c0];
+    for (let cell = a; cell <= b; cell++) {
+      const clip = clipAt(film!, track, cell);
+      if (!clip?.sound) continue;
+      const gains = (out[clip.id] ?? clip.sound.gains ?? []).slice();
+      while (gains.length < clip.length) gains.push(1);
+      gains[cell - clip.start] = c0 === c1 ? g1 : Math.round((g0 + ((g1 - g0) * (cell - c0)) / (c1 - c0)) * 20) / 20;
+      out[clip.id] = gains;
+    }
+    return out;
+  };
+
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
     // A click lets picked cells go, as in a text.
@@ -701,6 +754,14 @@ export function Timeline() {
       setGesture({ kind: "live", rig: liveRig.id, x0: p.x, y0: p.y, moved: false, to: null });
       return;
     }
+    if (usePaint.getState().tool === "sound" && p.track.kind === "sound" && clipAt(film!, p.track.id, p.cell)) {
+      // «Sonidos»: painting the volume of the cells (drag up and down).
+      capturePointer(e);
+      const g = gainAt(p.track.id, p.y);
+      setGesture({ kind: "gain", track: p.track.id, last: { cell: p.cell, g }, gains: paintGain({}, p.track.id, p.cell, g, p.cell, g) });
+      useEditor.getState().moveTo(p.cell, p.track.id);
+      return;
+    }
     const target = (e.target as HTMLElement).closest<HTMLElement>("[data-clip]");
     const id = target?.dataset.clip;
     const { setSelection } = useEditor.getState();
@@ -758,6 +819,12 @@ export function Timeline() {
       }
       return;
     }
+    if (gesture.kind === "gain") {
+      const g = gainAt(gesture.track, p.y);
+      if (p.cell === gesture.last.cell && g === gesture.last.g) return;
+      setGesture({ ...gesture, last: { cell: p.cell, g }, gains: paintGain(gesture.gains, gesture.track, gesture.last.cell, gesture.last.g, p.cell, g) });
+      return;
+    }
     if (gesture.kind === "live") {
       const moved = gesture.moved || Math.abs(p.x - gesture.x0) + Math.abs(p.y - gesture.y0) > 4;
       const to = p.track && moved ? { track: p.track.id, cell: p.cell, v: p.v } : gesture.to;
@@ -811,6 +878,14 @@ export function Timeline() {
     }
     if (g.kind === "length") {
       if (g.dx) resizeAtEnd(g.dx);
+      return;
+    }
+    if (g.kind === "gain") {
+      const ops: Op[] = Object.entries(g.gains).flatMap(([id, gains]) => {
+        const c = film!.clips[id];
+        return c?.sound ? [{ type: "clip.update" as const, id, patch: { sound: { ...c.sound, gains } } }] : [];
+      });
+      if (ops.length) useEditor.getState().commit(ops, "Volumen del sonido");
       return;
     }
     if (g.kind === "live" && g.mic) {
@@ -1155,7 +1230,8 @@ export function Timeline() {
                     {c.sound
                       ? (() => {
                           const shownCells = cellsOf(c, length, lap);
-                          return shownCells.length ? <SoundStrip filmId={filmId} clip={c} from={shownCells[0]!} count={shownCells.length} cw={cw} fps={fps} /> : null;
+                          const painting = gesture?.kind === "gain" ? gesture.gains[c.id] : undefined;
+                          return shownCells.length ? <SoundStrip filmId={filmId} clip={c} from={shownCells[0]!} count={shownCells.length} cw={cw} fps={fps} gains={painting} /> : null;
                         })()
                       : cellsOf(c, length, lap).map((cell) => (
                           <div key={cell} className="tl-clip-cell" style={{ left: (cell - c.start) * cw, width: cw - (cell === c.start + length - 1 ? 2 : 0) }}>

@@ -1,4 +1,4 @@
-import { type FilmState, PEAKS_PER_SECOND, cellIndex, clipIn, playedCell, wrapCell } from "@gepetta/core";
+import { type FilmState, PEAKS_PER_SECOND, cellGain, cellIndex, clipIn, playedCell, wrapCell } from "@gepetta/core";
 import { useEffect, useRef } from "react";
 import { peaksNow, useSoundPeaks } from "../media/sound";
 import { sampleSpectrum, spectrumImage, spectrumNow, useSpectra } from "../media/spectrum";
@@ -45,7 +45,7 @@ function draw(canvas: HTMLCanvasElement, filmId: string, film: FilmState, cell: 
       for (let b = 0; b < BARS; b++) {
         const a = Math.floor((t0 + b / (BARS * fps)) * PEAKS_PER_SECOND);
         const e = Math.max(a + 1, Math.floor((t0 + (b + 1) / (BARS * fps)) * PEAKS_PER_SECOND));
-        for (let k = a; k < e; k++) level[b] = Math.max(level[b]!, ((peaks[k] ?? 0) / 255) * t.opacity * clip.opacity);
+        for (let k = a; k < e; k++) level[b] = Math.max(level[b]!, ((peaks[k] ?? 0) / 255) * t.opacity * clip.opacity * cellGain(clip, c));
       }
     }
     ctx.fillStyle = i === 0 ? "#ffb38f" : `rgb(92 200 181 / ${1 - Math.abs(i) * 0.06})`;
@@ -73,7 +73,7 @@ function drawSpectrum(ctx: CanvasRenderingContext2D, filmId: string, film: FilmS
       const spectrum = clip?.sound && spectrumNow(filmId, clip.sound.ref);
       if (!clip?.sound || !spectrum) continue;
       const t0 = clip.sound.from + (c - clip.start) / fps;
-      sampleSpectrum(levels, width, x, cw, spectrum, t0, t0 + 1 / fps, Math.min(1, t.opacity * clip.opacity));
+      sampleSpectrum(levels, width, x, cw, spectrum, t0, t0 + 1 / fps, Math.min(1, t.opacity * clip.opacity * cellGain(clip, c)));
     }
   }
   ctx.putImageData(spectrumImage(levels, width), 0, 0);

@@ -137,12 +137,24 @@ export interface SoundSlice {
   ref: SoundRef;
   /** Seconds into the sound where the clip's first cell starts. */
   from: number;
+  /** The volume of each of the clip's cells, from its first (1 = as it is; cells past the end are 1). */
+  gains?: number[];
 }
 
-/** A clip moved `by` cells into what it shows: a sound clip starts that much later in its sound. */
+/** The volume of a sound clip's cell (1 = as it is). */
+export function cellGain(clip: Clip, cell: number): number {
+  return clip.sound?.gains?.[cell - clip.start] ?? 1;
+}
+
+/**
+ * A clip moved `by` cells into what it shows: a sound clip starts that much
+ * later in its sound, and its cells keep their volumes.
+ */
 export function clipFrom(clip: Clip, by: number, fps: number): Clip {
   if (!clip.sound || !by) return clip;
-  return { ...clip, sound: { ...clip.sound, from: clip.sound.from + by / fps } };
+  const { gains } = clip.sound;
+  const shifted = gains && (by > 0 ? gains.slice(by) : [...new Array<number>(-by).fill(1), ...gains]);
+  return { ...clip, sound: { ...clip.sound, from: clip.sound.from + by / fps, ...(gains && { gains: shifted }) } };
 }
 
 export type StrokeTool = "draw" | "erase" | "tint" | "shape" | "fill" | "clone";

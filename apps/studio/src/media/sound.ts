@@ -1,4 +1,4 @@
-import { type AssetId, type FilmState, type MediaRef, PEAKS_PER_SECOND, type SoundRef, type SoundRun, clipEnd } from "@gepetta/core";
+import { type AssetId, type FilmState, type MediaRef, PEAKS_PER_SECOND, type SoundRef, type SoundRun, cellGain, clipEnd } from "@gepetta/core";
 import { create } from "zustand";
 import { storage } from "../storage";
 import { storeBlob } from "./ingest";
@@ -135,7 +135,8 @@ export interface Voice {
 
 /**
  * Plays a run on `ctx` (into `out`) starting at `when` (its time), at the
- * film's speed, fading in and out at its ends so a cut does not click.
+ * film's speed, each cell at its own volume (times `volume`), fading in and
+ * out at its ends so a cut does not click.
  */
 export function playRun(ctx: BaseAudioContext, out: AudioNode, buffer: AudioBuffer, run: SoundRun, fps: number, when: number, volume: number): Voice | null {
   const sound = run.clip.sound!;
@@ -148,9 +149,20 @@ export function playRun(ctx: BaseAudioContext, out: AudioNode, buffer: AudioBuff
   src.buffer = buffer;
   const gain = ctx.createGain();
   const end = when + length;
+  const cells = Math.max(1, Math.round(length * fps));
+  // The volume of the cell playing at a time of the context.
+  const volumeAt = (t: number) => volume * cellGain(run.clip, run.cell + Math.max(0, Math.min(cells - 1, Math.floor((t - when) * fps + 1e-6))));
   gain.gain.setValueAtTime(0, start);
-  gain.gain.linearRampToValueAtTime(volume, start + EDGE);
-  gain.gain.setValueAtTime(volume, Math.max(start + EDGE, end - EDGE));
+  gain.gain.linearRampToValueAtTime(volumeAt(start), start + EDGE);
+  // From one cell's volume to the next one's, quickly, as each cell starts.
+  for (let i = 1; i < cells; i++) {
+    const t = when + i / fps;
+    const [a, b] = [volumeAt(t - EDGE), volumeAt(t)];
+    if (t - EDGE <= start + EDGE || a === b) continue;
+    gain.gain.setValueAtTime(a, t - EDGE);
+    gain.gain.linearRampToValueAtTime(b, t + EDGE);
+  }
+  gain.gain.setValueAtTime(volumeAt(end - EDGE), Math.max(start + EDGE, end - EDGE));
   gain.gain.linearRampToValueAtTime(0, end);
   src.connect(gain).connect(out);
   src.start(start, offset + skip, length - skip);
@@ -162,7 +174,7 @@ export function playRun(ctx: BaseAudioContext, out: AudioNode, buffer: AudioBuff
       const t = Math.max(at, ctx.currentTime);
       if (t >= end) return;
       gain.gain.cancelScheduledValues(t);
-      gain.gain.setValueAtTime(volume, t);
+      gain.gain.setValueAtTime(volumeAt(t), t);
       gain.gain.linearRampToValueAtTime(0, t + EDGE);
       src.stop(t + EDGE);
     },

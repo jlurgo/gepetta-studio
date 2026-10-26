@@ -50,7 +50,7 @@ export type Op =
   /** Moves a group's tracks together, to `index` among the other tracks (0 = bottom), as track.move does with one. */
   | { type: "group.move"; id: GroupId; index: number };
 
-export type ClipPatch = Partial<Pick<Clip, "name" | "visible" | "opacity" | "transform" | "length" | "media" | "look" | "fade" | "seq">>;
+export type ClipPatch = Partial<Pick<Clip, "name" | "visible" | "opacity" | "transform" | "length" | "media" | "look" | "fade" | "seq" | "sound">>;
 export type StrokePatch = Partial<Omit<Stroke, "id" | "tool" | "layer">>;
 export type TrackPatch = Partial<Pick<Track, "name" | "visible" | "opacity" | "transform" | "exported">> & {
   /** null: out of every group. */
@@ -172,7 +172,15 @@ function resliceSounds(film: FilmState, before: number): FilmState {
   const sounds = Object.values(film.clips).filter((c) => c.sound);
   if (k === 1 || !sounds.length) return film;
   const others = Object.fromEntries(Object.entries(film.clips).filter(([, c]) => !c.sound));
-  const moved = sounds.map((c) => ({ ...c, start: Math.round(c.start * k), length: Math.max(1, Math.round(c.length * k)) })).sort((a, b) => a.start - b.start);
+  const moved = sounds
+    .map((c) => {
+      const gains = c.sound!.gains;
+      // Each cell's volume goes to the cells that now take its time.
+      const length = Math.max(1, Math.round(c.length * k));
+      const sound = gains ? { ...c.sound!, gains: Array.from({ length }, (_, i) => gains[Math.floor(i / k)] ?? 1) } : c.sound;
+      return { ...c, sound, start: Math.round(c.start * k), length };
+    })
+    .sort((a, b) => a.start - b.start);
   return place({ ...film, clips: others }, moved);
 }
 
@@ -208,7 +216,9 @@ export function applyOp(film: FilmState, op: Op): FilmState {
       return place(film, moved);
     }
     case "clip.update": {
-      const clip = { ...requireClip(film, op.id), ...op.patch };
+      const before = requireClip(film, op.id);
+      if (op.patch.sound && !before.sound) throw new OpError("No es un sonido");
+      const clip = { ...before, ...op.patch };
       // A longer clip overwrites the cells it grows into.
       return op.patch.length !== undefined ? place(film, [clip]) : { ...film, clips: { ...film.clips, [clip.id]: clip } };
     }
@@ -342,6 +352,8 @@ function describePatch(patch: ClipPatch | TrackPatch, what: string): string {
       return `Ajustes de ${what}`;
     case "fade":
       return `Fundido de ${what}`;
+    case "sound":
+      return "Volumen del sonido";
     case "seq":
       return (patch as ClipPatch).seq ? `Poner ${what} en una secuencia` : `Sacar ${what} de su secuencia`;
     case "media":
