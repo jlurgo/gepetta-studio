@@ -21,6 +21,18 @@ export interface SoundRun {
   count: number;
 }
 
+/** How low a track that ducks goes while others sound. */
+export const DUCKED = 0.3;
+
+/**
+ * Whether a track that ducks (see Track.duck) is down at a cell: some other
+ * sound track that sounds, and does not duck itself, has sound there.
+ */
+export function duckedAt(film: FilmState, index: ReturnType<typeof cellIndex>, track: Track, cell: number, heard: (t: Track) => boolean = (t) => trackSounds(film, t)): boolean {
+  if (!track.duck) return false;
+  return film.tracks.some((t) => t.id !== track.id && !t.duck && t.kind === "sound" && heard(t) && !!clipIn(index.get(t.id) ?? [], cell)?.sound);
+}
+
 /**
  * What sounds while the given cells play one after another: for each sound
  * track (heard, and among `tracks` when given), runs of its slices. Cells

@@ -1,4 +1,4 @@
-import { type CellIndex, type FilmState, type Track, type TrackId, cellIndex, clipEnd, clipIn, playedCell, trackSounds, trackVolume } from "@gepetta/core";
+import { type CellIndex, type FilmState, type Track, type TrackId, cellIndex, clipEnd, clipIn, duckedAt, playedCell, trackSounds, trackVolume } from "@gepetta/core";
 import { create } from "zustand";
 import { type Bus, busKey, busLevel, makeBus } from "../media/mixer";
 import { type Voice, audio, playRun, preloadSounds, soundBufferNow } from "../media/sound";
@@ -110,7 +110,15 @@ const AHEAD = 0.25;
 const TICK = 30;
 
 /** Playing: the context time of the playback's first cell, the next cell to schedule, and each track's run playing. */
-let live: { playback: Playback; base: number; n: number; voices: Map<TrackId, Voice & { clipId: string; next: number }>; timer: number } | null = null;
+let live: {
+  playback: Playback;
+  base: number;
+  n: number;
+  voices: Map<TrackId, Voice & { clipId: string; next: number }>;
+  /** Whether each track that ducks is down now. */
+  ducked: Map<TrackId, boolean>;
+  timer: number;
+} | null = null;
 let index: { film: FilmState; index: CellIndex } | null = null;
 
 function indexOf(film: FilmState): CellIndex {
@@ -123,6 +131,7 @@ function stopLive() {
   clearInterval(live.timer);
   const now = audio().currentTime;
   for (const v of live.voices.values()) v.stop(now);
+  for (const { bus } of buses.values()) bus.duck(now, false);
   live = null;
 }
 
@@ -164,6 +173,14 @@ function tick() {
       const voice = playRun(ctx, busFor(film, track).input, buffer, { track: track.id, clip, at: 0, cell, count: clipEnd(clip) - cell }, fps, t, clip.opacity);
       if (voice) voices.set(track.id, Object.assign(voice, { clipId: clip.id, next: cell + 1 }));
     }
+    // Tracks that duck: down where the others sound.
+    for (const track of film.tracks) {
+      if (!track.duck || track.kind !== "sound") continue;
+      const down = duckedAt(film, idx, track, cell, (t) => heard(film, t));
+      if (live.ducked.get(track.id) === down) continue;
+      live.ducked.set(track.id, down);
+      busFor(film, track).duck(t, down);
+    }
     live.n++;
   }
 }
@@ -176,7 +193,7 @@ function startLive(playback: Playback, film: FilmState) {
   // Heard when the picture is seen: started earlier by the time sound takes to come out.
   const latency = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
   const base = ctx.currentTime - (performance.now() - playback.startedAt) / 1000 - latency;
-  live = { playback, base, n: Math.max(playback.startCell, playbackCell(playback, fps)), voices: new Map(), timer: window.setInterval(tick, TICK) };
+  live = { playback, base, n: Math.max(playback.startCell, playbackCell(playback, fps)), voices: new Map(), ducked: new Map(), timer: window.setInterval(tick, TICK) };
   tick();
 }
 

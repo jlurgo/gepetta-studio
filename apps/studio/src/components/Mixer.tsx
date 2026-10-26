@@ -89,6 +89,10 @@ function Strip({ track, depth, silenced, soloed, anySolo, meter }: { track: Trac
       </div>
       <OpacitySlider key={`v-${track.id}`} what="Volumen" value={track.opacity} onCommit={(opacity) => updateTrack(track.id, { opacity })} />
       <PanSlider value={track.pan ?? 0} onCommit={(pan) => updateTrack(track.id, { pan: pan || undefined })} />
+      <label className="control toggle" title="Para la música: baja mientras suena otro track de sonido (una voz) y vuelve a subir después">
+        <input type="checkbox" checked={!!track.duck} onChange={(e) => updateTrack(track.id, { duck: e.target.checked || undefined })} />
+        <span>Bajar cuando suenan los otros</span>
+      </label>
       <label className="control">
         <span>Efecto de voz</span>
         <select value={track.voice ?? ""} onChange={(e) => updateTrack(track.id, { voice: (e.target.value || undefined) as Track["voice"] })}>

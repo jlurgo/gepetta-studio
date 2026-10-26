@@ -207,6 +207,8 @@ export interface Track {
   pan?: number;
   /** A sound track: an effect its sound goes through (absent = none). */
   voice?: VoiceEffect;
+  /** A sound track (music, say) that goes down while another sound track sounds (a voice). */
+  duck?: boolean;
 }
 
 /** What a sound track's voice can be turned into. */

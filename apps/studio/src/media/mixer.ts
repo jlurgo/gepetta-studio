@@ -1,4 +1,4 @@
-import type { Track } from "@gepetta/core";
+import { DUCKED, type Track } from "@gepetta/core";
 import { makeVoice } from "./voices";
 
 /**
@@ -12,6 +12,8 @@ export interface Bus {
   analyser: AnalyserNode | null;
   /** Follows the track's volume (with its groups', see trackVolume) and place now, smoothly while it plays. */
   update(track: Track, volume: number): void;
+  /** Goes down (to DUCKED) or back up from a time on, as a track that ducks does. */
+  duck(at: number, down: boolean): void;
   dispose(): void;
 }
 
@@ -23,13 +25,15 @@ export function busKey(track: Track): string {
 export function makeBus(ctx: BaseAudioContext, track: Track, volume: number, dest: AudioNode, meter = false): Bus {
   const input = ctx.createGain();
   input.gain.value = volume;
+  const ducker = ctx.createGain();
   const pan = ctx.createStereoPanner();
   pan.pan.value = Math.max(-1, Math.min(1, track.pan ?? 0));
   const voice = track.voice ? makeVoice(ctx, track.voice) : null;
   if (voice) {
     input.connect(voice.input);
-    voice.output.connect(pan);
-  } else input.connect(pan);
+    voice.output.connect(ducker);
+  } else input.connect(ducker);
+  ducker.connect(pan);
   pan.connect(dest);
   let analyser: AnalyserNode | null = null;
   if (meter) {
@@ -43,6 +47,10 @@ export function makeBus(ctx: BaseAudioContext, track: Track, volume: number, des
     update(t, v) {
       input.gain.setTargetAtTime(v, ctx.currentTime, 0.02);
       pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, t.pan ?? 0)), ctx.currentTime, 0.02);
+    },
+    duck(at, down) {
+      // Quickly down, slowly back up, as a radio host's music does.
+      ducker.gain.setTargetAtTime(down ? DUCKED : 1, at, down ? 0.05 : 0.25);
     },
     dispose() {
       voice?.dispose();

@@ -1,4 +1,4 @@
-import { type FilmState, type TrackId, soundRuns, trackVolume } from "@gepetta/core";
+import { type FilmState, type TrackId, cellIndex, duckedAt, soundRuns, trackVolume } from "@gepetta/core";
 import { makeBus } from "../media/mixer";
 import { playRun, soundBuffer } from "../media/sound";
 
@@ -17,6 +17,18 @@ export async function mixSound(filmId: string, film: FilmState, cells: readonly 
   const byId = new Map(film.tracks.map((t) => [t.id, t]));
   // Each track through its own bus, as heard while working.
   const buses = new Map([...out].map((id) => [id, makeBus(ctx, byId.get(id)!, trackVolume(film, byId.get(id)!), ctx.destination)]));
+  // Tracks that duck: down where the others sound (all of the film's, also those not going out).
+  const index = cellIndex(film);
+  for (const id of out) {
+    const track = byId.get(id)!;
+    if (!track.duck) continue;
+    let was = false;
+    cells.forEach((cell, at) => {
+      const down = duckedAt(film, index, track, cell);
+      if (down !== was) buses.get(id)!.duck(at / fps, down);
+      was = down;
+    });
+  }
   for (const run of runs) {
     const buffer = await soundBuffer(filmId, run.clip.sound!.ref);
     playRun(ctx, buses.get(run.track)!.input, buffer, run, fps, run.at / fps, run.clip.opacity);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { insertCellsOps, removeCellOps } from "./columns";
-import { stackAt } from "./layers";
-import { soundRuns, trackSounds, trackVolume } from "./sound";
+import { cellIndex, stackAt } from "./layers";
+import { duckedAt, soundRuns, trackSounds, trackVolume } from "./sound";
 import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, cellGain, emptyFilm } from "./model";
 import { type Op, applyOp } from "./ops";
 
@@ -112,5 +112,15 @@ describe("sound clips", () => {
     f = applyOp(f, { type: "group.update", id: "h", patch: { muted: true } });
     expect(trackSounds(f, f.tracks.find((t) => t.id === "s")!)).toBe(false);
     expect(soundRuns(f, [2])).toEqual([]);
+  });
+
+  it("a track that ducks goes down where another one sounds", () => {
+    let f = film({ type: "track.add", track: { id: "m", name: "Música", kind: "sound", visible: true, opacity: 1, transform: IDENTITY_TRANSFORM, exported: true, duck: true } });
+    f = applyOp(f, { type: "clip.place", clips: [clip("mu", "m", 0, 20, 0)] });
+    const music = f.tracks.find((t) => t.id === "m")!;
+    const index = cellIndex(f);
+    // The voice ("s") sounds in cells 2–11.
+    expect([1, 2, 11, 12].map((c) => duckedAt(f, index, music, c))).toEqual([false, true, true, false]);
+    expect(duckedAt(f, index, f.tracks.find((t) => t.id === "s")!, 2)).toBe(false);
   });
 });
