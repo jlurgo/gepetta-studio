@@ -55,9 +55,12 @@ export function micColor(index: number): string {
 }
 
 interface Recording {
-  /** The film plays from this cell. */
+  /** The film plays from this cell (or a video's first picture goes there). */
   startCell: number;
+  /** When the film started playing (or the video's first picture was taken). */
   playedAt: number;
+  /** With a camera's video: what stops it. */
+  video?: { stop(): void };
   takes: { micId: string; target: GridCursor; recorder: MediaRecorder; chunks: Blob[]; startedAt: number; delayMs: number }[];
 }
 
@@ -348,12 +351,33 @@ export function cancelPickingMic() {
   useMics.setState({ picking: null });
 }
 
-/** Moves a microphone's cell (only to a sound track). */
+/**
+ * Moves a microphone's cell. What it records goes in a sound track: a cell of
+ * another track gets a new sound track just above it, for the microphone.
+ */
 export function setMicTarget(id: string, target: GridCursor): boolean {
-  const track = useEditor.getState().film?.tracks.find((t) => t.id === target.track);
-  if (track?.kind !== "sound") {
-    useBusy.getState().notify("Lo que graba un micrófono va en un track de sonido: elegí una celda de uno (o grabá y se hace uno nuevo).");
-    return false;
+  const film = useEditor.getState().film;
+  const track = film?.tracks.find((t) => t.id === target.track);
+  if (!film || !track) return false;
+  if (track.kind !== "sound") {
+    const index = film.tracks.findIndex((t) => t.id === track.id);
+    // Its own sound track, while still empty, goes there; otherwise a new one.
+    const own = micOf(id)?.target.track;
+    const empty =
+      own &&
+      film.tracks.some((t) => t.id === own && t.kind === "sound") &&
+      !Object.values(film.clips).some((c) => c.track === own) &&
+      !useMics.getState().mics.some((m) => m.id !== id && m.target.track === own);
+    if (empty) {
+      const from = film.tracks.findIndex((t) => t.id === own);
+      useEditor.getState().commit([{ type: "track.move", trackId: own, index: from < index ? index - 1 : index }], "Mover el track del micrófono");
+      target = { track: own, cell: target.cell };
+    } else {
+      const name = `Micrófono ${useMics.getState().mics.findIndex((m) => m.id === id) + 1}`;
+      const made = newTrackOp(name, { kind: "sound" });
+      useEditor.getState().commit([made.op, { type: "track.move", trackId: made.id, index }], `Track de sonido «${name}»`);
+      target = { track: made.id, cell: target.cell };
+    }
   }
   patch(id, { target });
   useEditor.getState().moveTo(target.cell, target.track);
@@ -375,12 +399,17 @@ function pickMime(): string | undefined {
 /**
  * Records with the enabled microphones (or only `only`) while the film plays
  * from the first of their cells; with none yet, opens the computer's one.
+ *
+ * With `video` (a camera recording video from `cell`): the film does not
+ * play; the microphones record its sound, each into its own sound track from
+ * that same cell, and `start` starts the cameras once they are recording.
  */
-export async function startRecording(only?: string) {
+export async function startRecording(only?: string, video?: { cell: number; start(): void; stop(): void }) {
   const { film } = useEditor.getState();
-  if (!film || useMics.getState().recording) return;
-  if (!useMics.getState().mics.length) await addMic(null);
+  if (!film || useMics.getState().recording) return video?.start();
+  if (!video && !useMics.getState().mics.length) await addMic(null);
   const mics = useMics.getState().mics.filter((m) => (only ? m.id === only : m.enabled) && lives.has(m.id));
+  if (video && !mics.length) return video.start();
   if (!mics.length) {
     const failed = useMics.getState().mics.find((m) => m.error);
     useBusy.getState().notify(failed?.error ?? "No hay micrófonos habilitados para grabar.");
@@ -397,11 +426,17 @@ export async function startRecording(only?: string) {
         recorder.onstart = () => resolve();
         recorder.start(250);
       });
-      return { micId: mic.id, target: mic.target, recorder, chunks, startedAt: performance.now(), delayMs: mic.settings.delayMs };
+      const target = video ? { track: mic.target.track, cell: video.cell } : mic.target;
+      return { micId: mic.id, target, recorder, chunks, startedAt: performance.now(), delayMs: mic.settings.delayMs };
     }),
   );
   const startCell = Math.min(...takes.map((t) => t.target.cell));
   const playedAt = performance.now();
+  if (video) {
+    useMics.setState({ recording: { startCell, playedAt, takes, video: { stop: video.stop } } });
+    video.start();
+    return;
+  }
   useMics.setState({ recording: { startCell, playedAt, takes } });
   // The film plays from there once (not round and round), to record over it.
   useEditor.setState({ playback: { startCell, loopFrom: 0, loop: false, startedAt: playedAt } });
@@ -417,7 +452,8 @@ export async function stopRecording() {
   const rec = useMics.getState().recording;
   if (!rec) return;
   useMics.setState({ recording: null });
-  useEditor.getState().stop();
+  if (rec.video) rec.video.stop();
+  else useEditor.getState().stop();
   const blobs = await Promise.all(
     rec.takes.map(
       (t) =>
@@ -454,7 +490,7 @@ export async function stopRecording() {
     if (length < 1) return;
     // Two microphones in one track would cover each other: the second gets a new one.
     let track: TrackId | undefined = film.tracks.find((t) => t.id === take.target.track && t.kind === "sound" && !used.has(t.id))?.id;
-    const name = `Voz ${++voices}`;
+    const name = rec.video ? "Sonido del video" : `Voz ${++voices}`;
     if (!track) {
       const made = newTrackOp(name, { kind: "sound" });
       ops.push(made.op, { type: "track.move", trackId: made.id, index: 0 });

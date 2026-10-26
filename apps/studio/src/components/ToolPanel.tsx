@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { RESOLUTIONS, webcamSettings } from "../capture/webcam";
 import type { DslrStatus } from "../native";
-import { addTrack, capture, startRecording, stopRecording } from "../state/actions";
+import { addTrack, capture, startVideo, stopRecording } from "../state/actions";
 import { type Rig, rigColor, useCamera } from "../state/camera";
 import { useEditor } from "../state/editor";
 import { BRUSHES, type BrushKind, PAINT_COLORS, SCULPT_MODES, SHAPES, type SculptMode, type ShapeKind, type StageTool, currentSettings, hasSettings, usePaint } from "../state/paint";
@@ -226,9 +226,9 @@ function CameraToolPanel() {
         </button>
         <button
           className={`btn small${rig.recording ? " recording" : ""}`}
-          onClick={() => void (rig.recording ? stopRecording(rig.id) : startRecording(rig.id))}
+          onClick={() => (rig.recording ? void stopRecording(rig.id) : startVideo([rig]))}
           disabled={!rig.source}
-          title="Una imagen por celda, a la velocidad de la película"
+          title="Una imagen por celda, a la velocidad de la película, y su sonido con los micrófonos habilitados"
         >
           <Icon name={rig.recording ? "stop" : "record"} size={14} /> {rig.recording ? `Detener (${rig.recording.cells})` : "Grabar video"}
         </button>

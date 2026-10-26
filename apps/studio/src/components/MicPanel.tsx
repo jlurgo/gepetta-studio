@@ -233,7 +233,7 @@ export function AddMicPanel() {
   return (
     <div className="tool-options">
       <p className="hint">
-        Cada micrófono es una herramienta, como las cámaras: tiene su celda en un track de sonido, que se ve en vivo, y sus ajustes. Varios graban juntos, cada uno en su track.
+        Cada micrófono es una herramienta, como las cámaras: tiene su celda en un track de sonido, que se ve en vivo, y sus ajustes. Varios graban juntos, cada uno en su track, y también graban el sonido de los videos de las cámaras.
       </p>
       <div className="free-cameras">
         <button className="btn small" onClick={() => add(null)}>

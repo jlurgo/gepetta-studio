@@ -37,6 +37,7 @@ import { runTask, useBusy } from "./busy";
 import { PLAIN_SHOT, type Rig, type Shot, useCamera } from "./camera";
 import { type GridCursor, useEditor } from "./editor";
 import { reach, rowStops } from "./groups";
+import { startRecording as startMicRecording, stopRecording as stopMicRecording, useMics } from "./mics";
 import { useLayers } from "./layers";
 import { pickedStrokes, removeStrokes } from "./strokes";
 
@@ -228,6 +229,8 @@ export async function stopRecording(rigId?: string) {
   useCamera.getState().setRecording(rig.id, null);
   // Photos after a video start a sequence of their own.
   useCamera.getState().newSequence(rig.id);
+  // The last camera done: the microphones recording its sound too.
+  if (!recorders.size && useMics.getState().recording?.video) void stopMicRecording();
   await rec.chain;
 }
 
@@ -238,7 +241,14 @@ export function shoot() {
   if (useEditor.getState().captureMode === "photo") return void captureAll();
   const ready = readyRigs(rigs);
   if (ready.length === 0) return useBusy.getState().notify("No hay ninguna cámara habilitada para grabar.", "error");
-  for (const r of ready) startRecording(r.id);
+  startVideo(ready);
+}
+
+/** Video with these cameras, and its sound with the enabled microphones (from where the video starts). */
+export function startVideo(rigs: Rig[]) {
+  const camera = useCamera.getState();
+  const cell = Math.min(...rigs.map((r) => camera.targetOf(r).cell));
+  void startMicRecording(undefined, { cell, start: () => rigs.forEach((r) => startRecording(r.id)), stop: stopAllRecordings });
 }
 
 /** Stops every recording (e.g. when leaving the film). */

@@ -1413,7 +1413,7 @@ function MicPickingBar({ index, mic, color }: { index: number; mic: Mic; color: 
         {index + 1}
       </span>
       <span>
-        Tocá la celda de un track de sonido donde graba <strong>{micLabel(mic)}</strong>
+        Tocá la celda donde graba <strong>{micLabel(mic)}</strong> (en un track de sonido; si no, se hace uno arriba)
       </span>
       <button className="btn small" onClick={cancelPickingMic}>
         Cancelar (Esc)
