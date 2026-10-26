@@ -619,6 +619,22 @@ input[type="range"] {
   flex-wrap: wrap;
 }
 
+.tl-add.recording {
+  position: relative;
+  overflow: hidden;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.tl-level {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--danger);
+  transition: width 0.06s linear;
+}
+
 .tl-sound {
   position: absolute;
   top: 5px;

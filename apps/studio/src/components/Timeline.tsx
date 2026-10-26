@@ -4,6 +4,7 @@ import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addTrack, extendFilm, resizeDrum, importImages, importSounds, moveClips, moveColumns, setCellImage, spanCells } from "../state/actions";
 import { isSoundFile, peaksNow, useSoundPeaks } from "../media/sound";
 import { useSound } from "../state/sound";
+import { toggleVoice, useVoice } from "../state/voice";
 import { renameGroup, setLinked, toggleGroup, useGroups } from "../state/groups";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
@@ -215,6 +216,22 @@ function SoundStrip({ filmId, clip, from, count, cw, fps }: { filmId: string; cl
     }
   }, [version, clip, from, count, cw, fps, filmId, h]);
   return <canvas ref={ref} className="tl-sound" style={{ left: (from - clip.start) * cw, width: count * cw, height: h }} />;
+}
+
+/** Records with the microphone while the film plays from the cursor (again, or Esc / the bar: stops). */
+function VoiceButton() {
+  const recording = useVoice((s) => !!s.recording);
+  const level = useVoice((s) => s.level);
+  return (
+    <button
+      className={`btn small ghost tl-add${recording ? " recording" : ""}`}
+      onClick={() => void toggleVoice()}
+      title={recording ? "Parar de grabar (Esc o la barra)" : "Grabar con el micrófono desde la celda del cursor, mientras la película se reproduce (voces, ruidos); con auriculares no se graba el sonido de la película"}
+    >
+      <Icon name={recording ? "stop" : "mic"} size={14} /> {recording ? "Parar" : "Grabar"}
+      {recording && <span className="tl-level" style={{ width: `${Math.round(level * 100)}%` }} aria-hidden />}
+    </button>
+  );
 }
 
 type Gesture =
@@ -986,6 +1003,7 @@ export function Timeline() {
             <button className="btn small ghost tl-add" onClick={() => soundInput.current?.click()} title="Importar música, efectos o voces (mp3, wav, ogg, m4a…) desde la celda del cursor; también se pueden soltar los archivos en la línea de tiempo">
               <Icon name="sound" size={14} /> Sonido
             </button>
+            <VoiceButton />
           </div>
         </div>
 

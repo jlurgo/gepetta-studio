@@ -43,6 +43,7 @@ import { Stage } from "./Stage";
 import { FORMATS, formatOf, ratioLabel } from "./formats";
 import { Timeline, hoveredCell } from "./Timeline";
 import { groupPicked, ungroup, useGroups } from "../state/groups";
+import { stopVoice, useVoice } from "../state/voice";
 import { ToysDialog } from "./ToysDialog";
 
 const FPS_OPTIONS = [6, 8, 10, 12, 15, 24, 25, 30];
@@ -87,6 +88,7 @@ function useShortcuts() {
       else if (mod && key === "g" && e.shiftKey) ungroup(s.cursor.track);
       else if (mod && key === "g") groupPicked(groupCandidates());
       else if (mod) return;
+      else if ((e.key === " " || e.key === "Escape") && useVoice.getState().recording) void stopVoice();
       else if (e.key === " ") spaceBar();
       else if (key === "i") goToLive();
       else if (e.key === "Enter") (s.playback ? s.pause() : s.play());
