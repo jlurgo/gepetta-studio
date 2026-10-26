@@ -20,6 +20,7 @@ import {
   duplicateSelected,
   nudgeSelected,
   readyRigs,
+  spanCells,
   stopAllRecordings } from "../state/actions";
 import { useLasso } from "../state/lasso";
 import { useGamepad } from "../state/gamepad";
@@ -41,6 +42,7 @@ import { Icon } from "./Icon";
 import { Stage } from "./Stage";
 import { FORMATS, formatOf, ratioLabel } from "./formats";
 import { Timeline, hoveredCell } from "./Timeline";
+import { groupPicked, ungroup, useGroups } from "../state/groups";
 import { ToysDialog } from "./ToysDialog";
 
 const FPS_OPTIONS = [6, 8, 10, 12, 15, 24, 25, 30];
@@ -55,6 +57,13 @@ function isTyping(e: KeyboardEvent) {
   if (!NON_TEXT_INPUTS.includes((t as HTMLInputElement).type)) return true;
   // Arrow keys belong to the focused slider.
   return e.key.startsWith("Arrow") && (t as HTMLInputElement).type === "range";
+}
+
+/** What Ctrl + G groups: the picked track heads, else the tracks of the picked cells, else the cursor's track. */
+function groupCandidates() {
+  const picked = useGroups.getState().picked;
+  if (picked.length) return picked;
+  return spanCells()?.tracks ?? [useEditor.getState().cursor.track];
 }
 
 function useShortcuts() {
@@ -75,6 +84,8 @@ function useShortcuts() {
       else if (mod && key === "x") cutCells();
       else if (mod && key === "v") pasteCells();
       else if (mod && key === "a") pickWholeTrack();
+      else if (mod && key === "g" && e.shiftKey) ungroup(s.cursor.track);
+      else if (mod && key === "g") groupPicked(groupCandidates());
       else if (mod) return;
       else if (e.key === " ") spaceBar();
       else if (key === "i") goToLive();

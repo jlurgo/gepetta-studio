@@ -609,6 +609,88 @@ input[type="range"] {
   box-shadow: inset 3px 0 0 var(--danger);
 }
 
+.tl-head.track.picked {
+  background: color-mix(in srgb, var(--teal) 18%, transparent);
+}
+
+.tl-head.group {
+  border-radius: 8px;
+  cursor: grab;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.tl-head.group.dragging {
+  position: relative;
+  z-index: 2;
+  cursor: grabbing;
+  background: var(--panel);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+}
+
+.tl-head.group.current {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.tl-head.group .icon-btn.small {
+  width: 22px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.tl-head.group .icon-btn.on {
+  color: var(--accent);
+}
+
+.tl-head .group-name {
+  font-weight: 700;
+}
+
+.tl-rename {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.tl-drop {
+  position: absolute;
+  left: 8px;
+  right: 4px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  border: 1px solid var(--accent);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.tl-row.group {
+  background-image: none;
+  background-color: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.tl-row.group.collapsed {
+  background-image: linear-gradient(to right, var(--line) 1px, transparent 1px);
+  background-color: color-mix(in srgb, var(--panel-2) 80%, transparent);
+}
+
+.tl-marks {
+  position: absolute;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.tl-marks span {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+
 .tl-head.track.selected {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
 }

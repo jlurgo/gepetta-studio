@@ -1,7 +1,8 @@
-import { type CellIndex, type Clip, type ClipId, type Track, type TrackId, cellIndex, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
+import { type CellIndex, type Clip, type ClipId, type GroupId, type Op, type TimelineRow, type Track, type TrackId, cellIndex, groupTracks, groupWithin, timelineRows, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
-import { addTrack, extendFilm, resizeDrum, importImages, moveClips, moveColumns, setCellImage } from "../state/actions";
+import { addTrack, extendFilm, resizeDrum, importImages, moveClips, moveColumns, setCellImage, spanCells } from "../state/actions";
+import { renameGroup, setLinked, toggleGroup, useGroups } from "../state/groups";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
 import { type Rig, rigColor, shotOn, useCamera } from "../state/camera";
@@ -16,6 +17,15 @@ const RULER_H = 22;
 const RESULT_H = 54;
 const TRACK_H = RESULT_H;
 const ROW_GAP = 4;
+/** A group's title row: open (its tracks below it), or closed (one row for all of them, with marks where they have pictures). */
+const GROUP_OPEN_H = 22;
+const GROUP_SHUT_H = 30;
+/** How far in a group's tracks and groups go, per group they are in. */
+const INDENT = 12;
+/** Marks of a closed group's tracks, one color each. */
+const MARK_COLORS = ["#7aa2ff", "#5cc8b5", "#e7c35a", "#ffb067", "#c58cff", "#ff7a9a"];
+
+const rowHeight = (row: TimelineRow) => (row.kind === "track" ? TRACK_H : row.collapsed ? GROUP_SHUT_H : GROUP_OPEN_H);
 /** Cell width in pixels: the timeline's zoom. */
 const MIN_CW = 4;
 const MAX_CW = 240;
@@ -25,67 +35,69 @@ const TAIL_SECONDS = 2;
 
 const mod = (v: number, n: number) => ((v % n) + n) % n;
 
-/** A track's head being dragged up or down to put it elsewhere (rows shown top first). */
-type HeadDrag = { row: number; y0: number; dy: number; moved: boolean };
-const ROW_STEP = TRACK_H + ROW_GAP;
+/** A track's or group's head being dragged up or down to put it elsewhere. */
+type HeadDrag = { kind: "track" | "group"; id: string; y0: number; dy: number; moved: boolean };
 
-/** Where a dragged head lands, and how much each other head makes room. */
-function headTarget(drag: HeadDrag, rows: number): number {
-  return Math.max(0, Math.min(rows - 1, drag.row + Math.round(drag.dy / ROW_STEP)));
-}
-function headShift(drag: HeadDrag | null, row: number, rows: number): number {
-  if (!drag?.moved) return 0;
-  if (row === drag.row) return drag.dy;
-  const to = headTarget(drag, rows);
-  if (drag.row < to && row > drag.row && row <= to) return -ROW_STEP;
-  if (to < drag.row && row >= to && row < drag.row) return ROW_STEP;
-  return 0;
-}
-
-/**
- * A track's head: a click anywhere on it (but its buttons) picks the track;
- * dragging it up or down puts the track elsewhere.
- */
-function TrackHead({ track, current, row, rows, drag, setDrag }: { track: Track; current: boolean; row: number; rows: number; drag: HeadDrag | null; setDrag(d: HeadDrag | null): void }) {
-  const selected = useLayers((s) => s.trackId === track.id && s.detail === "track" && s.panel === "detail");
-  const dragging = drag?.moved && drag.row === row;
+/** Pointer handlers of a head: a click picks (`pick`), a drag moves it (`drop`, where the pointer is let go). */
+function useHeadPointer(kind: HeadDrag["kind"], id: string, setDrag: (d: HeadDrag | null) => void, pick: (e: React.PointerEvent) => void, drop: (d: HeadDrag, clientY: number) => void) {
   // This head's own press (state updates may come after the next event).
   const press = useRef<HeadDrag | null>(null);
   const follow = (d: HeadDrag | null) => {
     press.current = d;
     setDrag(d);
   };
-  const pick = () => {
+  return {
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.button !== 0 || (e.target as HTMLElement).closest("button:not(.tl-name), input")) return;
+      capturePointer(e);
+      follow({ kind, id, y0: e.clientY, dy: 0, moved: false });
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      const d = press.current;
+      if (!d) return;
+      const dy = e.clientY - d.y0;
+      follow({ ...d, dy, moved: d.moved || Math.abs(dy) > 4 });
+    },
+    onPointerUp: (e: React.PointerEvent) => {
+      const d = press.current;
+      if (!d) return;
+      follow(null);
+      if (!d.moved) return pick(e);
+      drop(d, e.clientY);
+    },
+    onPointerCancel: () => follow(null),
+  };
+}
+
+interface HeadProps {
+  depth: number;
+  drag: HeadDrag | null;
+  setDrag(d: HeadDrag | null): void;
+  drop(d: HeadDrag, clientY: number): void;
+}
+
+/**
+ * A track's head: a click anywhere on it (but its buttons) picks the track
+ * (⇧ or ⌘/Ctrl: picks several, to group them with Ctrl + G); dragging it up
+ * or down puts the track elsewhere (onto a group's title: into the group).
+ */
+function TrackHead({ track, current, picked, pickTo, depth, drag, setDrag, drop }: HeadProps & { track: Track; current: boolean; picked: boolean; pickTo(id: TrackId, range: boolean): void }) {
+  const selected = useLayers((s) => s.trackId === track.id && s.detail === "track" && s.panel === "detail");
+  const dragging = drag?.moved && drag.kind === "track" && drag.id === track.id;
+  const pick = (e?: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
+    if (e && (e.shiftKey || e.metaKey || e.ctrlKey)) return pickTo(track.id, e.shiftKey);
+    useGroups.getState().setPicked([]);
     useLayers.getState().select(track.id);
     const { cursor, moveTo } = useEditor.getState();
     moveTo(cursor.cell, track.id);
   };
+  const handlers = useHeadPointer("track", track.id, setDrag, pick, drop);
   return (
     <div
-      className={`tl-head track${selected ? " selected" : ""}${current ? " current" : ""}${track.visible ? "" : " off"}${dragging ? " dragging" : ""}`}
-      style={{ height: TRACK_H, transform: `translateY(${headShift(drag, row, rows)}px)` }}
-      title={`${track.name}${track.exported ? "" : " (solo referencia: no se exporta)"} — tocá para ver sus ajustes; arrastralo para cambiarlo de lugar`}
-      onPointerDown={(e) => {
-        if (e.button !== 0 || (e.target as HTMLElement).closest("button:not(.tl-name), input")) return;
-        capturePointer(e);
-        follow({ row, y0: e.clientY, dy: 0, moved: false });
-      }}
-      onPointerMove={(e) => {
-        const drag = press.current;
-        if (!drag) return;
-        const dy = e.clientY - drag.y0;
-        follow({ ...drag, dy, moved: drag.moved || Math.abs(dy) > 4 });
-      }}
-      onPointerUp={() => {
-        const drag = press.current;
-        if (!drag) return;
-        follow(null);
-        if (!drag.moved) return pick();
-        const to = headTarget(drag, rows);
-        // Rows are shown top first; the film keeps them bottom first.
-        if (to !== row) useEditor.getState().commit([{ type: "track.move", trackId: track.id, index: rows - 1 - to }]);
-      }}
-      onPointerCancel={() => follow(null)}
+      className={`tl-head track${selected ? " selected" : ""}${picked ? " picked" : ""}${current ? " current" : ""}${track.visible ? "" : " off"}${dragging ? " dragging" : ""}`}
+      style={{ height: TRACK_H, paddingLeft: depth * INDENT, transform: dragging ? `translateY(${drag!.dy}px)` : undefined }}
+      title={`${track.name}${track.exported ? "" : " (solo referencia: no se exporta)"} — tocá para ver sus ajustes (⇧ o ⌘/Ctrl: elegir varios para agruparlos con Ctrl + G); arrastralo para cambiarlo de lugar`}
+      {...handlers}
     >
       <button className="icon-btn small" onClick={() => updateTrack(track.id, { visible: !track.visible })} title={track.visible ? "Ocultar" : "Mostrar"}>
         <Icon name={track.visible ? "eye" : "eyeOff"} size={15} />
@@ -95,6 +107,68 @@ function TrackHead({ track, current, row, rows, drag, setDrag }: { track: Track;
         {!track.exported && <span className="ref-dot" aria-hidden />}
       </button>
       <OpacitySlider label={false} value={track.opacity} onCommit={(opacity) => updateTrack(track.id, { opacity })} />
+    </div>
+  );
+}
+
+/**
+ * A group's title: open or close it, link or unlink its tracks, rename it
+ * (double click), undo it; dragging it moves all its tracks.
+ */
+function GroupHead({ row, current, height, pickTo, depth, drag, setDrag, drop }: HeadProps & { row: Extract<TimelineRow, { kind: "group" }>; current: boolean; height: number; pickTo(id: TrackId, range: boolean): void }) {
+  const { group, collapsed } = row;
+  const [editing, setEditing] = useState(false);
+  const dragging = drag?.moved && drag.kind === "group" && drag.id === group.id;
+  const pick = (e: React.PointerEvent) => {
+    if (e.shiftKey || e.metaKey || e.ctrlKey) return pickTo(row.tracks.at(-1)!, e.shiftKey);
+    useGroups.getState().setPicked([]);
+    // A closed group is a row of its own: the cursor goes there (to its top track).
+    if (collapsed) {
+      const { cursor, moveTo } = useEditor.getState();
+      moveTo(cursor.cell, row.tracks.at(-1)!);
+    }
+  };
+  const handlers = useHeadPointer("group", group.id, setDrag, pick, drop);
+  return (
+    <div
+      className={`tl-head group${collapsed ? " collapsed" : ""}${current ? " current" : ""}${dragging ? " dragging" : ""}`}
+      style={{ height, paddingLeft: depth * INDENT, transform: dragging ? `translateY(${drag!.dy}px)` : undefined }}
+      title={`Grupo «${group.name}» (${row.tracks.length} tracks) — arrastralo para moverlo entero; doble clic en el nombre para cambiarlo; Ctrl + ⇧ + G lo deshace`}
+      {...handlers}
+    >
+      <button className="icon-btn small" onClick={() => toggleGroup(group.id)} title={collapsed ? "Abrir el grupo" : "Cerrar el grupo (queda una fila)"}>
+        <Icon name={collapsed ? "right" : "more"} size={14} />
+      </button>
+      {editing ? (
+        <input
+          className="tl-rename"
+          defaultValue={group.name}
+          autoFocus
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={(e) => {
+            renameGroup(group.id, e.currentTarget.value);
+            setEditing(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") setEditing(false);
+          }}
+        />
+      ) : (
+        <button className="tl-name group-name" onDoubleClick={() => setEditing(true)}>
+          {group.name}
+        </button>
+      )}
+      <button
+        className={`icon-btn small${group.linked ? " on" : ""}`}
+        onClick={() => setLinked(group.id, !group.linked)}
+        title={group.linked ? "Vinculado: lo que metas, borres, cortes o pegues en un track pasa en todos (con Alt, solo en uno). Tocá para desvincular" : "Sin vincular: cada track se edita solo. Tocá para vincular"}
+      >
+        <Icon name={group.linked ? "link" : "unlink"} size={14} />
+      </button>
+      <button className="icon-btn small" onClick={() => useEditor.getState().commit([{ type: "group.remove", id: group.id }], `Desagrupar "${group.name}"`)} title="Desagrupar (los tracks quedan donde están)">
+        <Icon name="close" size={12} />
+      </button>
     </div>
   );
 }
@@ -151,6 +225,9 @@ export function Timeline() {
   const activeRig = useCamera((s) => s.activeRig);
   const picking = useCamera((s) => s.picking);
   const span = useEditor((s) => s.span);
+  const collapsed = useGroups((s) => s.collapsed);
+  const picked = useGroups((s) => s.picked);
+  const headsRef = useRef<HTMLDivElement>(null);
   const shownSeq = useLayers((s) => (s.detail === "sequence" ? s.seq : null));
   /** While picking a camera's cell: the cell under the pointer. */
   const [hover, setHover] = useState<{ track: string; cell: number; v: number } | null>(null);
@@ -303,7 +380,9 @@ export function Timeline() {
 
   if (!film || !filmId) return null;
   const fps = film.settings.fps;
-  const tracks = [...film.tracks].reverse(); // top first, like the picture
+  // Top first, like the picture: groups' titles above their tracks (hidden while closed).
+  const rows = timelineRows(film, collapsed);
+  const tracks = rows.flatMap((row) => (row.kind === "track" ? [row.track] : []));
   // A loop film is a drum (see `rot`): cells of the timeline from `r` on, `wrap` takes them to the film's.
   const loop = !!film.settings.loop && film.length > 0;
   const period = loop ? film.length : 0;
@@ -325,8 +404,27 @@ export function Timeline() {
   else laps.push(0);
   const lapX = (lap: number) => lap * period * cw;
   const rowsTop = RULER_H + ROW_GAP + RESULT_H + ROW_GAP;
-  const rowTop = (i: number) => rowsTop + i * (TRACK_H + ROW_GAP);
-  const height = rowTop(tracks.length);
+  const tops: number[] = [];
+  let height = rowsTop;
+  for (const row of rows) {
+    tops.push(height);
+    height += rowHeight(row) + ROW_GAP;
+  }
+  /** Each track's row: its own, or its closed group's. */
+  const rowIndex = new Map<TrackId, number>();
+  rows.forEach((row, i) => {
+    if (row.kind === "track") rowIndex.set(row.track.id, i);
+    else if (row.collapsed) for (const t of row.tracks) rowIndex.set(t, i);
+  });
+  const rowOf = (track: TrackId) => rowIndex.get(track) ?? -1;
+  const topOf = (track: TrackId) => tops[rowOf(track)] ?? 0;
+  const heightOf = (track: TrackId) => (rowOf(track) < 0 ? TRACK_H : rowHeight(rows[rowOf(track)]!));
+  /** The row at a height in the timeline (from its top), -1 above the tracks. */
+  const rowAtY = (y: number) => {
+    if (y < rowsTop) return -1;
+    const i = tops.findIndex((t, k) => y < t + rowHeight(rows[k]!) + ROW_GAP);
+    return i < 0 ? rows.length - 1 : i;
+  };
   const selected = new Set(selection);
   const aspect = film.settings.width / film.settings.height;
 
@@ -347,8 +445,11 @@ export function Timeline() {
     const x = e.clientX - box.left + scroller.current!.scrollLeft + shiftX;
     const y = e.clientY - box.top + scroller.current!.scrollTop;
     const v = Math.max(0, Math.floor(x / cw));
-    const row = Math.floor((y - rowsTop) / (TRACK_H + ROW_GAP));
-    return { x, y, v, cell: wrap(v), row, track: y >= rowsTop && row < tracks.length ? tracks[row]! : null };
+    const row = rowAtY(y);
+    const shown = rows[row];
+    // A closed group's row stands for its top track.
+    const track = !shown || y >= height ? null : shown.kind === "track" ? shown.track : shown.collapsed ? film.tracks.find((t) => t.id === shown.tracks.at(-1)) ?? null : null;
+    return { x, y, v, cell: wrap(v), row, track };
   };
 
   // Results row: one box per run of cells that look the same (empty cells get none).
@@ -591,7 +692,10 @@ export function Timeline() {
     }
     if (gesture.kind === "move") {
       const dx = Math.round((p.x - gesture.x0) / cw);
-      const dy = Math.round((p.y - gesture.y0) / (TRACK_H + ROW_GAP));
+      // Rows of tracks between where it was taken and the track under the pointer.
+      const from = tracks.findIndex((t) => t.id === film!.clips[gesture.id]?.track);
+      const over = p.track ? tracks.findIndex((t) => t.id === p.track!.id) : -1;
+      const dy = from >= 0 && over >= 0 && rows[p.row]?.kind === "track" ? over - from : gesture.dy;
       const moved = gesture.moved || Math.abs(p.x - gesture.x0) + Math.abs(p.y - gesture.y0) > 4;
       if (dx !== gesture.dx || dy !== gesture.dy || moved !== gesture.moved) setGesture({ ...gesture, dx, dy, moved });
     } else if (gesture.kind === "resize") {
@@ -608,7 +712,8 @@ export function Timeline() {
       if (x1 - x0 + (y1 - y0) <= 4) return;
       const inside = Object.values(film!.clips)
         .filter((c) => {
-          const top = rowTop(tracks.findIndex((t) => t.id === c.track));
+          if (rows[rowOf(c.track)]?.kind !== "track") return false;
+          const top = topOf(c.track);
           return laps.some((l) => c.start * cw + lapX(l) < x1 && clipEnd(c) * cw + lapX(l) > x0) && top < y1 && top + TRACK_H > y0;
         })
         .map((c) => c.id);
@@ -648,8 +753,8 @@ export function Timeline() {
       const moves = g.ids.map((id) => {
         const c = film!.clips[id]!;
         const row = tracks.findIndex((t) => t.id === c.track);
-        const to = tracks[Math.max(0, Math.min(tracks.length - 1, row + g.dy))]!;
-        return { id, track: to.id, start: wrap(c.start + g.dx) };
+        const to = row < 0 ? c.track : tracks[Math.max(0, Math.min(tracks.length - 1, row + g.dy))]!.id;
+        return { id, track: to, start: wrap(c.start + g.dx) };
       });
       if (moves.every((m) => m.start >= 0)) moveClips(moves);
     } else if (g.kind === "move" && !g.moved && !(e.shiftKey || e.metaKey || e.ctrlKey) && e.detail < 2) {
@@ -699,14 +804,76 @@ export function Timeline() {
     if (!gesture || gesture.kind !== "move" || !gesture.moved || !selected.has(c.id)) return null;
     const row = tracks.findIndex((t) => t.id === c.track);
     const to = Math.max(0, Math.min(tracks.length - 1, row + gesture.dy));
-    return { left: Math.max(0, c.start + gesture.dx) * cw + lapX(lap), top: rowTop(to) };
+    return { left: Math.max(0, c.start + gesture.dx) * cw + lapX(lap), top: topOf(tracks[to]!.id) };
   };
 
   const ticks: number[] = [];
   // Labels at least ~28 px apart: every cell, or every 2, 3, 6 or 12…
   const every = [1, 2, 3, 6, 12, 24, 48, 96].find((n) => n * cw >= 28) ?? 96;
   for (let c = firstCell - (firstCell % every); c < lastCell; c += every) ticks.push(c);
-  const cursorRow = Math.max(0, tracks.findIndex((t) => t.id === cursor.track));
+  /** The picked cells' rows (a linked group's are picked whole). */
+  const spanned = span ? spanCells() : null;
+
+  /** ⇧ or ⌘/Ctrl on a head: picks several tracks (⇧: every one from the last picked; ⌘/Ctrl: one more, or one less). */
+  const pickHeads = (id: TrackId, range: boolean) => {
+    const { picked: now, setPicked } = useGroups.getState();
+    if (range) {
+      const from = tracks.findIndex((t) => t.id === (now.at(-1) ?? cursor.track));
+      const to = tracks.findIndex((t) => t.id === id);
+      const between = from < 0 || to < 0 ? [id] : tracks.slice(Math.min(from, to), Math.max(from, to) + 1).map((t) => t.id);
+      // A closed group's row brings its tracks.
+      const rowOfId = rows[rowOf(id)];
+      const extra = rowOfId?.kind === "group" ? rowOfId.tracks : [];
+      setPicked([...new Set([...now, ...between, ...extra])]);
+    } else {
+      const row = rows[rowOf(id)];
+      const ids = row?.kind === "group" ? row.tracks : [id];
+      setPicked(ids.every((x) => now.includes(x)) ? now.filter((x) => !ids.includes(x)) : [...new Set([...now, ...ids])]);
+    }
+  };
+
+  /**
+   * Where a dragged head goes, from the row it is let go on: above that row
+   * (going up) or below it (going down); onto a group's open title, into the
+   * group (a track) or above it (a group).
+   */
+  const headPlace = (d: HeadDrag, clientY: number): { to: number; join?: GroupId; row: number } | null => {
+    const box = headsRef.current?.getBoundingClientRect();
+    if (!box) return null;
+    const i = rowAtY(clientY - box.top);
+    const target = rows[i];
+    if (!target) return null;
+    const moving = new Set(d.kind === "track" ? [d.id] : groupTracks(film, d.id).map((t) => t.id));
+    if (target.kind === "track" && moving.has(target.track.id)) return null;
+    if (target.kind === "group" && d.kind === "group" && groupWithin(film, target.group.id, d.id)) return null;
+    const rest = film.tracks.filter((t) => !moving.has(t.id));
+    const at = (id: TrackId) => rest.findIndex((t) => t.id === id);
+    const up = d.dy < 0;
+    if (target.kind === "track") return { to: up ? at(target.track.id) + 1 : at(target.track.id), row: i };
+    const members = target.tracks.filter((t) => !moving.has(t));
+    if (!members.length) return null;
+    if (target.collapsed) return { to: up ? at(members.at(-1)!) + 1 : at(members[0]!), row: i };
+    return { to: at(members.at(-1)!) + 1, row: i, ...(d.kind === "track" ? { join: target.group.id } : {}) };
+  };
+  const dropHead = (d: HeadDrag, clientY: number) => {
+    const place = headPlace(d, clientY);
+    if (!place) return;
+    const { commit } = useEditor.getState();
+    if (d.kind === "group") return commit([{ type: "group.move", id: d.id, index: place.to }]);
+    const ops: Op[] = [{ type: "track.move", trackId: d.id, index: place.to }];
+    if (place.join) ops.push({ type: "track.update", trackId: d.id, patch: { group: place.join } });
+    commit(ops, place.join ? `Meter "${film.tracks.find((t) => t.id === d.id)?.name}" en "${film.groups?.[place.join]?.name}"` : "Ordenar tracks");
+  };
+  // While dragging a head: a line where it would go (or a box around the group it would go into).
+  let headMark: React.CSSProperties | null = null;
+  if (headDrag?.moved) {
+    const place = headPlace(headDrag, headDrag.y0 + headDrag.dy);
+    if (place) {
+      const top = tops[place.row]!;
+      const h = rowHeight(rows[place.row]!);
+      headMark = place.join ? { top, height: h } : { top: headDrag.dy < 0 ? top - ROW_GAP / 2 - 1 : top + h + ROW_GAP / 2 - 1, height: 2 };
+    }
+  }
 
   const pickIndex = rigs.findIndex((r) => r.id === picking);
   const pickColor = rigColor(pickIndex);
@@ -715,7 +882,7 @@ export function Timeline() {
     <div className="timeline-wrap">
       {picking && pickIndex >= 0 && <PickingBar index={pickIndex} rig={rigs[pickIndex]!} color={pickColor} />}
       <div className={`timeline${picking ? " picking" : ""}${loop ? " drum" : ""}`} style={{ ["--thumb-aspect" as string]: aspect, ...(picking && { ["--rig" as string]: pickColor }) }}>
-        <div className="tl-heads" style={{ minHeight: height + 40 }}>
+        <div className="tl-heads" ref={headsRef} style={{ minHeight: height + 40 }}>
           <div className="tl-head ruler" style={{ height: RULER_H }}>
             <button className="icon-btn small" onClick={() => zoomBy(1 / 1.5)} title="Alejar (⌘ + rueda, o pellizcar en el pad)">
               <Icon name="minus" size={14} />
@@ -727,9 +894,34 @@ export function Timeline() {
           <div className="tl-head main" style={{ height: RESULT_H }}>
             Resultado
           </div>
-          {tracks.map((t, i) => (
-            <TrackHead key={t.id} track={t} current={t.id === cursor.track} row={i} rows={tracks.length} drag={headDrag} setDrag={setHeadDrag} />
-          ))}
+          {rows.map((row) =>
+            row.kind === "track" ? (
+              <TrackHead
+                key={row.track.id}
+                track={row.track}
+                current={row.track.id === cursor.track}
+                picked={picked.includes(row.track.id)}
+                pickTo={pickHeads}
+                depth={row.depth}
+                drag={headDrag}
+                setDrag={setHeadDrag}
+                drop={dropHead}
+              />
+            ) : (
+              <GroupHead
+                key={`g:${row.group.id}`}
+                row={row}
+                current={row.collapsed && row.tracks.includes(cursor.track)}
+                height={rowHeight(row)}
+                pickTo={pickHeads}
+                depth={row.depth}
+                drag={headDrag}
+                setDrag={setHeadDrag}
+                drop={dropHead}
+              />
+            ),
+          )}
+          {headMark && <div className="tl-drop" style={headMark} />}
           <button className="btn small ghost tl-add" onClick={() => addTrack()} title="Agregar un track vacío arriba (imágenes y videos: herramienta «Imágenes y videos»)">
             <Icon name="plus" size={14} /> Track
           </button>
@@ -777,32 +969,62 @@ export function Timeline() {
               </div>
             ))}
 
-            {tracks.map((t, i) => (
-              <div
-                key={t.id}
-                className={`tl-row${t.id === cursor.track ? " current" : ""}${t.visible ? "" : " off"}`}
-                style={{ top: rowTop(i), height: TRACK_H, backgroundSize: `${cw}px 100%` }}
-              />
-            ))}
+            {rows.map((row, i) =>
+              row.kind === "track" ? (
+                <div
+                  key={row.track.id}
+                  className={`tl-row${row.track.id === cursor.track ? " current" : ""}${row.track.visible ? "" : " off"}`}
+                  style={{ top: tops[i], height: TRACK_H, backgroundSize: `${cw}px 100%` }}
+                />
+              ) : (
+                <div key={`g:${row.group.id}`} className={`tl-row group${row.collapsed ? " collapsed" : ""}`} style={{ top: tops[i], height: rowHeight(row), backgroundSize: `${cw}px 100%` }} />
+              ),
+            )}
+
+            {/* A closed group: a mark in each cell for each of its tracks with a picture there. */}
+            {laps.map((l) =>
+              rows.map((row, i) => {
+                if (row.kind !== "group" || !row.collapsed) return null;
+                const out = [];
+                for (let v = Math.max(firstCell, l * period); v < (loop ? Math.min(lastCell, (l + 1) * period) : lastCell); v++) {
+                  const c = wrap(v);
+                  const marks = row.tracks.flatMap((t, k) => ((index.get(t) ?? []).some((x) => x.start <= c && clipEnd(x) > c) ? [k] : []));
+                  if (!marks.length) continue;
+                  out.push(
+                    <div key={`m:${l}:${row.group.id}:${v}`} className="tl-marks" style={{ left: v * cw + lapX(0) + 1, width: cw - 2, top: tops[i]! + 4, height: GROUP_SHUT_H - 8 }}>
+                      {marks.map((k) => (
+                        <span key={k} style={{ background: MARK_COLORS[k % MARK_COLORS.length] }} />
+                      ))}
+                    </div>,
+                  );
+                }
+                return out;
+              }),
+            )}
 
             {/* Cells picked with ⇧ + arrows, as picked text. */}
-            {span &&
-              tracks.some((t) => t.id === span.track) &&
+            {spanned &&
               laps.map((l) => {
-                const a = Math.min(span.anchor, cursor.cell);
-                const b = Math.max(span.anchor, cursor.cell) + 1;
-                const r0 = Math.min(cursorRow, tracks.findIndex((t) => t.id === span.track));
-                const r1 = Math.max(cursorRow, tracks.findIndex((t) => t.id === span.track));
-                return <div key={`span-${l}`} className="tl-span" style={{ left: a * cw + lapX(l), width: (b - a) * cw, top: rowTop(r0), height: rowTop(r1) + TRACK_H - rowTop(r0) }} />;
+                const shownRows = spanned.tracks.map(rowOf).filter((i) => i >= 0);
+                if (!shownRows.length) return null;
+                const r0 = Math.min(...shownRows);
+                const r1 = Math.max(...shownRows);
+                return (
+                  <div
+                    key={`span-${l}`}
+                    className="tl-span"
+                    style={{ left: spanned.start * cw + lapX(l), width: (spanned.end - spanned.start) * cw, top: tops[r0], height: tops[r1]! + rowHeight(rows[r1]!) - tops[r0]! }}
+                  />
+                );
               })}
 
             {/* The cell looked at (where an import goes). */}
             {laps.map((l) => (
-              <div key={l} className="tl-cursor-cell" style={{ left: wrap(cursor.cell) * cw + lapX(l), width: cw, top: rowTop(cursorRow), height: TRACK_H }} />
+              <div key={l} className="tl-cursor-cell" style={{ left: wrap(cursor.cell) * cw + lapX(l), width: cw, top: topOf(cursor.track), height: heightOf(cursor.track) }} />
             ))}
 
             {laps.map((lap) =>
-              tracks.map((t, row) =>
+              tracks.map((t) =>
               visibleClips(t, lap).map((c) => {
                 const moving = shift(c, lap);
                 const length = gesture?.kind === "resize" && gesture.id === c.id ? Math.max(1, gesture.length0 + gesture.dx) : c.length;
@@ -811,7 +1033,7 @@ export function Timeline() {
                     key={`${lap}:${c.id}`}
                     data-clip={c.id}
                     className={`tl-clip${selected.has(c.id) ? " selected" : ""}${moving ? " moving" : ""}${c.visible ? "" : " off"}`}
-                    style={{ left: (moving?.left ?? c.start * cw + lapX(lap)) + 1, top: moving?.top ?? rowTop(row), width: length * cw - 2, height: TRACK_H }}
+                    style={{ left: (moving?.left ?? c.start * cw + lapX(lap)) + 1, top: moving?.top ?? topOf(t.id), width: length * cw - 2, height: TRACK_H }}
                     title={`${c.name} · celdas ${c.start + 1}–${c.start + c.length}`}
                   >
                     {cellsOf(c, length, lap).map((cell) => (
@@ -857,12 +1079,11 @@ export function Timeline() {
             {laps.map((l) => rigs.map((r) => {
               if (!r.source) return null;
               const target = r.target;
-              const row = tracks.findIndex((t) => t.id === target.track);
               const v = wrap(target.cell) + l * period;
-              if (row < 0 || v < firstCell || v > lastCell) return null;
-              const track = tracks[row]!;
+              const track = film.tracks.find((t) => t.id === target.track);
+              if (!track || rowOf(track.id) < 0 || v < firstCell || v > lastCell) return null;
               return (
-                <div key={`live-${l}-${r.id}`} className="tl-livecell" style={{ left: v * cw + 1, width: cw - 2, top: rowTop(row), height: TRACK_H }}>
+                <div key={`live-${l}-${r.id}`} className="tl-livecell" style={{ left: v * cw + 1, width: cw - 2, top: topOf(track.id), height: heightOf(track.id) }}>
                   <CellCanvas filmId={filmId} film={film.settings} items={[liveItem(r.id, { ...track, opacity: 1 })]} />
                 </div>
               );
@@ -871,11 +1092,10 @@ export function Timeline() {
             {/* Where each camera puts its photos (not while its cell is being picked again). */}
             {laps.map((l) => rigs.map((r, i) => {
               if (r.id === picking) return null;
-              const row = tracks.findIndex((t) => t.id === r.target.track);
-              if (row < 0) return null;
+              if (rowOf(r.target.track) < 0) return null;
               const color = rigColor(i);
               return (
-                <div key={`${l}-${r.id}`} className={`tl-rig${r.id === activeRig ? " active" : ""}`} style={{ left: wrap(r.target.cell) * cw + lapX(l), width: cw, top: rowTop(row), height: TRACK_H, borderColor: color }}>
+                <div key={`${l}-${r.id}`} className={`tl-rig${r.id === activeRig ? " active" : ""}`} style={{ left: wrap(r.target.cell) * cw + lapX(l), width: cw, top: topOf(r.target.track), height: heightOf(r.target.track), borderColor: color }}>
                   <span style={{ background: color }}>{i + 1}</span>
                 </div>
               );
@@ -888,8 +1108,8 @@ export function Timeline() {
                 style={{
                   left: gesture.to.v * cw,
                   width: cw,
-                  top: rowTop(tracks.findIndex((t) => t.id === gesture.to!.track)),
-                  height: TRACK_H,
+                  top: topOf(gesture.to.track),
+                  height: heightOf(gesture.to.track),
                   ["--rig" as string]: rigColor(rigs.findIndex((r) => r.id === gesture.rig)),
                 }}
               >
@@ -899,7 +1119,7 @@ export function Timeline() {
 
             {/* While picking a camera's cell: where it would go. */}
             {picking && hover && (
-              <div className="tl-pick" style={{ left: hover.v * cw, width: cw, top: rowTop(tracks.findIndex((t) => t.id === hover.track)), height: TRACK_H }}>
+              <div className="tl-pick" style={{ left: hover.v * cw, width: cw, top: topOf(hover.track), height: heightOf(hover.track) }}>
                 <Icon name="camera" size={Math.min(18, cw - 6)} />
               </div>
             )}

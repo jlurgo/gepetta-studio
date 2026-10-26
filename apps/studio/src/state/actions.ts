@@ -35,6 +35,7 @@ import { grabStill } from "../media/video";
 import { runTask, useBusy } from "./busy";
 import { PLAIN_SHOT, type Rig, type Shot, useCamera } from "./camera";
 import { type GridCursor, useEditor } from "./editor";
+import { reach, rowStops } from "./groups";
 import { useLayers } from "./layers";
 import { pickedStrokes, removeStrokes } from "./strokes";
 
@@ -415,21 +416,20 @@ export function deleteBack() {
   const here = clipAt(film, cursor.track, cursor.cell);
   if (pickedStrokes(film) || useEditor.getState().columns || selection.some((id) => id !== here?.id)) return deleteSelected();
   const camera = useCamera.getState();
+  // A linked group's tracks lose the cell together.
+  const tracks = reach(film, [cursor.track]);
   const shooting = camera.rigs.filter((r) => {
     const t = camera.targetOf(r);
-    return t.track === cursor.track && t.cell === cursor.cell;
+    return tracks.includes(t.track) && t.cell === cursor.cell;
   });
-  const back = !here || shooting.length > 0;
+  const back = !tracks.some((t) => clipAt(film, t, cursor.cell)) || shooting.length > 0;
   const cell = back ? cursor.cell - 1 : cursor.cell;
   if (cell < 0) return;
-  const ops = removeCellOps(film, cursor.track, cell);
+  const ops = tracks.flatMap((t) => removeCellOps(film, t, cell));
   if (!ops.length) return;
   useEditor.getState().commit(ops, `Borrar la celda ${cell + 1}`, { cursor: { track: cursor.track, cell }, selection: [] });
-  // Cameras shooting to this track from there on go one cell earlier too.
-  for (const r of camera.rigs) {
-    const t = camera.targetOf(r);
-    if (t.track === cursor.track && t.cell > cell) useCamera.getState().setTarget(r.id, { track: t.track, cell: t.cell - 1 });
-  }
+  // Cameras shooting to these tracks from there on go one cell earlier too.
+  shiftCameras(tracks, cell, -1);
 }
 
 /** Picked cells: [start, end) in each of `tracks` (bottom to top, as in the film). */
@@ -443,6 +443,7 @@ export interface Span {
 function removeCells(tracks: TrackId[], start: number, count: number, cursorTrack = useEditor.getState().cursor.track) {
   const { film, commit } = useEditor.getState();
   if (!film || count <= 0 || !tracks.length) return;
+  tracks = reach(film, tracks);
   const ops = tracks.flatMap((t) => removeCellsOps(film, t, start, count));
   if (!ops.length) return;
   useEditor.getState().setSpan(null);
@@ -477,10 +478,17 @@ export function spanCells(): Span | null {
   const b = film.tracks.findIndex((t) => t.id === cursor.track);
   if (a < 0 || b < 0) return null;
   return {
-    tracks: film.tracks.slice(Math.min(a, b), Math.max(a, b) + 1).map((t) => t.id),
+    tracks: linkedSlice(film, film.tracks.slice(Math.min(a, b), Math.max(a, b) + 1).map((t) => t.id)),
     start: Math.min(span.anchor, cursor.cell),
     end: Math.max(span.anchor, cursor.cell) + 1,
   };
+}
+
+/** These tracks and the ones linked to them, with every track between them (bottom to top). */
+function linkedSlice(film: FilmState, tracks: TrackId[]): TrackId[] {
+  const all = reach(film, tracks);
+  const rows = all.map((id) => film.tracks.findIndex((t) => t.id === id));
+  return film.tracks.slice(Math.min(...rows), Math.max(...rows) + 1).map((t) => t.id);
 }
 
 /** The pictures under the picked cells are picked too (so holding, repeating… work on them). */
@@ -572,6 +580,9 @@ function copied(): { clips: (Clip & { row: number })[]; cells: number; rows: num
     const rows = [...new Set(clips.map((c) => rowOf(c.track)))].sort((a, b) => a - b);
     span = { tracks: film.tracks.slice(rows[0]!, rows.at(-1)! + 1).map((t) => t.id), start: Math.min(...clips.map((c) => c.start)), end: Math.max(...clips.map(clipEnd)) };
     const ids = new Set(clips.map((c) => c.id));
+    const linked = linkedSlice(film, span.tracks);
+    // Pictures of a linked group: its cells there, in all its tracks.
+    if (linked.length > span.tracks.length) return cellsOf({ ...span, tracks: linked });
     const base = rows[0]!;
     const from = span;
     return {
@@ -581,8 +592,14 @@ function copied(): { clips: (Clip & { row: number })[]; cells: number; rows: num
       from,
     };
   }
-  const base = rowOf(span.tracks[0]!);
-  const s = span;
+  return cellsOf(span);
+}
+
+/** The cells [start, end) of the span's tracks, as copied cells. */
+function cellsOf(s: Span): { clips: (Clip & { row: number })[]; cells: number; rows: number; from: Span } {
+  const film = useEditor.getState().film!;
+  const rowOf = (track: TrackId) => film.tracks.findIndex((t) => t.id === track);
+  const base = rowOf(s.tracks[0]!);
   // Pictures cut to the picked cells.
   const clips = Object.values(film.clips)
     .filter((c) => s.tracks.includes(c.track) && c.start < s.end && clipEnd(c) > s.start)
@@ -624,7 +641,9 @@ export function pasteCells() {
     ops.push(...more);
   };
   let at = state.cursor.cell;
-  let base = film.tracks.findIndex((t) => t.id === state.cursor.track);
+  // Several rows go in from the bottom of the cursor's linked group.
+  const home = board.rows > 1 ? reach(film, [state.cursor.track])[0]! : state.cursor.track;
+  let base = film.tracks.findIndex((t) => t.id === home);
   const span = spanCells();
   if (span) {
     for (const t of span.tracks) add(removeCellsOps(film, t, span.start, span.end - span.start));
@@ -632,7 +651,9 @@ export function pasteCells() {
     base = film.tracks.findIndex((t) => t.id === span.tracks[0]);
   }
   const targets = film.tracks.slice(base, base + board.rows).map((t) => t.id);
-  for (const t of targets) add(insertCellsOps(film, t, at, board.cells));
+  // Linked tracks make room too, even where nothing is pasted.
+  const opened = reach(film, targets);
+  for (const t of opened) add(insertCellsOps(film, t, at, board.cells));
   // Copies are new pictures; ones of a sequence make a new sequence together.
   const seqs = new Map<string, string>();
   const clips = board.clips
@@ -645,7 +666,7 @@ export function pasteCells() {
   if (board.rows > targets.length) useBusy.getState().notify(`Faltan tracks arriba: se pegaron ${targets.length} de ${board.rows}.`);
   state.setSpan(null);
   state.commit(ops, board.cells === 1 ? "Pegar una celda" : `Pegar ${board.cells} celdas`, { cursor: { track: state.cursor.track, cell: at + board.cells }, selection: [] });
-  shiftCameras(targets, at, board.cells);
+  shiftCameras(opened, at, board.cells);
 }
 
 /**
@@ -670,7 +691,7 @@ export function spaceBar() {
     return shiftCameras(film.tracks.map((t) => t.id), at, 1);
   }
   const span = spanCells();
-  const tracks = span ? span.tracks : [cursor.track];
+  const tracks = span ? span.tracks : reach(film, [cursor.track]);
   let f = film;
   const ops: Op[] = [];
   const at = span ? span.start : cursor.cell;
@@ -724,7 +745,31 @@ export function moveClips(moves: { id: ClipId; track: TrackId; start: number }[]
   if (!film || moves.length === 0) return;
   const changed = moves.some((m) => film.clips[m.id] && (film.clips[m.id]!.start !== m.start || film.clips[m.id]!.track !== m.track));
   if (!changed || moves.some((m) => m.start < 0)) return;
-  useEditor.getState().commit([{ type: "clip.move", moves }], undefined, { selection: moves.map((m) => m.id) });
+  const linked = linkedMoves(film, moves);
+  const label = linked.length ? (moves.length === 1 ? "Mover imagen (con su grupo)" : `Mover ${moves.length} imágenes (con su grupo)`) : undefined;
+  useEditor.getState().commit([{ type: "clip.move", moves }, ...linked], label, { selection: moves.map((m) => m.id) });
+}
+
+/**
+ * Pictures moved in time (in their tracks) take the cells of the tracks linked
+ * to theirs along: the same cells, the same number of cells.
+ */
+function linkedMoves(film: FilmState, moves: { id: ClipId; track: TrackId; start: number }[]): Op[] {
+  const clips = moves.map((m) => film.clips[m.id]!);
+  const by = moves[0]!.start - clips[0]!.start;
+  if (!by || moves.some((m, i) => m.track !== clips[i]!.track || m.start - clips[i]!.start !== by)) return [];
+  const own = new Set(clips.map((c) => c.track));
+  const others = reach(film, [...own]).filter((t) => !own.has(t));
+  if (!others.length) return [];
+  // The stretches the pictures cover, each moved as a whole; the far one first, so none lands on one still to move.
+  const spans: { start: number; end: number }[] = [];
+  for (const c of [...clips].sort((a, b) => a.start - b.start)) {
+    const last = spans.at(-1);
+    if (last && c.start <= last.end) last.end = Math.max(last.end, clipEnd(c));
+    else spans.push({ start: c.start, end: clipEnd(c) });
+  }
+  if (by > 0) spans.reverse();
+  return spans.map((sp) => ({ type: "cells.move", start: sp.start, length: sp.end - sp.start, to: sp.start + by, tracks: others }));
 }
 
 /** Moves the selected pictures one cell left (-1) or right (+1). */
@@ -747,30 +792,33 @@ export function moveRow(dir: "up" | "down", extend = false) {
   if (extend && !columns) {
     // ⇧: picking cells across tracks (not past the top or bottom one).
     anchorSpan();
-    const i = film.tracks.findIndex((t) => t.id === cursor.track);
-    const next = film.tracks[i + (dir === "up" ? 1 : -1)];
-    if (next) moveTo(cursor.cell, next.id);
+    const stops = rowStops(film);
+    const i = stops.indexOf(cursor.track);
+    const next = stops[i + (dir === "up" ? 1 : -1)];
+    if (next) moveTo(cursor.cell, next);
     return pickSpanClips();
   }
   useEditor.getState().setSpan(null);
-  const top = film.tracks[film.tracks.length - 1]!;
+  // The rows as shown: a closed group is one.
+  const stops = rowStops(film);
+  const top = stops[stops.length - 1]!;
   const goTo = (track: TrackId) => {
     setColumns(null);
     moveTo(cursor.cell, track);
     useLayers.getState().showCell(track);
   };
   if (columns) {
-    if (dir === "down") goTo(top.id);
+    if (dir === "down") goTo(top);
     return;
   }
-  const i = film.tracks.findIndex((t) => t.id === cursor.track);
+  const i = stops.indexOf(cursor.track);
   if (dir === "up") {
-    if (i < film.tracks.length - 1) return goTo(film.tracks[i + 1]!.id);
+    if (i < stops.length - 1) return goTo(stops[i + 1]!);
     setSelection([]);
     setColumns([{ start: cursor.cell, end: cursor.cell + 1 }]);
     return;
   }
-  if (i > 0) return goTo(film.tracks[i - 1]!.id);
+  if (i > 0) return goTo(stops[i - 1]!);
   const bottom = film.tracks[0]!;
   if (!Object.values(film.clips).some((c) => c.track === bottom.id)) return;
   const { id, op } = newTrackOp(`Capa ${film.tracks.length}`);
