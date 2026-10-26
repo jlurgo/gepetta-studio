@@ -10,8 +10,8 @@ export interface Bus {
   /** What the track's sounds play into. */
   input: AudioNode;
   analyser: AnalyserNode | null;
-  /** Follows the track's volume and place now (smoothly, while it plays). */
-  update(track: Track): void;
+  /** Follows the track's volume (with its groups', see trackVolume) and place now, smoothly while it plays. */
+  update(track: Track, volume: number): void;
   dispose(): void;
 }
 
@@ -20,9 +20,9 @@ export function busKey(track: Track): string {
   return track.voice ?? "";
 }
 
-export function makeBus(ctx: BaseAudioContext, track: Track, dest: AudioNode, meter = false): Bus {
+export function makeBus(ctx: BaseAudioContext, track: Track, volume: number, dest: AudioNode, meter = false): Bus {
   const input = ctx.createGain();
-  input.gain.value = track.opacity;
+  input.gain.value = volume;
   const pan = ctx.createStereoPanner();
   pan.pan.value = Math.max(-1, Math.min(1, track.pan ?? 0));
   const voice = track.voice ? makeVoice(ctx, track.voice) : null;
@@ -40,8 +40,8 @@ export function makeBus(ctx: BaseAudioContext, track: Track, dest: AudioNode, me
   return {
     input,
     analyser,
-    update(t) {
-      input.gain.setTargetAtTime(t.opacity, ctx.currentTime, 0.02);
+    update(t, v) {
+      input.gain.setTargetAtTime(v, ctx.currentTime, 0.02);
       pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, t.pan ?? 0)), ctx.currentTime, 0.02);
     },
     dispose() {

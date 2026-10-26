@@ -1,5 +1,16 @@
+import { groupChain } from "./groups";
 import { cellIndex, clipIn } from "./layers";
-import type { Clip, FilmState, TrackId } from "./model";
+import type { Clip, FilmState, Track, TrackId } from "./model";
+
+/** A sound track sounds: it is not silenced, nor is any group it is in. */
+export function trackSounds(film: FilmState, track: Track): boolean {
+  return track.kind === "sound" && track.visible && !groupChain(film, track.group).some((g) => g.muted);
+}
+
+/** A sound track's volume: its own, times that of every group it is in. */
+export function trackVolume(film: FilmState, track: Track): number {
+  return groupChain(film, track.group).reduce((v, g) => v * (g.volume ?? 1), track.opacity);
+}
 
 /** A stretch of sound to play: `clip`'s slices from `cell` on, `count` of them, from the `at`-th cell played. */
 export interface SoundRun {
@@ -20,7 +31,7 @@ export function soundRuns(film: FilmState, cells: readonly number[], tracks?: re
   const index = cellIndex(film);
   const runs: SoundRun[] = [];
   for (const track of film.tracks) {
-    if (track.kind !== "sound" || !track.visible || (tracks && !tracks.includes(track.id))) continue;
+    if (!trackSounds(film, track) || (tracks && !tracks.includes(track.id))) continue;
     const list = index.get(track.id) ?? [];
     let run: SoundRun | null = null;
     cells.forEach((cell, at) => {

@@ -56,7 +56,7 @@ export type TrackPatch = Partial<Pick<Track, "name" | "visible" | "opacity" | "t
   /** null: out of every group. */
   group?: GroupId | null;
 };
-export type GroupPatch = Partial<Pick<Group, "name" | "linked">>;
+export type GroupPatch = Partial<Pick<Group, "name" | "linked" | "volume" | "muted">>;
 export type OpType = Op["type"];
 
 export class OpError extends Error {}
@@ -419,6 +419,8 @@ export function describeOp(op: Op): string {
     case "group.remove":
       return "Desagrupar";
     case "group.update":
+      if (op.patch.volume !== undefined) return "Volumen del grupo";
+      if (op.patch.muted !== undefined) return op.patch.muted ? "Silenciar el grupo" : "Que suene el grupo";
       return op.patch.linked !== undefined && Object.keys(op.patch).length === 1 ? (op.patch.linked ? "Vincular el grupo" : "Desvincular el grupo") : op.patch.name ? `Renombrar el grupo a "${op.patch.name}"` : "Cambiar el grupo";
     case "group.move":
       return "Mover el grupo";

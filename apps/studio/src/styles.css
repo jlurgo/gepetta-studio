@@ -2817,3 +2817,8 @@ input[type="range"] {
   width: 0;
   background: var(--teal);
 }
+
+.mix-strip.group {
+  background: none;
+  border: 1px dashed var(--line);
+}

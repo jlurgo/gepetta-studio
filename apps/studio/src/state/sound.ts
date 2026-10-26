@@ -1,4 +1,4 @@
-import { type CellIndex, type FilmState, type Track, type TrackId, cellIndex, clipEnd, clipIn, playedCell } from "@gepetta/core";
+import { type CellIndex, type FilmState, type Track, type TrackId, cellIndex, clipEnd, clipIn, playedCell, trackSounds, trackVolume } from "@gepetta/core";
 import { create } from "zustand";
 import { type Bus, busKey, busLevel, makeBus } from "../media/mixer";
 import { type Voice, audio, playRun, preloadSounds, soundBufferNow } from "../media/sound";
@@ -81,21 +81,21 @@ export const useSound = create<SoundState>((set) => ({
 const hasSound = (film: FilmState) => film.tracks.some((t) => t.kind === "sound");
 
 /** Heard now: a sound track that sounds, and is soloed when some are. */
-function heard(track: Track): boolean {
+function heard(film: FilmState, track: Track): boolean {
   const { solo } = useSound.getState();
-  return track.kind === "sound" && track.visible && (!solo.length || solo.includes(track.id));
+  return trackSounds(film, track) && (!solo.length || solo.includes(track.id));
 }
 
 /** Each sound track's bus on the speakers (made again when its settings change). */
 const buses = new Map<TrackId, { key: string; bus: Bus }>();
 
-function busFor(track: Track): Bus {
+function busFor(film: FilmState, track: Track): Bus {
   const key = busKey(track);
   const had = buses.get(track.id);
   if (had?.key === key) return had.bus;
   had?.bus.dispose();
   const ctx = audio();
-  const bus = makeBus(ctx, track, ctx.destination, true);
+  const bus = makeBus(ctx, track, trackVolume(film, track), ctx.destination, true);
   buses.set(track.id, { key, bus });
   return bus;
 }
@@ -146,7 +146,7 @@ function tick() {
     }
     for (const track of film.tracks) {
       if (track.kind !== "sound") continue;
-      const clip = heard(track) ? clipIn(idx.get(track.id) ?? [], cell) : undefined;
+      const clip = heard(film, track) ? clipIn(idx.get(track.id) ?? [], cell) : undefined;
       const v = voices.get(track.id);
       // The run goes on.
       if (v && clip?.id === v.clipId && v.next === cell) {
@@ -161,7 +161,7 @@ function tick() {
       const buffer = soundBufferNow(filmId, clip.sound.ref);
       if (!buffer) continue;
       // Played to the clip's end, unless cut short by what comes next.
-      const voice = playRun(ctx, busFor(track).input, buffer, { track: track.id, clip, at: 0, cell, count: clipEnd(clip) - cell }, fps, t, clip.opacity);
+      const voice = playRun(ctx, busFor(film, track).input, buffer, { track: track.id, clip, at: 0, cell, count: clipEnd(clip) - cell }, fps, t, clip.opacity);
       if (voice) voices.set(track.id, Object.assign(voice, { clipId: clip.id, next: cell + 1 }));
     }
     live.n++;
@@ -190,18 +190,20 @@ function scrub(cell: number) {
   scrubbing = [];
   const idx = indexOf(film);
   for (const track of film.tracks) {
-    if (!heard(track)) continue;
+    if (!heard(film, track)) continue;
     const clip = clipIn(idx.get(track.id) ?? [], cell);
     const buffer = clip?.sound && soundBufferNow(filmId, clip.sound.ref);
     if (!clip || !buffer) continue;
-    const v = playRun(ctx, busFor(track).input, buffer, { track: track.id, clip, at: 0, cell, count: 1 }, film.settings.fps, ctx.currentTime, clip.opacity);
+    const v = playRun(ctx, busFor(film, track).input, buffer, { track: track.id, clip, at: 0, cell, count: 1 }, film.settings.fps, ctx.currentTime, clip.opacity);
     if (v) scrubbing.push(v);
   }
 }
 
 useEditor.subscribe((s, prev) => {
-  // A track's volume or place changed: heard at once, even while it plays.
-  if (s.film && s.film !== prev.film && s.film.tracks !== prev.film?.tracks) for (const t of s.film.tracks) buses.get(t.id)?.bus.update(t);
+  // A track's (or a group's) volume or place changed: heard at once, even while it plays.
+  const film = s.film;
+  if (film && film !== prev.film && (film.tracks !== prev.film?.tracks || film.groups !== prev.film?.groups))
+    for (const t of film.tracks) buses.get(t.id)?.bus.update(t, trackVolume(film, t));
   if (s.film && s.filmId && (s.film !== prev.film || s.filmId !== prev.filmId) && hasSound(s.film)) preloadSounds(s.filmId, s.film);
   if (s.playback !== prev.playback) {
     if (s.playback && s.film) startLive(s.playback, s.film);

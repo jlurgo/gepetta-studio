@@ -1,4 +1,4 @@
-import { type Clip, cellGain, clipAt, clipEnd } from "@gepetta/core";
+import { type Clip, cellGain, clipAt, clipEnd, trackVolume } from "@gepetta/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { makeBus } from "../media/mixer";
 import { audio, playRun, soundBuffer } from "../media/sound";
@@ -16,7 +16,7 @@ async function listen(clip: Clip) {
   const buffer = await soundBuffer(filmId, clip.sound.ref);
   const track = film.tracks.find((t) => t.id === clip.track);
   // As it sounds in the film: through its track's volume and place.
-  const bus = track ? makeBus(ctx, track, ctx.destination) : null;
+  const bus = track ? makeBus(ctx, track, trackVolume(film, track), ctx.destination) : null;
   playRun(ctx, bus?.input ?? ctx.destination, buffer, { track: clip.track, clip, at: 0, cell: clip.start, count: clip.length }, film.settings.fps, ctx.currentTime, clip.opacity);
   // Let go of it once it (and an echo's tail) is over.
   if (bus) setTimeout(() => bus.dispose(), (clip.length / film.settings.fps + 4) * 1000);

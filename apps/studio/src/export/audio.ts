@@ -1,4 +1,4 @@
-import { type FilmState, type TrackId, soundRuns } from "@gepetta/core";
+import { type FilmState, type TrackId, soundRuns, trackVolume } from "@gepetta/core";
 import { makeBus } from "../media/mixer";
 import { playRun, soundBuffer } from "../media/sound";
 
@@ -16,7 +16,7 @@ export async function mixSound(filmId: string, film: FilmState, cells: readonly 
   const ctx = new OfflineAudioContext(2, Math.max(1, Math.ceil((cells.length / fps) * RATE)), RATE);
   const byId = new Map(film.tracks.map((t) => [t.id, t]));
   // Each track through its own bus, as heard while working.
-  const buses = new Map([...out].map((id) => [id, makeBus(ctx, byId.get(id)!, ctx.destination)]));
+  const buses = new Map([...out].map((id) => [id, makeBus(ctx, byId.get(id)!, trackVolume(film, byId.get(id)!), ctx.destination)]));
   for (const run of runs) {
     const buffer = await soundBuffer(filmId, run.clip.sound!.ref);
     playRun(ctx, buses.get(run.track)!.input, buffer, run, fps, run.at / fps, run.clip.opacity);

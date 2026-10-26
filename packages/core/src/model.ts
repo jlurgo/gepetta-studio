@@ -225,6 +225,10 @@ export interface Group {
   name: string;
   parent?: GroupId;
   linked: boolean;
+  /** Its sound tracks' volume, on top of each one's (absent = 1). */
+  volume?: number;
+  /** Its sound tracks are silent. */
+  muted?: boolean;
 }
 
 export interface FilmSettings {

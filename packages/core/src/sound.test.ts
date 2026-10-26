@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { insertCellsOps, removeCellOps } from "./columns";
 import { stackAt } from "./layers";
-import { soundRuns } from "./sound";
+import { soundRuns, trackSounds, trackVolume } from "./sound";
 import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, cellGain, emptyFilm } from "./model";
 import { type Op, applyOp } from "./ops";
 
@@ -99,5 +99,18 @@ describe("sound clips", () => {
     expect(volumes(f).slice(0, 6)).toEqual([0, 0, 0.1, 0.1, 0.2, 0.2]);
     // Only a sound has a sound's volume.
     expect(() => applyOp(f, { type: "clip.update", id: "p", patch: { sound: { ref, from: 0 } } })).toThrow();
+  });
+
+  it("goes by its groups' volume and silence too", () => {
+    let f = film({ type: "track.add", track: { id: "s2", name: "Música", kind: "sound", visible: true, opacity: 0.5, transform: IDENTITY_TRANSFORM, exported: true } });
+    f = applyOp(f, { type: "group.add", group: { id: "g", name: "Sonidos", linked: false }, tracks: ["s", "s2"] });
+    f = applyOp(f, { type: "group.add", group: { id: "h", name: "Todo", linked: false }, groups: ["g"] });
+    f = applyOp(f, { type: "group.update", id: "g", patch: { volume: 0.5 } });
+    f = applyOp(f, { type: "group.update", id: "h", patch: { volume: 0.8 } });
+    expect(trackVolume(f, f.tracks.find((t) => t.id === "s2")!)).toBeCloseTo(0.2);
+    expect(soundRuns(f, [2])).toHaveLength(1);
+    f = applyOp(f, { type: "group.update", id: "h", patch: { muted: true } });
+    expect(trackSounds(f, f.tracks.find((t) => t.id === "s")!)).toBe(false);
+    expect(soundRuns(f, [2])).toEqual([]);
   });
 });

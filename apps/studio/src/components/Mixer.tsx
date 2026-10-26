@@ -1,5 +1,5 @@
-import type { Track } from "@gepetta/core";
-import { useEffect, useRef, useState } from "react";
+import { type Group, type Track, groupChain } from "@gepetta/core";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useEditor } from "../state/editor";
 import { updateTrack } from "../state/layers";
 import { trackLevel, useSound } from "../state/sound";
@@ -43,10 +43,31 @@ function PanSlider({ value, onCommit }: { value: number; onCommit(v: number): vo
   );
 }
 
-function Strip({ track, soloed, anySolo, meter }: { track: Track; soloed: boolean; anySolo: boolean; meter(el: HTMLSpanElement | null): void }) {
-  const quiet = !track.visible || (anySolo && !soloed);
+/** A group's volume (for all its sound tracks) and silencing them all. */
+function GroupStrip({ group, depth, muted }: { group: Group; depth: number; muted: boolean }) {
+  const update = (patch: { volume?: number; muted?: boolean }) => useEditor.getState().commit([{ type: "group.update", id: group.id, patch }]);
   return (
-    <div className={`mix-strip${quiet ? " quiet" : ""}`}>
+    <div className={`mix-strip group${muted ? " quiet" : ""}`} style={{ marginLeft: depth * 12 }}>
+      <div className="mix-head">
+        <strong title={group.name}>▾ {group.name}</strong>
+        <button
+          className={`icon-btn small${group.muted ? " on" : ""}`}
+          onClick={() => update({ muted: !group.muted })}
+          title={group.muted ? "Que suene el grupo" : "Silenciar todo el grupo (también en el video)"}
+          aria-pressed={!!group.muted}
+        >
+          <Icon name={group.muted ? "mute" : "sound"} size={14} />
+        </button>
+      </div>
+      <OpacitySlider key={`g-${group.id}`} what="Volumen del grupo" value={group.volume ?? 1} onCommit={(volume) => update({ volume })} />
+    </div>
+  );
+}
+
+function Strip({ track, depth, silenced, soloed, anySolo, meter }: { track: Track; depth: number; silenced: boolean; soloed: boolean; anySolo: boolean; meter(el: HTMLSpanElement | null): void }) {
+  const quiet = !track.visible || silenced || (anySolo && !soloed);
+  return (
+    <div className={`mix-strip${quiet ? " quiet" : ""}`} style={{ marginLeft: depth * 12 }}>
       <div className="mix-head">
         <strong title={track.name}>{track.name}</strong>
         <button
@@ -91,7 +112,8 @@ function Strip({ track, soloed, anySolo, meter }: { track: Track; soloed: boolea
  * silencing it, hearing it alone, and how loud it plays now.
  */
 export function Mixer() {
-  const tracks = useEditor((s) => s.film?.tracks);
+  const film = useEditor((s) => s.film);
+  const tracks = film?.tracks;
   const solo = useSound((s) => s.solo);
   const meters = useRef(new Map<string, HTMLSpanElement>());
   const sounds = (tracks ?? []).filter((t) => t.kind === "sound");
@@ -111,17 +133,32 @@ export function Mixer() {
   }, []);
 
   if (!sounds.length) return <p className="hint">Todavía no hay tracks de sonido.</p>;
+  // Each track under the groups it is in (outermost first), each group shown where its first sound track is.
+  let open: Group[] = [];
   return (
     <div className="mixer">
-      {sounds.map((t) => (
-        <Strip
-          key={t.id}
-          track={t}
-          soloed={solo.includes(t.id)}
-          anySolo={solo.length > 0}
-          meter={(el) => (el ? meters.current.set(t.id, el) : meters.current.delete(t.id))}
-        />
-      ))}
+      {sounds.map((t) => {
+        const chain = groupChain(film!, t.group).reverse();
+        let same = 0;
+        while (same < open.length && same < chain.length && open[same]!.id === chain[same]!.id) same++;
+        const opened = chain.slice(same);
+        open = chain;
+        return (
+          <Fragment key={t.id}>
+            {opened.map((g, i) => (
+              <GroupStrip key={g.id} group={g} depth={same + i} muted={chain.slice(0, same + i + 1).some((c) => c.muted)} />
+            ))}
+            <Strip
+              track={t}
+              depth={chain.length}
+              silenced={chain.some((g) => g.muted)}
+              soloed={solo.includes(t.id)}
+              anySolo={solo.length > 0}
+              meter={(el) => (el ? meters.current.set(t.id, el) : meters.current.delete(t.id))}
+            />
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
