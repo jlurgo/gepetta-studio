@@ -1,5 +1,6 @@
 import { type FilmState, type TrackId, exportedCells } from "@gepetta/core";
 import {
+  AudioBufferSource,
   BufferTarget,
   CanvasSource,
   Mp4OutputFormat,
@@ -8,8 +9,10 @@ import {
   QUALITY_MEDIUM,
   QUALITY_VERY_HIGH,
   WebMOutputFormat,
+  canEncodeAudio,
   canEncodeVideo,
 } from "mediabunny";
+import { mixSound } from "./audio";
 import { renderCells } from "./frames";
 
 export type VideoFormat = "mp4" | "webm";
@@ -54,15 +57,29 @@ export async function exportVideo(
   const source = new CanvasSource(canvas, { codec: CODEC[opts.format], bitrate: QUALITY[opts.quality] });
   const { fps } = film.settings;
   output.addVideoTrack(source, { frameRate: fps });
+  // The sound tracks, mixed (a track exported on its own goes without them, unless it is one).
+  const cells = exportedCells(film);
+  const sound = await mixSound(filmId, film, cells, opts.tracks);
+  let audio: AudioBufferSource | null = null;
+  if (sound) {
+    const options = opts.format === "mp4" ? (["aac", "opus"] as const) : (["opus"] as const);
+    let codec: (typeof options)[number] | null = null;
+    for (const c of options) if (!codec && (await canEncodeAudio(c, { numberOfChannels: 2, sampleRate: sound.sampleRate }))) codec = c;
+    if (codec) {
+      audio = new AudioBufferSource({ codec, bitrate: 192e3 });
+      output.addAudioTrack(audio);
+    } else console.warn("[gepetta] export: no audio encoder");
+  }
   await output.start();
 
   try {
     // A ping-pong goes there and back once (a player repeating it keeps going).
     // The canvas only changes when the picture does; a held one is added again.
-    for await (const { index } of renderCells(filmId, film, { width, height, cells: exportedCells(film), tracks: opts.tracks, canvas })) {
+    for await (const { index } of renderCells(filmId, film, { width, height, cells, tracks: opts.tracks, canvas })) {
       await source.add(index / fps, 1 / fps);
       progress(index + 1);
     }
+    if (audio && sound) await audio.add(sound);
     await output.finalize();
   } catch (e) {
     await output.cancel();

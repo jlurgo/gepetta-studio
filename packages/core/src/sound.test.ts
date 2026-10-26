@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { insertCellsOps, removeCellOps } from "./columns";
 import { stackAt } from "./layers";
+import { soundRuns } from "./sound";
 import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, emptyFilm } from "./model";
 import { type Op, applyOp } from "./ops";
 
@@ -66,5 +67,14 @@ describe("sound clips", () => {
     expect(stackAt(f, 4).map((s) => s.clipId)).toEqual(["p"]);
     expect(() => applyOp(f, { type: "clip.place", clips: [clip("x", "s", 20, 1)] })).toThrow();
     expect(() => applyOp(f, { type: "clip.place", clips: [clip("y", PHOTO_TRACK, 20, 1, 0)] })).toThrow();
+  });
+
+  it("plays as runs: cells one after another in a clip go on without a cut", () => {
+    const f = film();
+    const runs = (cells: number[]) => soundRuns(f, cells).map((r) => `${r.at}:${r.cell}+${r.count}`);
+    expect(runs([0, 1, 2, 3, 4, 5])).toEqual(["2:2+4"]);
+    // Going back (ping-pong) or jumping: one run per cell.
+    expect(runs([5, 4, 3])).toEqual(["0:5+1", "1:4+1", "2:3+1"]);
+    expect(soundRuns(f, [3, 4], ["photos"])).toEqual([]);
   });
 });

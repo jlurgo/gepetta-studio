@@ -222,6 +222,8 @@ function dropSurface() {
 function target(film: FilmState): { track: Track; cell: number; clip: Clip | undefined } | null {
   const { cursor } = useEditor.getState();
   const track = film.tracks.find((t) => t.id === cursor.track);
+  // Nothing to draw on in a sound track.
+  if (track?.kind === "sound") return null;
   return track ? { track, cell: cursor.cell, clip: clipAt(film, track.id, cursor.cell) } : null;
 }
 
@@ -519,7 +521,10 @@ export function beginStroke(p: Point, pressure: number, pen: boolean, mods: { al
   const tool = paint.tool;
   if (!film || !isPainting(tool) || tool === "picker") return false;
   const at = target(film);
-  if (!at) return false;
+  if (!at) {
+    if (film.tracks.find((t) => t.id === useEditor.getState().cursor.track)?.kind === "sound") useBusy.getState().notify("Es un track de sonido: para dibujar, elegí un track de imágenes.");
+    return false;
+  }
   if (tool === "clone" && mods.alt) {
     // Alt+click: copy from here (this cell, or go to another cell to paint).
     paint.setCloneSource({ track: at.track.id, cell: at.cell, at: p, offset: null });

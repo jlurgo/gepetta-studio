@@ -31,6 +31,7 @@ import {
 import { onRemoteMessage } from "../capture/remote";
 import { rotateBlob } from "../capture/types";
 import { ingestImage, isImageFile, sortFiles } from "../media/ingest";
+import { ingestSound, isSoundFile } from "../media/sound";
 import { grabStill } from "../media/video";
 import { runTask, useBusy } from "./busy";
 import { PLAIN_SHOT, type Rig, type Shot, useCamera } from "./camera";
@@ -268,6 +269,46 @@ export async function importImages(files: File[], at?: GridCursor, ordered = fal
     cursor: { track: from.track, cell: clipEnd(clips.at(-1)!) },
     selection: clips.map((c) => c.id),
   });
+}
+
+/**
+ * Sound files (music, effects, voices), one after another from the cursor
+ * (or `at`): into that track when it is a sound track, else into a new one
+ * at the bottom, named after the first file.
+ */
+export async function importSounds(files: File[], at?: GridCursor) {
+  const { filmId, cursor } = useEditor.getState();
+  const sounds = sortFiles(files.filter(isSoundFile));
+  if (!filmId || sounds.length === 0) return;
+  const read = await runTask(sounds.length === 1 ? "Importando sonido" : "Importando sonidos", sounds.length, async (progress) => {
+    const out: Awaited<ReturnType<typeof ingestSound>>[] = [];
+    for (const file of sounds) {
+      out.push(await ingestSound(filmId, file));
+      progress(out.length);
+    }
+    return out;
+  });
+  const film = useEditor.getState().film;
+  if (!read || !film || useEditor.getState().filmId !== filmId) return;
+  const from = at ?? cursor;
+  const ops: Op[] = [];
+  let track = film.tracks.find((t) => t.id === from.track && t.kind === "sound")?.id;
+  const names = sounds.map((f) => f.name.replace(/\.[^.]+$/, ""));
+  if (!track) {
+    const made = newTrackOp(names[0]!, { kind: "sound" });
+    ops.push(made.op, { type: "track.move", trackId: made.id, index: 0 });
+    track = made.id;
+  }
+  let cell = from.cell;
+  const clips: Clip[] = read.map(({ ref, media }, i) => {
+    const length = Math.max(1, Math.round(ref.duration * film.settings.fps));
+    const clip: Clip = { id: newId(), track: track!, start: cell, length, media, name: names[i]!, visible: true, opacity: 1, transform: IDENTITY_TRANSFORM, sound: { ref, from: 0 } };
+    cell += length;
+    return clip;
+  });
+  const label = clips.length === 1 ? `Sonido «${names[0]}»` : `Importar ${clips.length} sonidos`;
+  ops.push({ type: "clip.place", clips, label });
+  useEditor.getState().commit(ops, label, { cursor: { track: track, cell: from.cell }, selection: [] });
 }
 
 /**

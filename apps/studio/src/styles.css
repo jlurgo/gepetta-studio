@@ -609,6 +609,37 @@ input[type="range"] {
   box-shadow: inset 3px 0 0 var(--danger);
 }
 
+.tl-head.ruler .icon-btn.on {
+  color: var(--teal);
+}
+
+.tl-adds {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.tl-sound {
+  position: absolute;
+  top: 5px;
+  color: var(--teal);
+  pointer-events: none;
+}
+
+.tl-sound-name {
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  font-size: 10px;
+  color: var(--text);
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: calc(100% - 8px);
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+}
+
 .tl-head.track.picked {
   background: color-mix(in srgb, var(--teal) 18%, transparent);
 }

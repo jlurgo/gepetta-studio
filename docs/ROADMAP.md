@@ -73,7 +73,8 @@
   abrochar con el número, líneas y marcas de corte; vista previa que pasa las hojas)
 
 ## Fase 5 — Audio, exportaciones avanzadas y online
-- Pistas de música y efectos (biblioteca local + fuentes online)
+- [x] Tracks de sonido: importar mp3, wav, ogg, m4a… («+ Sonido» o soltarlos en la línea de tiempo); cada celda es un pedacito del sonido y se edita como las imágenes (borrar, meter espacios, cortar, pegar, mover, vincular en grupos); suena al reproducir y al moverse de celda; sale en el video exportado; volumen y silenciar por track
+- Biblioteca de efectos de sonido, grabar con el micrófono, fuentes online
 - ffmpeg: ProRes, GIF, PNG, etc.
 - Deploy online, cuentas, nube, colaboración
 - Escáner

@@ -1,7 +1,9 @@
-import { type CellIndex, type Clip, type ClipId, type GroupId, type Op, type TimelineRow, type Track, type TrackId, cellIndex, groupTracks, groupWithin, timelineRows, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
+import { type CellIndex, type Clip, type ClipId, type GroupId, type Op, PEAKS_PER_SECOND, type TimelineRow, type Track, type TrackId, cellIndex, groupTracks, groupWithin, timelineRows, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
-import { addTrack, extendFilm, resizeDrum, importImages, moveClips, moveColumns, setCellImage, spanCells } from "../state/actions";
+import { addTrack, extendFilm, resizeDrum, importImages, importSounds, moveClips, moveColumns, setCellImage, spanCells } from "../state/actions";
+import { isSoundFile, peaksNow, useSoundPeaks } from "../media/sound";
+import { useSound } from "../state/sound";
 import { renameGroup, setLinked, toggleGroup, useGroups } from "../state/groups";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
@@ -99,9 +101,15 @@ function TrackHead({ track, current, picked, pickTo, depth, drag, setDrag, drop 
       title={`${track.name}${track.exported ? "" : " (solo referencia: no se exporta)"} — tocá para ver sus ajustes (⇧ o ⌘/Ctrl: elegir varios para agruparlos con Ctrl + G); arrastralo para cambiarlo de lugar`}
       {...handlers}
     >
-      <button className="icon-btn small" onClick={() => updateTrack(track.id, { visible: !track.visible })} title={track.visible ? "Ocultar" : "Mostrar"}>
-        <Icon name={track.visible ? "eye" : "eyeOff"} size={15} />
-      </button>
+      {track.kind === "sound" ? (
+        <button className="icon-btn small" onClick={() => updateTrack(track.id, { visible: !track.visible })} title={track.visible ? "Silenciar" : "Que suene"}>
+          <Icon name={track.visible ? "sound" : "mute"} size={15} />
+        </button>
+      ) : (
+        <button className="icon-btn small" onClick={() => updateTrack(track.id, { visible: !track.visible })} title={track.visible ? "Ocultar" : "Mostrar"}>
+          <Icon name={track.visible ? "eye" : "eyeOff"} size={15} />
+        </button>
+      )}
       <button className="tl-name" tabIndex={0} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && pick()}>
         {track.name}
         {!track.exported && <span className="ref-dot" aria-hidden />}
@@ -171,6 +179,42 @@ function GroupHead({ row, current, height, pickTo, depth, drag, setDrag, drop }:
       </button>
     </div>
   );
+}
+
+/**
+ * A sound clip's cells on screen: in each, its slice's loudness as a few
+ * bars (more when the cells are wider).
+ */
+function SoundStrip({ filmId, clip, from, count, cw, fps }: { filmId: string; clip: Clip; from: number; count: number; cw: number; fps: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const version = useSoundPeaks((s) => s.version);
+  const h = TRACK_H - 10;
+  useLayoutEffect(() => {
+    const canvas = ref.current;
+    const sound = clip.sound;
+    if (!canvas || !sound) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(count * cw * dpr));
+    canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d")!;
+    ctx.scale(dpr, dpr);
+    const peaks = peaksNow(filmId, sound.ref);
+    ctx.fillStyle = getComputedStyle(canvas).color;
+    const bars = Math.max(1, Math.min(8, Math.floor(cw / 5)));
+    const bw = Math.max(1, (cw - 2) / bars - 1);
+    for (let i = 0; i < count; i++) {
+      const t0 = sound.from + (from + i - clip.start) / fps;
+      for (let b = 0; b < bars; b++) {
+        const a = Math.floor((t0 + b / (bars * fps)) * PEAKS_PER_SECOND);
+        const e = Math.max(a + 1, Math.floor((t0 + (b + 1) / (bars * fps)) * PEAKS_PER_SECOND));
+        let m = 0;
+        if (peaks) for (let k = a; k < e; k++) m = Math.max(m, peaks[k] ?? 0);
+        const bh = Math.max(1, (m / 255) * (h - 2));
+        ctx.fillRect(i * cw + 1 + b * (bw + 1), (h - bh) / 2, bw, bh);
+      }
+    }
+  }, [version, clip, from, count, cw, fps, filmId, h]);
+  return <canvas ref={ref} className="tl-sound" style={{ left: (from - clip.start) * cw, width: count * cw, height: h }} />;
 }
 
 type Gesture =
@@ -246,6 +290,8 @@ export function Timeline() {
     setGestureState(g);
   };
   const cellInput = useRef<HTMLInputElement>(null);
+  const soundInput = useRef<HTMLInputElement>(null);
+  const scrub = useSound((s) => s.scrub);
   const pickAt = useRef<{ track: string; cell: number } | null>(null);
   const index: CellIndex = useMemo(() => (film ? cellIndex(film) : new Map()), [film]);
 
@@ -795,8 +841,10 @@ export function Timeline() {
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     const p = at(e);
-    if (!p.track || !e.dataTransfer.files.length) return;
-    void importImages([...e.dataTransfer.files], { track: p.track.id, cell: p.cell });
+    const files = [...e.dataTransfer.files];
+    if (files.some(isSoundFile)) void importSounds(files.filter(isSoundFile), { track: p.track?.id ?? cursor.track, cell: p.cell });
+    if (!p.track || !files.some((f) => !isSoundFile(f))) return;
+    void importImages(files.filter((f) => !isSoundFile(f)), { track: p.track.id, cell: p.cell });
   }
 
   // Where moved clips are drawn while dragging.
@@ -890,6 +938,15 @@ export function Timeline() {
             <button className="icon-btn small" onClick={() => zoomBy(1.5)} title="Acercar (⌘ + rueda, o pellizcar en el pad)">
               <Icon name="plus" size={14} />
             </button>
+            {film.tracks.some((t) => t.kind === "sound") && (
+              <button
+                className={`icon-btn small${scrub ? " on" : ""}`}
+                onClick={() => useSound.getState().setScrub(!scrub)}
+                title={scrub ? "Al moverte de celda suena su pedacito de sonido (tocá para que no suene)" : "Al moverte de celda no suena nada (tocá para escuchar el pedacito de cada celda)"}
+              >
+                <Icon name={scrub ? "sound" : "mute"} size={14} />
+              </button>
+            )}
           </div>
           <div className="tl-head main" style={{ height: RESULT_H }}>
             Resultado
@@ -922,12 +979,17 @@ export function Timeline() {
             ),
           )}
           {headMark && <div className="tl-drop" style={headMark} />}
-          <button className="btn small ghost tl-add" onClick={() => addTrack()} title="Agregar un track vacío arriba (imágenes y videos: herramienta «Imágenes y videos»)">
-            <Icon name="plus" size={14} /> Track
-          </button>
+          <div className="tl-adds">
+            <button className="btn small ghost tl-add" onClick={() => addTrack()} title="Agregar un track vacío arriba (imágenes y videos: herramienta «Imágenes y videos»)">
+              <Icon name="plus" size={14} /> Track
+            </button>
+            <button className="btn small ghost tl-add" onClick={() => soundInput.current?.click()} title="Importar música, efectos o voces (mp3, wav, ogg, m4a…) desde la celda del cursor; también se pueden soltar los archivos en la línea de tiempo">
+              <Icon name="sound" size={14} /> Sonido
+            </button>
+          </div>
         </div>
 
-        <div className="tl-body" ref={scroller} onScroll={(e) => onScroll(e.currentTarget)}>
+        <div className="tl-body" ref={scroller} style={{ minHeight: height + 40 }} onScroll={(e) => onScroll(e.currentTarget)}>
           <div
             className="tl-canvas"
             style={{ width: loop ? scroll.width : cells * cw + 120, height: height + 40 }}
@@ -1036,12 +1098,18 @@ export function Timeline() {
                     style={{ left: (moving?.left ?? c.start * cw + lapX(lap)) + 1, top: moving?.top ?? topOf(t.id), width: length * cw - 2, height: TRACK_H }}
                     title={`${c.name} · celdas ${c.start + 1}–${c.start + c.length}`}
                   >
-                    {cellsOf(c, length, lap).map((cell) => (
-                      <div key={cell} className="tl-clip-cell" style={{ left: (cell - c.start) * cw, width: cw - (cell === c.start + length - 1 ? 2 : 0) }}>
-                        <CellCanvas filmId={filmId} film={film.settings} items={[clipItem(t, c, cell)]} />
-                      </div>
-                    ))}
-                    {length > 1 && cw * length >= 40 && <span className="tl-len">×{length}</span>}
+                    {c.sound
+                      ? (() => {
+                          const shownCells = cellsOf(c, length, lap);
+                          return shownCells.length ? <SoundStrip filmId={filmId} clip={c} from={shownCells[0]!} count={shownCells.length} cw={cw} fps={fps} /> : null;
+                        })()
+                      : cellsOf(c, length, lap).map((cell) => (
+                          <div key={cell} className="tl-clip-cell" style={{ left: (cell - c.start) * cw, width: cw - (cell === c.start + length - 1 ? 2 : 0) }}>
+                            <CellCanvas filmId={filmId} film={film.settings} items={[clipItem(t, c, cell)]} />
+                          </div>
+                        ))}
+                    {c.sound && cw * length >= 60 && <span className="tl-sound-name">{c.name}</span>}
+                    {!c.sound && length > 1 && cw * length >= 40 && <span className="tl-len">×{length}</span>}
                     {/* Pictures of one sequence: a bar of its color under them, joined from one to the next. */}
                     {c.seq && (
                       <span
@@ -1170,6 +1238,18 @@ export function Timeline() {
           </div>
         </div>
 
+        <input
+          ref={soundInput}
+          type="file"
+          accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus"
+          multiple
+          hidden
+          onChange={(e) => {
+            const files = [...(e.target.files ?? [])];
+            if (files.length) void importSounds(files);
+            e.target.value = "";
+          }}
+        />
         <input
           ref={cellInput}
           data-role="cell-image"
