@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useEditor } from "../state/editor";
 import { updateTrack } from "../state/layers";
 import { trackLevel, useSound } from "../state/sound";
+import { VOICE_EFFECTS } from "../media/voices";
 import { Icon } from "./Icon";
 import { OpacitySlider } from "./TrackPanel";
 
@@ -67,6 +68,17 @@ function Strip({ track, soloed, anySolo, meter }: { track: Track; soloed: boolea
       </div>
       <OpacitySlider key={`v-${track.id}`} what="Volumen" value={track.opacity} onCommit={(opacity) => updateTrack(track.id, { opacity })} />
       <PanSlider value={track.pan ?? 0} onCommit={(pan) => updateTrack(track.id, { pan: pan || undefined })} />
+      <label className="control">
+        <span>Efecto de voz</span>
+        <select value={track.voice ?? ""} onChange={(e) => updateTrack(track.id, { voice: (e.target.value || undefined) as Track["voice"] })}>
+          <option value="">Ninguno</option>
+          {VOICE_EFFECTS.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="mix-meter" title="Lo fuerte que suena ahora">
         <span ref={meter} />
       </div>

@@ -205,7 +205,12 @@ export interface Track {
   group?: GroupId;
   /** A sound track: from the left speaker (-1) to the right one (1); absent = both alike. */
   pan?: number;
+  /** A sound track: an effect its sound goes through (absent = none). */
+  voice?: VoiceEffect;
 }
+
+/** What a sound track's voice can be turned into. */
+export type VoiceEffect = "ardilla" | "monstruo" | "robot" | "eco" | "telefono" | "cueva";
 
 export type GroupId = string;
 

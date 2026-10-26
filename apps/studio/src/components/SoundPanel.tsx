@@ -16,8 +16,10 @@ async function listen(clip: Clip) {
   const buffer = await soundBuffer(filmId, clip.sound.ref);
   const track = film.tracks.find((t) => t.id === clip.track);
   // As it sounds in the film: through its track's volume and place.
-  const out = track ? makeBus(ctx, track, ctx.destination).input : ctx.destination;
-  playRun(ctx, out, buffer, { track: clip.track, clip, at: 0, cell: clip.start, count: clip.length }, film.settings.fps, ctx.currentTime, clip.opacity);
+  const bus = track ? makeBus(ctx, track, ctx.destination) : null;
+  playRun(ctx, bus?.input ?? ctx.destination, buffer, { track: clip.track, clip, at: 0, cell: clip.start, count: clip.length }, film.settings.fps, ctx.currentTime, clip.opacity);
+  // Let go of it once it (and an echo's tail) is over.
+  if (bus) setTimeout(() => bus.dispose(), (clip.length / film.settings.fps + 4) * 1000);
 }
 
 const SPECTRUM_W = 252;

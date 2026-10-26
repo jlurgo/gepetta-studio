@@ -1,9 +1,10 @@
 import type { Track } from "@gepetta/core";
+import { makeVoice } from "./voices";
 
 /**
  * Where a sound track's sound goes before the speakers (or an export): its
- * volume, its place between left and right, and a meter of how loud it is
- * playing.
+ * volume, its voice effect, its place between left and right, and a meter of
+ * how loud it is playing.
  */
 export interface Bus {
   /** What the track's sounds play into. */
@@ -15,8 +16,8 @@ export interface Bus {
 }
 
 /** What a bus is built from: when it changes, the bus is made again (the rest is updated). */
-export function busKey(_track: Track): string {
-  return "";
+export function busKey(track: Track): string {
+  return track.voice ?? "";
 }
 
 export function makeBus(ctx: BaseAudioContext, track: Track, dest: AudioNode, meter = false): Bus {
@@ -24,7 +25,12 @@ export function makeBus(ctx: BaseAudioContext, track: Track, dest: AudioNode, me
   input.gain.value = track.opacity;
   const pan = ctx.createStereoPanner();
   pan.pan.value = Math.max(-1, Math.min(1, track.pan ?? 0));
-  input.connect(pan).connect(dest);
+  const voice = track.voice ? makeVoice(ctx, track.voice) : null;
+  if (voice) {
+    input.connect(voice.input);
+    voice.output.connect(pan);
+  } else input.connect(pan);
+  pan.connect(dest);
   let analyser: AnalyserNode | null = null;
   if (meter) {
     analyser = ctx.createAnalyser();
@@ -39,6 +45,7 @@ export function makeBus(ctx: BaseAudioContext, track: Track, dest: AudioNode, me
       pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, t.pan ?? 0)), ctx.currentTime, 0.02);
     },
     dispose() {
+      voice?.dispose();
       input.disconnect();
       pan.disconnect();
     },
