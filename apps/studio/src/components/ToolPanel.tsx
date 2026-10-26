@@ -12,7 +12,9 @@ import { Icon } from "./Icon";
 import { ImportPanel } from "./ImportPanel";
 import { LassoPanel } from "./LassoPanel";
 import { MagnifyPanel, ZOOM_KEYS } from "./MagnifyPanel";
+import { AddMicPanel, MicToolPanel } from "./MicPanel";
 import { PhoneConnect } from "./PhoneConnect";
+import { Section } from "./Section";
 import { applyChange } from "../state/shot";
 import { ShotEditor } from "./ShotEditor";
 import { TOOLS, chooseCamera, useFreeCameras } from "./StageTools";
@@ -37,18 +39,6 @@ function Choice<T extends string>({ value, options, onChange }: { value: T; opti
         </button>
       ))}
     </div>
-  );
-}
-
-function Section({ title, open: initial = true, children }: { title: string; open?: boolean; children: React.ReactNode }) {
-  const [open, setOpen] = useState(initial);
-  return (
-    <>
-      <button className="disclosure" onClick={() => setOpen(!open)} aria-expanded={open}>
-        {open ? "▾" : "▸"} {title}
-      </button>
-      {open && <div className="tool-section">{children}</div>}
-    </>
   );
 }
 
@@ -364,7 +354,7 @@ export function ToolPanel() {
   const meta = TOOLS.find((t) => t.id === tool);
   return (
     <div className="tool-panel">
-      <h3>{tool === "camera" ? "Cámara" : tool === "addCamera" ? "Agregar cámara" : tool === "move" ? "Elegir" : (meta?.label ?? "Herramienta")}</h3>
+      <h3>{tool === "camera" ? "Cámara" : tool === "addCamera" ? "Agregar cámara" : tool === "mic" ? "Micrófono" : tool === "addMic" ? "Agregar micrófono" : tool === "move" ? "Elegir" : (meta?.label ?? "Herramienta")}</h3>
       {tool === "move" ? (
         <p className="hint">
           Tocá en la pantalla grande lo que quieras cambiar: un trazo o una imagen. Si hay varias cosas una arriba de otra, tocá de nuevo en el mismo lugar para elegir
@@ -375,6 +365,10 @@ export function ToolPanel() {
         <CameraToolPanel />
       ) : tool === "addCamera" ? (
         <AddCameraPanel />
+      ) : tool === "mic" ? (
+        <MicToolPanel />
+      ) : tool === "addMic" ? (
+        <AddMicPanel />
       ) : tool === "import" ? (
         <ImportPanel />
       ) : tool === "lasso" ? (

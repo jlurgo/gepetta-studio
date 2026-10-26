@@ -2,8 +2,10 @@ import { useMemo } from "react";
 import { useRemote } from "../capture/remote";
 import { type Rig, rigColor, useCamera } from "../state/camera";
 import { useLayers } from "../state/layers";
+import { type Mic, micColor, micLabel, useMics } from "../state/mics";
 import { type StageTool, usePaint } from "../state/paint";
 import { Icon, type IconName } from "./Icon";
+import { chooseMic } from "./MicPanel";
 
 export const TOOLS: { id: StageTool; icon: IconName; label: string; key: string }[] = [
   { id: "move", icon: "pointer", label: "Elegir", key: "V" },
@@ -75,11 +77,33 @@ function CameraTool({ rig, index }: { rig: Rig; index: number }) {
   );
 }
 
+function MicTool({ mic, index }: { mic: Mic; index: number }) {
+  const isActive = useMics((s) => s.activeMic === mic.id);
+  const micTool = usePaint((s) => s.tool === "mic");
+  const active = isActive && micTool;
+  const picking = useMics((s) => s.picking === mic.id);
+  const recording = useMics((s) => !!s.recording?.takes.some((t) => t.micId === mic.id));
+  const state = recording ? "grabando" : mic.error ? "con un problema" : mic.opening ? "abriendo" : mic.enabled ? "" : "no graba con «Grabar»";
+  return (
+    <button
+      className={`camera-tool${active ? " active" : ""}${picking ? " picking" : ""}${mic.enabled ? "" : " off"}${recording ? " recording" : ""}${mic.error ? " error" : ""}`}
+      style={{ ["--rig" as string]: micColor(index) }}
+      aria-pressed={active}
+      title={`${micLabel(mic)}${state ? ` (${state})` : ""}: tocalo para ver sus ajustes; otra vez, para elegir la celda donde graba`}
+      onClick={() => chooseMic(mic.id)}
+    >
+      <Icon name="mic" size={18} />
+      <span className="camera-tool-badge">{index + 1}</span>
+    </button>
+  );
+}
+
 /** The toolbar of the big picture (after Blender's Grease Pencil): moving pictures, cameras, and painting tools. */
 export function StageTools() {
   const tool = usePaint((s) => s.tool);
   const rigs = useCamera((s) => s.rigs);
   const free = useFreeCameras();
+  const mics = useMics((s) => s.mics);
   const [pick, importer, ...paint] = TOOLS;
   const button = (t: (typeof TOOLS)[number]) => (
     <button key={t.id} className={tool === t.id ? "active" : ""} aria-pressed={tool === t.id} title={`${t.label} (${t.key})`} onClick={() => showTool(t.id)}>
@@ -102,6 +126,14 @@ export function StageTools() {
           onClick={() => showTool("addCamera")}
         >
           <Icon name="camera" size={18} />
+          <span className="camera-tool-badge">+</span>
+        </button>
+        <span className="tool-sep" />
+        {mics.map((m, i) => (
+          <MicTool key={m.id} mic={m} index={i} />
+        ))}
+        <button className={`camera-tool add${tool === "addMic" ? " active" : ""}`} title="Agregar un micrófono" onClick={() => showTool("addMic")}>
+          <Icon name="mic" size={18} />
           <span className="camera-tool-badge">+</span>
         </button>
         <span className="tool-sep" />

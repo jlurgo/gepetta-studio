@@ -6,7 +6,8 @@ import { SFX_DRAG, insertSfx } from "../media/sfx";
 import { isSoundFile, peaksNow, useSoundPeaks } from "../media/sound";
 import { sampleSpectrum, spectrumImage, spectrumNow, useSpectra } from "../media/spectrum";
 import { useSound } from "../state/sound";
-import { toggleVoice, useVoice } from "../state/voice";
+import { type Mic, cancelPickingMic, micColor, micLabel, pickMic, setMicTarget, toggleRecording, useMicLevels, useMics } from "../state/mics";
+import { MicLive } from "./MicPanel";
 import { renameGroup, setLinked, toggleGroup, useGroups } from "../state/groups";
 import { playbackCell, useEditor } from "../state/editor";
 import { updateTrack, useLayers } from "../state/layers";
@@ -234,15 +235,19 @@ function SoundStrip({ filmId, clip, from, count, cw, fps }: { filmId: string; cl
   return <canvas ref={ref} className="tl-sound" style={{ left: (from - clip.start) * cw, width: count * cw, height: h }} />;
 }
 
-/** Records with the microphone while the film plays from the cursor (again, or Esc / the bar: stops). */
+/** Records with every enabled microphone while the film plays from their cells (again, or Esc / the bar: stops). */
 function VoiceButton() {
-  const recording = useVoice((s) => !!s.recording);
-  const level = useVoice((s) => s.level);
+  const recording = useMics((s) => !!s.recording);
+  const level = useMicLevels((s) => Math.max(0, ...Object.values(s)));
   return (
     <button
       className={`btn small ghost tl-add${recording ? " recording" : ""}`}
-      onClick={() => void toggleVoice()}
-      title={recording ? "Parar de grabar (Esc o la barra)" : "Grabar con el micrófono desde la celda del cursor, mientras la película se reproduce (voces, ruidos); con auriculares no se graba el sonido de la película"}
+      onClick={toggleRecording}
+      title={
+        recording
+          ? "Parar de grabar (Esc o la barra)"
+          : "Grabar con los micrófonos (cada uno desde su celda), mientras la película se reproduce; los micrófonos se agregan y se ajustan en la barra de herramientas, al lado de las cámaras"
+      }
     >
       <Icon name={recording ? "stop" : "mic"} size={14} /> {recording ? "Parar" : "Grabar"}
       {recording && <span className="tl-level" style={{ width: `${Math.round(level * 100)}%` }} aria-hidden />}
@@ -269,7 +274,7 @@ type Gesture =
   | { kind: "turn"; cx0: number; rot0: number; moved: boolean }
   | { kind: "length"; x0: number; dx: number }
   /** Dragging a camera's live cell (where its photos go) to another cell. */
-  | { kind: "live"; rig: string; x0: number; y0: number; moved: boolean; to: { track: TrackId; cell: number; v: number } | null };
+  | { kind: "live"; rig: string; mic?: boolean; x0: number; y0: number; moved: boolean; to: { track: TrackId; cell: number; v: number } | null };
 
 function loadZoom(): number {
   try {
@@ -311,6 +316,8 @@ export function Timeline() {
   const rigs = useCamera((s) => s.rigs);
   const activeRig = useCamera((s) => s.activeRig);
   const picking = useCamera((s) => s.picking);
+  const mics = useMics((s) => s.mics);
+  const micPicking = useMics((s) => s.picking);
   const span = useEditor((s) => s.span);
   const collapsed = useGroups((s) => s.collapsed);
   const picked = useGroups((s) => s.picked);
@@ -667,6 +674,12 @@ export function Timeline() {
       setHover(null);
       return;
     }
+    if (micPicking) {
+      // The same for a microphone.
+      if (p.track) pickMic({ track: p.track.id, cell: p.cell });
+      setHover(null);
+      return;
+    }
     // Picking the lasso's background plate: this click only does that.
     if (p.track && pickPlateAt(p.track.id, p.cell)) return;
     if (p.y < RULER_H) {
@@ -705,6 +718,13 @@ export function Timeline() {
       return;
     }
     if (!p.track) return;
+    // A microphone's live cell: dragging it records elsewhere.
+    const liveMic = mics.find((m) => m.target.track === p.track!.id && wrap(m.target.cell) === p.cell);
+    if (liveMic) {
+      capturePointer(e);
+      setGesture({ kind: "live", rig: liveMic.id, mic: true, x0: p.x, y0: p.y, moved: false, to: null });
+      return;
+    }
     // A camera's live cell: dragging it takes its photos elsewhere.
     const liveRig = rigs.find((r) => r.target.track === p.track!.id && wrap(r.target.cell) === p.cell);
     if (liveRig) {
@@ -752,7 +772,7 @@ export function Timeline() {
       const p = at(e);
       hovered = p.track && !(loop && p.v >= r + shown) ? { track: p.track.id, cell: p.cell } : null;
     }
-    if (picking) {
+    if (picking || micPicking) {
       const p = at(e);
       const next = p.track ? { track: p.track.id, cell: p.cell, v: p.v } : null;
       if (next?.track !== hover?.track || next?.v !== hover?.v) setHover(next);
@@ -822,6 +842,12 @@ export function Timeline() {
     }
     if (g.kind === "length") {
       if (g.dx) resizeAtEnd(g.dx);
+      return;
+    }
+    if (g.kind === "live" && g.mic) {
+      const mic = mics.find((m) => m.id === g.rig);
+      if (g.moved && g.to && mic) setMicTarget(mic.id, { track: g.to.track, cell: g.to.cell });
+      else if (!g.moved && p.track) useEditor.getState().moveTo(p.cell, p.track.id);
       return;
     }
     if (g.kind === "live") {
@@ -974,12 +1000,15 @@ export function Timeline() {
   }
 
   const pickIndex = rigs.findIndex((r) => r.id === picking);
-  const pickColor = rigColor(pickIndex);
+  const micPickIndex = mics.findIndex((m) => m.id === micPicking);
+  const pickColor = micPickIndex >= 0 ? micColor(micPickIndex) : rigColor(pickIndex);
+  const anyPicking = !!picking || micPickIndex >= 0;
 
   return (
     <div className="timeline-wrap">
       {picking && pickIndex >= 0 && <PickingBar index={pickIndex} rig={rigs[pickIndex]!} color={pickColor} />}
-      <div className={`timeline${picking ? " picking" : ""}${loop ? " drum" : ""}`} style={{ ["--thumb-aspect" as string]: aspect, ...(picking && { ["--rig" as string]: pickColor }) }}>
+      {micPickIndex >= 0 && <MicPickingBar index={micPickIndex} mic={mics[micPickIndex]!} color={pickColor} />}
+      <div className={`timeline${anyPicking ? " picking" : ""}${loop ? " drum" : ""}`} style={{ ["--thumb-aspect" as string]: aspect, ...(anyPicking && { ["--rig" as string]: pickColor }) }}>
         <div className="tl-heads" ref={headsRef} style={{ minHeight: height + 40 }}>
           <div className="tl-head ruler" style={{ height: RULER_H }}>
             <button className="icon-btn small" onClick={() => zoomBy(1 / 1.5)} title="Alejar (⌘ + rueda, o pellizcar en el pad)">
@@ -1230,6 +1259,26 @@ export function Timeline() {
               );
             }))}
 
+            {/* Each microphone in the cell it records from: what it hears now. */}
+            {laps.map((l) =>
+              mics.map((m, i) => {
+                if (m.id === micPicking || rowOf(m.target.track) < 0) return null;
+                const color = micColor(i);
+                const h = heightOf(m.target.track);
+                return (
+                  <div
+                    key={`mic-${l}-${m.id}`}
+                    className={`tl-rig tl-mic${m.enabled ? "" : " off"}`}
+                    style={{ left: wrap(m.target.cell) * cw + lapX(l), width: cw, top: topOf(m.target.track), height: h, borderColor: color }}
+                    title={`${micLabel(m)}: lo que graba va desde acá (arrastralo para llevarlo a otra celda)`}
+                  >
+                    <MicLive id={m.id} color={color} width={Math.max(4, cw - 4)} height={Math.max(4, h - 4)} bars={Math.max(3, Math.min(12, Math.floor(cw / 4)))} />
+                    <span style={{ background: color }}>{i + 1}</span>
+                  </div>
+                );
+              }),
+            )}
+
             {/* Dragging a camera's live cell: where it would go. */}
             {gesture?.kind === "live" && gesture.moved && gesture.to && (
               <div
@@ -1239,17 +1288,17 @@ export function Timeline() {
                   width: cw,
                   top: topOf(gesture.to.track),
                   height: heightOf(gesture.to.track),
-                  ["--rig" as string]: rigColor(rigs.findIndex((r) => r.id === gesture.rig)),
+                  ["--rig" as string]: gesture.mic ? micColor(mics.findIndex((m) => m.id === gesture.rig)) : rigColor(rigs.findIndex((r) => r.id === gesture.rig)),
                 }}
               >
-                <Icon name="camera" size={Math.min(18, cw - 6)} />
+                <Icon name={gesture.mic ? "mic" : "camera"} size={Math.min(18, cw - 6)} />
               </div>
             )}
 
             {/* While picking a camera's cell: where it would go. */}
-            {picking && hover && (
+            {anyPicking && hover && (
               <div className="tl-pick" style={{ left: hover.v * cw, width: cw, top: topOf(hover.track), height: heightOf(hover.track) }}>
-                <Icon name="camera" size={Math.min(18, cw - 6)} />
+                <Icon name={picking ? "camera" : "mic"} size={Math.min(18, cw - 6)} />
               </div>
             )}
 
@@ -1324,6 +1373,23 @@ export function Timeline() {
           }}
         />
       </div>
+    </div>
+  );
+}
+
+/** Says which microphone's cell is being picked, until one is (or Esc). */
+function MicPickingBar({ index, mic, color }: { index: number; mic: Mic; color: string }) {
+  return (
+    <div className="tl-picking-bar" style={{ ["--rig" as string]: color }}>
+      <span className="rig-dot" style={{ background: color }}>
+        {index + 1}
+      </span>
+      <span>
+        Tocá la celda de un track de sonido donde graba <strong>{micLabel(mic)}</strong>
+      </span>
+      <button className="btn small" onClick={cancelPickingMic}>
+        Cancelar (Esc)
+      </button>
     </div>
   );
 }

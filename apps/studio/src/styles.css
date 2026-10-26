@@ -2708,3 +2708,40 @@ input[type="range"] {
 .stage:has(.stage-sound) .focus-opacity {
   bottom: 66px;
 }
+
+/* A microphone's cell: what it hears now, over a dark cell. */
+.tl-mic {
+  border-style: solid;
+  background: rgb(20 18 30 / 0.85);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 0 1px;
+}
+
+.tl-mic.off {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.tl-mic canvas,
+.mic-hear canvas {
+  display: block;
+}
+
+.mic-hear {
+  position: relative;
+  align-self: flex-start;
+  padding-bottom: 6px;
+  border-radius: 6px;
+  background: #14121d;
+}
+
+.mic-level {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  border-radius: 2px;
+  transition: width 60ms linear;
+}

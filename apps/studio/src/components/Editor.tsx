@@ -45,7 +45,7 @@ import { FORMATS, formatOf, ratioLabel } from "./formats";
 import { Timeline, hoveredCell } from "./Timeline";
 import { groupPicked, ungroup, useGroups } from "../state/groups";
 import { useSound } from "../state/sound";
-import { stopVoice, useVoice } from "../state/voice";
+import { cancelPickingMic, startMics, stopMics, stopRecording as stopMicRecording, useMics } from "../state/mics";
 import { ToysDialog } from "./ToysDialog";
 
 const FPS_OPTIONS = [6, 8, 10, 12, 15, 24, 25, 30];
@@ -90,12 +90,13 @@ function useShortcuts() {
       else if (mod && key === "g" && e.shiftKey) ungroup(s.cursor.track);
       else if (mod && key === "g") groupPicked(groupCandidates());
       else if (mod) return;
-      else if ((e.key === " " || e.key === "Escape") && useVoice.getState().recording) void stopVoice();
+      else if ((e.key === " " || e.key === "Escape") && useMics.getState().recording) void stopMicRecording();
       else if (e.key === " ") spaceBar();
       else if (key === "i") goToLive();
       else if (e.key === "Enter") (s.playback ? s.pause() : s.play());
       else if (key === "p") (s.playback ? s.stop() : s.play(true));
       else if (e.key === "Escape" && useCamera.getState().picking) useCamera.getState().cancelPicking();
+      else if (e.key === "Escape" && useMics.getState().picking) cancelPickingMic();
       else if (e.key === "Escape" && useLasso.getState().pickingPlate) useLasso.setState({ pickingPlate: null });
       else if (e.key === "Escape" && s.playback) s.stop();
       else if (e.key === "ArrowLeft") (e.altKey ? nudgeSelected(-1) : moveCursor(-1, { extend: e.shiftKey }));
@@ -484,8 +485,10 @@ export function Editor() {
 
   useEffect(() => {
     void useCamera.getState().start();
+    void startMics();
     return () => {
       stopAllRecordings();
+      stopMics();
       useCamera.getState().stop();
     };
   }, []);
