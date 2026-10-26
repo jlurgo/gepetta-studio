@@ -11,6 +11,8 @@ export const TOOLS: { id: StageTool; icon: IconName; label: string; key: string 
   { id: "move", icon: "pointer", label: "Elegir", key: "V" },
   { id: "import", icon: "image", label: "Imágenes y videos", key: "M" },
   { id: "sound", icon: "sound", label: "Sonidos", key: "N" },
+  { id: "gain", icon: "gain", label: "Volumen del sonido", key: "" },
+  { id: "pan", icon: "pan", label: "Parlante del sonido (izquierda o derecha)", key: "" },
   { id: "draw", icon: "brush", label: "Dibujar", key: "B" },
   { id: "erase", icon: "eraser", label: "Borrar", key: "E" },
   { id: "fill", icon: "fill", label: "Rellenar", key: "F" },
@@ -105,9 +107,9 @@ export function StageTools() {
   const rigs = useCamera((s) => s.rigs);
   const free = useFreeCameras();
   const mics = useMics((s) => s.mics);
-  const [pick, importer, sound, ...paint] = TOOLS;
+  const [pick, importer, sound, gain, pan, ...paint] = TOOLS;
   const button = (t: (typeof TOOLS)[number]) => (
-    <button key={t.id} className={tool === t.id ? "active" : ""} aria-pressed={tool === t.id} title={`${t.label} (${t.key})`} onClick={() => showTool(t.id)}>
+    <button key={t.id} className={tool === t.id ? "active" : ""} aria-pressed={tool === t.id} title={t.key ? `${t.label} (${t.key})` : t.label} onClick={() => showTool(t.id)}>
       <Icon name={t.icon} size={18} />
     </button>
   );
@@ -118,6 +120,8 @@ export function StageTools() {
         {button(pick!)}
         {button(importer!)}
         {button(sound!)}
+        {button(gain!)}
+        {button(pan!)}
         <span className="tool-sep" />
         {rigs.map((r, i) => (
           <CameraTool key={r.id} rig={r} index={i} />

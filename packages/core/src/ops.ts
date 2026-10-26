@@ -1,6 +1,6 @@
 import { groupAtPlace, groupTracks, pruneGroups } from "./groups";
 import type { Clip, ClipId, FilmState, Group, GroupId, Stroke, Track, TrackId } from "./model";
-import { PHOTO_TRACK, clipEnd, clipFrom } from "./model";
+import { CELL_VALUES, type CellValues, PHOTO_TRACK, clipEnd, clipFrom } from "./model";
 
 /**
  * Every change to a film is one of these serializable operations. They address
@@ -174,10 +174,13 @@ function resliceSounds(film: FilmState, before: number): FilmState {
   const others = Object.fromEntries(Object.entries(film.clips).filter(([, c]) => !c.sound));
   const moved = sounds
     .map((c) => {
-      const gains = c.sound!.gains;
-      // Each cell's volume goes to the cells that now take its time.
+      // Each cell's volume and speaker go to the cells that now take its time.
       const length = Math.max(1, Math.round(c.length * k));
-      const sound = gains ? { ...c.sound!, gains: Array.from({ length }, (_, i) => gains[Math.floor(i / k)] ?? 1) } : c.sound;
+      const sound = { ...c.sound! };
+      for (const what of Object.keys(CELL_VALUES) as CellValues[]) {
+        const values = sound[what];
+        if (values) sound[what] = Array.from({ length }, (_, i) => values[Math.floor(i / k)] ?? CELL_VALUES[what]);
+      }
       return { ...c, sound, start: Math.round(c.start * k), length };
     })
     .sort((a, b) => a.start - b.start);

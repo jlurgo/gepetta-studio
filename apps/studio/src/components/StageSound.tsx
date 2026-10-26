@@ -96,7 +96,8 @@ export function StageSound() {
   const spectra = useSpectra((s) => s.version);
   const view = useSound((s) => s.view);
   const ref = useRef<HTMLCanvasElement>(null);
-  const hasSound = !!film?.tracks.some((t) => t.kind === "sound");
+  // Not while the cursor's sound shows big (see StageSoundView).
+  const hasSound = useEditor((s) => !!s.film?.tracks.some((t) => t.kind === "sound") && s.film.tracks.find((t) => t.id === s.cursor.track)?.kind !== "sound");
 
   useEffect(() => {
     const canvas = ref.current;

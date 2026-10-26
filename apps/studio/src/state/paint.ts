@@ -38,8 +38,8 @@ import { useEditor } from "./editor";
  * not darken where it crosses itself); meanwhile the stage shows the two together.
  */
 /** "camera": the active camera (see useCamera), as a tool among the others; "addCamera": choosing one more;
- * "mic", "addMic": the same for microphones (see useMics); "import": putting images and videos into cells; "sound": sound files and effects; "sculpt": reshaping the strokes of the picture at the cursor. */
-export type StageTool = "move" | "camera" | "addCamera" | "mic" | "addMic" | "import" | "sound" | "sculpt" | "lasso" | "draw" | "erase" | "fill" | "tint" | "shape" | "clone" | "picker";
+ * "mic", "addMic": the same for microphones (see useMics); "import": putting images and videos into cells; "sound": sound files and effects; "gain", "pan": painting each sound cell's volume or speaker on the stage; "sculpt": reshaping the strokes of the picture at the cursor. */
+export type StageTool = "move" | "camera" | "addCamera" | "mic" | "addMic" | "import" | "sound" | "gain" | "pan" | "sculpt" | "lasso" | "draw" | "erase" | "fill" | "tint" | "shape" | "clone" | "picker";
 export type BrushKind = "pencil" | "ink" | "marker" | "airbrush";
 export type ShapeKind = "line" | "box" | "ellipse";
 
@@ -174,8 +174,8 @@ export const usePaint = create<PaintState>((set, get) => ({
 }));
 
 /** The drawing tools work on the cell at the cursor (and hide the handles). */
-export function isPainting(tool: StageTool): tool is Exclude<StageTool, "move" | "camera" | "addCamera" | "mic" | "addMic" | "import" | "sound" | "sculpt" | "lasso"> {
-  return tool !== "move" && tool !== "camera" && tool !== "addCamera" && tool !== "mic" && tool !== "addMic" && tool !== "import" && tool !== "sound" && tool !== "sculpt" && tool !== "lasso";
+export function isPainting(tool: StageTool): tool is Exclude<StageTool, "move" | "camera" | "addCamera" | "mic" | "addMic" | "import" | "sound" | "gain" | "pan" | "sculpt" | "lasso"> {
+  return tool !== "move" && tool !== "camera" && tool !== "addCamera" && tool !== "mic" && tool !== "addMic" && tool !== "import" && tool !== "sound" && tool !== "gain" && tool !== "pan" && tool !== "sculpt" && tool !== "lasso";
 }
 
 /** Whether the tool has a width and a strength. */

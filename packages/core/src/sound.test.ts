@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { insertCellsOps, removeCellOps } from "./columns";
 import { cellIndex, stackAt } from "./layers";
 import { duckedAt, soundRuns, trackSounds, trackVolume } from "./sound";
-import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, cellGain, emptyFilm } from "./model";
+import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, cellGain, cellValue, emptyFilm } from "./model";
 import { type Op, applyOp } from "./ops";
 
 const media = { original: "w", proxy: "w", thumb: "w", width: 10, height: 10 };
@@ -97,6 +97,12 @@ describe("sound clips", () => {
     // Twice the speed: each cell's volume in two cells.
     f = applyOp(f, { type: "film.setFps", fps: 24 });
     expect(volumes(f).slice(0, 6)).toEqual([0, 0, 0.1, 0.1, 0.2, 0.2]);
+    // The speaker of each cell goes along the same way.
+    let p = film({ type: "clip.update", id: "a", patch: { sound: { ref, from: 0, pans: [-1, -0.5, 0, 0.5, 1] } } });
+    for (const op of removeCellOps(p, "s", 3)) p = applyOp(p, op);
+    const pans: number[] = [];
+    for (const c of Object.values(p.clips).filter((c) => c.sound).sort((x, y) => x.start - y.start)) for (let i = c.start; i < c.start + c.length; i++) pans.push(cellValue(c, "pans", i));
+    expect(pans.slice(0, 5)).toEqual([-1, 0, 0.5, 1, 0]);
     // Only a sound has a sound's volume.
     expect(() => applyOp(f, { type: "clip.update", id: "p", patch: { sound: { ref, from: 0 } } })).toThrow();
   });

@@ -2822,3 +2822,52 @@ input[type="range"] {
   background: none;
   border: 1px dashed var(--line);
 }
+
+/* The cursor's sound, big, over the lower part of the stage. */
+.stage-sound-view {
+  position: absolute;
+  left: 140px;
+  right: 16px;
+  bottom: 16px;
+  height: 46%;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: rgb(20 18 16 / 0.88);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.ssv-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.ssv-head span {
+  color: var(--muted);
+}
+
+.ssv-head small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.stage-sound-view canvas {
+  position: static;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.stage-sound-view canvas.painting {
+  cursor: crosshair;
+}
+
+.action-row.wrap {
+  flex-wrap: wrap;
+}

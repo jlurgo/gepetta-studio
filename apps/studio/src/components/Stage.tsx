@@ -24,6 +24,7 @@ import { useEffect, useRef, useState } from "react";
 import { ZOOM_MAX, ZOOM_MIN, fitStage, panBy, setStageLayout, useStageView, viewTransform, zoomBy } from "../state/stageView";
 import { Icon } from "./Icon";
 import { StageSound } from "./StageSound";
+import { StageSoundView } from "./StageSoundView";
 import { proxyCache } from "../media/cache";
 import { peekPicture } from "../media/composed";
 import type { LiveFrame } from "../capture/types";
@@ -89,7 +90,8 @@ function cellClip(film: FilmState) {
   const { cursor } = useEditor.getState();
   const track = film.tracks.find((t) => t.id === cursor.track);
   const clip = track?.visible ? clipAt(film, track.id, cursor.cell) : undefined;
-  if (!clip || !track || liveRigAt(track.id, cursor.cell)) return null;
+  // A sound is not a picture: it shows apart (see StageSoundView).
+  if (!clip || !track || clip.sound || liveRigAt(track.id, cursor.cell)) return null;
   return { clip, track };
 }
 
@@ -101,7 +103,7 @@ function focusedClip(film: FilmState) {
   const id = selectedClipId();
   const clip = id ? film.clips[id] : undefined;
   const { cursor } = useEditor.getState();
-  if (!clip || cursor.cell < clip.start || cursor.cell >= clip.start + clip.length) return null;
+  if (!clip || clip.sound || cursor.cell < clip.start || cursor.cell >= clip.start + clip.length) return null;
   const track = film.tracks.find((t) => t.id === clip.track);
   return track ? { clip, track } : null;
 }
@@ -1197,6 +1199,7 @@ export function Stage() {
       {!playing && <StageTools />}
       <ZoomControl />
       <StageSound />
+      <StageSoundView />
       {marker && <div className="focus-marker" style={{ left: marker.x, top: marker.y }} />}
       {!playing && magnified && <div className="stage-badge zoom">🔍 Lupa · arrastrá para mover</div>}
       {!playing && !hasSource && (

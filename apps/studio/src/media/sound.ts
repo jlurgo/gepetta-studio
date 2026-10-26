@@ -1,4 +1,4 @@
-import { type AssetId, type FilmState, type MediaRef, PEAKS_PER_SECOND, type SoundRef, type SoundRun, cellGain, clipEnd } from "@gepetta/core";
+import { type AssetId, type FilmState, type MediaRef, PEAKS_PER_SECOND, type SoundRef, type SoundRun, cellGain, cellValue, clipEnd } from "@gepetta/core";
 import { create } from "zustand";
 import { storage } from "../storage";
 import { storeBlob } from "./ingest";
@@ -164,7 +164,21 @@ export function playRun(ctx: BaseAudioContext, out: AudioNode, buffer: AudioBuff
   }
   gain.gain.setValueAtTime(volumeAt(end - EDGE), Math.max(start + EDGE, end - EDGE));
   gain.gain.linearRampToValueAtTime(0, end);
-  src.connect(gain).connect(out);
+  src.connect(gain);
+  // Each cell from its own speaker, when the clip has them.
+  if (sound.pans?.some((p) => p)) {
+    const panner = ctx.createStereoPanner();
+    const panAt = (t: number) => cellValue(run.clip, "pans", run.cell + Math.max(0, Math.min(cells - 1, Math.floor((t - when) * fps + 1e-6))));
+    panner.pan.setValueAtTime(panAt(start), start);
+    for (let i = 1; i < cells; i++) {
+      const t = when + i / fps;
+      const [a, b] = [panAt(t - EDGE), panAt(t)];
+      if (t - EDGE <= start || a === b) continue;
+      panner.pan.setValueAtTime(a, t - EDGE);
+      panner.pan.linearRampToValueAtTime(b, t + EDGE);
+    }
+    gain.connect(panner).connect(out);
+  } else gain.connect(out);
   src.start(start, offset + skip, length - skip);
   let stopped = false;
   return {

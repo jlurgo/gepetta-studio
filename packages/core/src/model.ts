@@ -139,22 +139,36 @@ export interface SoundSlice {
   from: number;
   /** The volume of each of the clip's cells, from its first (1 = as it is; cells past the end are 1). */
   gains?: number[];
+  /** The speaker of each of the clip's cells: -1 left, 1 right (cells past the end: 0, the middle). */
+  pans?: number[];
+}
+
+/** What each cell of a sound clip has of its own (see SoundSlice), and its value when it has none. */
+export const CELL_VALUES = { gains: 1, pans: 0 } as const;
+export type CellValues = keyof typeof CELL_VALUES;
+
+/** A value of a sound clip's cell. */
+export function cellValue(clip: Clip, what: CellValues, cell: number): number {
+  return clip.sound?.[what]?.[cell - clip.start] ?? CELL_VALUES[what];
 }
 
 /** The volume of a sound clip's cell (1 = as it is). */
 export function cellGain(clip: Clip, cell: number): number {
-  return clip.sound?.gains?.[cell - clip.start] ?? 1;
+  return cellValue(clip, "gains", cell);
 }
 
 /**
  * A clip moved `by` cells into what it shows: a sound clip starts that much
- * later in its sound, and its cells keep their volumes.
+ * later in its sound, and its cells keep their volumes and speakers.
  */
 export function clipFrom(clip: Clip, by: number, fps: number): Clip {
   if (!clip.sound || !by) return clip;
-  const { gains } = clip.sound;
-  const shifted = gains && (by > 0 ? gains.slice(by) : [...new Array<number>(-by).fill(1), ...gains]);
-  return { ...clip, sound: { ...clip.sound, from: clip.sound.from + by / fps, ...(gains && { gains: shifted }) } };
+  const sound = { ...clip.sound, from: clip.sound.from + by / fps };
+  for (const what of Object.keys(CELL_VALUES) as CellValues[]) {
+    const values = clip.sound[what];
+    if (values) sound[what] = by > 0 ? values.slice(by) : [...new Array<number>(-by).fill(CELL_VALUES[what]), ...values];
+  }
+  return { ...clip, sound };
 }
 
 export type StrokeTool = "draw" | "erase" | "tint" | "shape" | "fill" | "clone";

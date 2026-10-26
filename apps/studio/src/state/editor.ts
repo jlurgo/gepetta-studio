@@ -56,7 +56,7 @@ export function playbackCell(playback: Playback, fps: number, now = performance.
 
 export type SaveStatus = "saved" | "pending" | "error";
 
-interface EditorState {
+export interface EditorState {
   filmId: string | null;
   history: History | null;
   /** A converted film's original history, saved along so nothing is lost. */
