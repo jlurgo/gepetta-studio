@@ -15,16 +15,21 @@ interface SoundState {
   /** The sound of the cells around the one shown, under the picture. */
   strip: boolean;
   setStrip(on: boolean): void;
+  /** The sound effects library, beside the picture. */
+  effects: boolean;
+  setEffects(on: boolean): void;
 }
 
 const SCRUB_KEY = "gepetta.soundScrub";
 const STRIP_KEY = "gepetta.soundStrip";
+const EFFECTS_KEY = "gepetta.soundEffects";
 
-function load(key: string): boolean {
+function load(key: string, fallback = true): boolean {
   try {
-    return localStorage.getItem(key) !== "0";
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : v !== "0";
   } catch {
-    return true;
+    return fallback;
   }
 }
 
@@ -46,6 +51,11 @@ export const useSound = create<SoundState>((set) => ({
   setStrip: (strip) => {
     set({ strip });
     save(STRIP_KEY, strip);
+  },
+  effects: load(EFFECTS_KEY, false),
+  setEffects: (effects) => {
+    set({ effects });
+    save(EFFECTS_KEY, effects);
   },
 }));
 

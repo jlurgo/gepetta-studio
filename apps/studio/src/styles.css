@@ -447,6 +447,94 @@ input[type="range"] {
   width: 280px;
 }
 
+.side-panel.effects {
+  gap: 8px;
+}
+
+.fx-search {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.fx-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fx-cat {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fx-cat.active {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+.fx-group h4 {
+  margin: 6px 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.fx-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fx-list li {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  cursor: grab;
+}
+
+.fx-list li:hover {
+  background: var(--panel-2);
+}
+
+.fx-play {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fx-play span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fx-play small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.fx-add.icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
 .control select,
 .control input {
   color: var(--text);

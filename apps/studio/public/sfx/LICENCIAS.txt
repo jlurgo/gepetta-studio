@@ -1,0 +1,15 @@
+Efectos de sonido incluidos en Gepetta Studio.
+
+Todos tienen licencia CC0 (dominio público,
+https://creativecommons.org/publicdomain/zero/1.0/): se pueden usar,
+modificar y repartir sin pedir permiso ni nombrar a sus autores. Igual
+los nombramos, con gracias:
+
+- Kenney (kenney.nl), «Impact Sounds»: carpeta kenney-golpes
+- rubberduck (opengameart.org), «100 CC0 SFX»: carpeta cc0-100
+- Kenney (kenney.nl), «RPG Audio»: carpeta kenney-rpg
+- Kenney (kenney.nl), «Digital Audio»: carpeta kenney-digital
+- Kenney (kenney.nl), «Interface Sounds»: carpeta kenney-interfaz
+- Kenney (kenney.nl), «UI Audio»: carpeta kenney-ui
+- Kenney (kenney.nl), «Music Jingles»: carpeta kenney-jingles
+- Kenney (kenney.nl), «Voiceover Pack»: carpeta kenney-voces

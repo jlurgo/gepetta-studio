@@ -2,6 +2,7 @@ import { type CellIndex, type Clip, type ClipId, type GroupId, type Op, PEAKS_PE
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
 import { addTrack, extendFilm, resizeDrum, importImages, importSounds, moveClips, moveColumns, setCellImage, spanCells } from "../state/actions";
+import { SFX_DRAG, insertSfx } from "../media/sfx";
 import { isSoundFile, peaksNow, useSoundPeaks } from "../media/sound";
 import { useSound } from "../state/sound";
 import { toggleVoice, useVoice } from "../state/voice";
@@ -230,6 +231,16 @@ function VoiceButton() {
     >
       <Icon name={recording ? "stop" : "mic"} size={14} /> {recording ? "Parar" : "Grabar"}
       {recording && <span className="tl-level" style={{ width: `${Math.round(level * 100)}%` }} aria-hidden />}
+    </button>
+  );
+}
+
+/** Opens or closes the sound effects library. */
+function EffectsButton() {
+  const open = useSound((s) => s.effects);
+  return (
+    <button className={`btn small ghost tl-add${open ? " active" : ""}`} onClick={() => useSound.getState().setEffects(!open)} title="Efectos de sonido que vienen con la app: golpes, pasos, puertas, boings, música…">
+      <Icon name="sound" size={14} /> Efectos
     </button>
   );
 }
@@ -858,6 +869,12 @@ export function Timeline() {
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
     const p = at(e);
+    const sfx = e.dataTransfer.getData(SFX_DRAG);
+    if (sfx) {
+      const { name, file } = JSON.parse(sfx) as { name: string; file: string };
+      void insertSfx(name, file, { track: p.track?.id ?? cursor.track, cell: p.cell }).catch((err) => console.error("[gepetta] sound effect", err));
+      return;
+    }
     const files = [...e.dataTransfer.files];
     if (files.some(isSoundFile)) void importSounds(files.filter(isSoundFile), { track: p.track?.id ?? cursor.track, cell: p.cell });
     if (!p.track || !files.some((f) => !isSoundFile(f))) return;
@@ -1004,6 +1021,7 @@ export function Timeline() {
               <Icon name="sound" size={14} /> Sonido
             </button>
             <VoiceButton />
+            <EffectsButton />
           </div>
         </div>
 
