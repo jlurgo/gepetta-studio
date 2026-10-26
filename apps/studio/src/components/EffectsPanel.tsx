@@ -105,7 +105,7 @@ export function EffectsPanel() {
         </div>
       ))}
       <p className="hint">
-        Tocá un efecto para escucharlo; si tiene varias tomas, cada vez suena otra. Con <b>+</b> va a la celda del cursor, o arrastralo a la línea de tiempo. Son sonidos libres (CC0) de Kenney y OpenGameArt.
+        Tocá un efecto para escucharlo; si tiene varias tomas, cada vez suena otra. Con <b>+</b> va a la celda del cursor, o arrastralo a la línea de tiempo. Son sonidos libres (CC0) de Kenney, OpenGameArt y BigSoundBank.
       </p>
     </aside>
   );

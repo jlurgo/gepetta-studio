@@ -13,3 +13,13 @@ los nombramos, con gracias:
 - Kenney (kenney.nl), «UI Audio»: carpeta kenney-ui
 - Kenney (kenney.nl), «Music Jingles»: carpeta kenney-jingles
 - Kenney (kenney.nl), «Voiceover Pack»: carpeta kenney-voces
+- Kenney (kenney.nl), «Casino Audio»: carpeta kenney-casino
+- rubberduck (opengameart.org), «80 CC0 creature SFX»: carpeta cc0-criaturas
+- rubberduck (opengameart.org), «40 CC0 water / splash / slime SFX»: carpeta cc0-agua
+- rubberduck (opengameart.org), «100 CC0 SFX #2»: carpeta cc0-100b
+- rubberduck (opengameart.org), «100 CC0 metal and wood SFX»: carpeta cc0-madera-metal
+- rubberduck (opengameart.org), «30 CC0 SFX loops»: carpeta cc0-loops
+- opengameart.org, «202 More Sound Effects»: carpeta cc0-202
+- opengameart.org, «Ticking clock»: carpeta cc0-reloj
+- varios autores de opengameart.org (sonidos sueltos con licencia CC0): carpeta cc0-sueltos
+- Joseph Sardin (bigsoundbank.com): carpeta bigsoundbank
