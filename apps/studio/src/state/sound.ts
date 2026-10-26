@@ -1,5 +1,6 @@
-import { type CellIndex, type FilmState, type TrackId, cellIndex, clipEnd, clipIn, playedCell } from "@gepetta/core";
+import { type CellIndex, type FilmState, type Track, type TrackId, cellIndex, clipEnd, clipIn, playedCell } from "@gepetta/core";
 import { create } from "zustand";
+import { type Bus, busKey, busLevel, makeBus } from "../media/mixer";
 import { type Voice, audio, playRun, preloadSounds, soundBufferNow } from "../media/sound";
 import { type Playback, playbackCell, useEditor } from "./editor";
 
@@ -20,6 +21,9 @@ interface SoundState {
   /** How sound shows in cells: its loudness (a waveform) or its spectrum. */
   view: SoundView;
   setView(view: SoundView): void;
+  /** Sound tracks heard alone (none: all of them); only while working, not in exports. */
+  solo: TrackId[];
+  toggleSolo(track: TrackId): void;
 }
 
 const SCRUB_KEY = "gepetta.soundScrub";
@@ -61,6 +65,8 @@ export const useSound = create<SoundState>((set) => ({
     set({ strip });
     save(STRIP_KEY, strip);
   },
+  solo: [],
+  toggleSolo: (track) => set((s) => ({ solo: s.solo.includes(track) ? s.solo.filter((t) => t !== track) : [...s.solo, track] })),
   view: loadView(),
   setView: (view) => {
     set({ view });
@@ -73,6 +79,31 @@ export const useSound = create<SoundState>((set) => ({
 }));
 
 const hasSound = (film: FilmState) => film.tracks.some((t) => t.kind === "sound");
+
+/** Heard now: a sound track that sounds, and is soloed when some are. */
+function heard(track: Track): boolean {
+  const { solo } = useSound.getState();
+  return track.kind === "sound" && track.visible && (!solo.length || solo.includes(track.id));
+}
+
+/** Each sound track's bus on the speakers (made again when its settings change). */
+const buses = new Map<TrackId, { key: string; bus: Bus }>();
+
+function busFor(track: Track): Bus {
+  const key = busKey(track);
+  const had = buses.get(track.id);
+  if (had?.key === key) return had.bus;
+  had?.bus.dispose();
+  const ctx = audio();
+  const bus = makeBus(ctx, track, ctx.destination, true);
+  buses.set(track.id, { key, bus });
+  return bus;
+}
+
+/** How loud a sound track is playing now (0–1). */
+export function trackLevel(track: TrackId): number {
+  return busLevel(buses.get(track)?.bus);
+}
 
 /** Played this far ahead (s); checked this often (ms). */
 const AHEAD = 0.25;
@@ -115,7 +146,7 @@ function tick() {
     }
     for (const track of film.tracks) {
       if (track.kind !== "sound") continue;
-      const clip = track.visible ? clipIn(idx.get(track.id) ?? [], cell) : undefined;
+      const clip = heard(track) ? clipIn(idx.get(track.id) ?? [], cell) : undefined;
       const v = voices.get(track.id);
       // The run goes on.
       if (v && clip?.id === v.clipId && v.next === cell) {
@@ -130,7 +161,7 @@ function tick() {
       const buffer = soundBufferNow(filmId, clip.sound.ref);
       if (!buffer) continue;
       // Played to the clip's end, unless cut short by what comes next.
-      const voice = playRun(ctx, ctx.destination, buffer, { track: track.id, clip, at: 0, cell, count: clipEnd(clip) - cell }, fps, t, track.opacity * clip.opacity);
+      const voice = playRun(ctx, busFor(track).input, buffer, { track: track.id, clip, at: 0, cell, count: clipEnd(clip) - cell }, fps, t, clip.opacity);
       if (voice) voices.set(track.id, Object.assign(voice, { clipId: clip.id, next: cell + 1 }));
     }
     live.n++;
@@ -159,16 +190,18 @@ function scrub(cell: number) {
   scrubbing = [];
   const idx = indexOf(film);
   for (const track of film.tracks) {
-    if (track.kind !== "sound" || !track.visible) continue;
+    if (!heard(track)) continue;
     const clip = clipIn(idx.get(track.id) ?? [], cell);
     const buffer = clip?.sound && soundBufferNow(filmId, clip.sound.ref);
     if (!clip || !buffer) continue;
-    const v = playRun(ctx, ctx.destination, buffer, { track: track.id, clip, at: 0, cell, count: 1 }, film.settings.fps, ctx.currentTime, track.opacity * clip.opacity);
+    const v = playRun(ctx, busFor(track).input, buffer, { track: track.id, clip, at: 0, cell, count: 1 }, film.settings.fps, ctx.currentTime, clip.opacity);
     if (v) scrubbing.push(v);
   }
 }
 
 useEditor.subscribe((s, prev) => {
+  // A track's volume or place changed: heard at once, even while it plays.
+  if (s.film && s.film !== prev.film && s.film.tracks !== prev.film?.tracks) for (const t of s.film.tracks) buses.get(t.id)?.bus.update(t);
   if (s.film && s.filmId && (s.film !== prev.film || s.filmId !== prev.filmId) && hasSound(s.film)) preloadSounds(s.filmId, s.film);
   if (s.playback !== prev.playback) {
     if (s.playback && s.film) startLive(s.playback, s.film);

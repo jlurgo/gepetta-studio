@@ -52,7 +52,7 @@ export type Op =
 
 export type ClipPatch = Partial<Pick<Clip, "name" | "visible" | "opacity" | "transform" | "length" | "media" | "look" | "fade" | "seq" | "sound">>;
 export type StrokePatch = Partial<Omit<Stroke, "id" | "tool" | "layer">>;
-export type TrackPatch = Partial<Pick<Track, "name" | "visible" | "opacity" | "transform" | "exported">> & {
+export type TrackPatch = Partial<Pick<Track, "name" | "visible" | "opacity" | "transform" | "exported" | "pan">> & {
   /** null: out of every group. */
   group?: GroupId | null;
 };
@@ -354,6 +354,8 @@ function describePatch(patch: ClipPatch | TrackPatch, what: string): string {
       return `Fundido de ${what}`;
     case "sound":
       return "Volumen del sonido";
+    case "pan":
+      return "Izquierda o derecha";
     case "seq":
       return (patch as ClipPatch).seq ? `Poner ${what} en una secuencia` : `Sacar ${what} de su secuencia`;
     case "media":

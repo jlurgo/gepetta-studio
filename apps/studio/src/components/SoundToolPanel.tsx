@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { SFX_DRAG, type SfxCategory, type SfxSound, insertSfx, previewSfx, sfxCatalog } from "../media/sfx";
 import { importSounds } from "../state/actions";
 import { Icon } from "./Icon";
+import { Mixer } from "./Mixer";
+import { Section } from "./Section";
 
 /** Lower case, without accents: what a search compares. */
 const plain = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -33,8 +35,12 @@ export function SoundToolPanel() {
           e.target.value = "";
         }}
       />
-      <h4 className="fx-title">Efectos de sonido</h4>
-      <EffectsLibrary />
+      <Section title="Mezcla">
+        <Mixer />
+      </Section>
+      <Section title="Efectos de sonido">
+        <EffectsLibrary />
+      </Section>
     </div>
   );
 }

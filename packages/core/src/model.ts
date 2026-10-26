@@ -203,6 +203,8 @@ export interface Track {
   kind?: "sound";
   /** The innermost group it is in (see Group); none = at the top level. */
   group?: GroupId;
+  /** A sound track: from the left speaker (-1) to the right one (1); absent = both alike. */
+  pan?: number;
 }
 
 export type GroupId = string;

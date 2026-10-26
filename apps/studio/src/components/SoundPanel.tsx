@@ -1,5 +1,6 @@
 import { type Clip, cellGain, clipAt, clipEnd } from "@gepetta/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { makeBus } from "../media/mixer";
 import { audio, playRun, soundBuffer } from "../media/sound";
 import { sampleSpectrum, spectrumImage, spectrumNow, useSpectra } from "../media/spectrum";
 import { useEditor } from "../state/editor";
@@ -14,7 +15,9 @@ async function listen(clip: Clip) {
   const ctx = audio();
   const buffer = await soundBuffer(filmId, clip.sound.ref);
   const track = film.tracks.find((t) => t.id === clip.track);
-  playRun(ctx, ctx.destination, buffer, { track: clip.track, clip, at: 0, cell: clip.start, count: clip.length }, film.settings.fps, ctx.currentTime, (track?.opacity ?? 1) * clip.opacity);
+  // As it sounds in the film: through its track's volume and place.
+  const out = track ? makeBus(ctx, track, ctx.destination).input : ctx.destination;
+  playRun(ctx, out, buffer, { track: clip.track, clip, at: 0, cell: clip.start, count: clip.length }, film.settings.fps, ctx.currentTime, clip.opacity);
 }
 
 const SPECTRUM_W = 252;

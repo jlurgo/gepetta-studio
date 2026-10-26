@@ -2751,3 +2751,69 @@ input[type="range"] {
   border-radius: 2px;
   transition: width 60ms linear;
 }
+
+.mixer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mix-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px 8px;
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.mix-strip.quiet {
+  opacity: 0.55;
+}
+
+.mix-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mix-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.mix-solo {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mix-solo.on {
+  background: #ffd84a;
+  border-color: #ffd84a;
+  color: var(--accent-text);
+}
+
+.mix-meter {
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(0 0 0 / 0.35);
+  overflow: hidden;
+}
+
+.mix-meter span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--teal);
+}
