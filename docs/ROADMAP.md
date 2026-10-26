@@ -76,6 +76,7 @@
 - [x] Tracks de sonido: importar mp3, wav, ogg, m4a… («+ Sonido» o soltarlos en la línea de tiempo); cada celda es un pedacito del sonido y se edita como las imágenes (borrar, meter espacios, cortar, pegar, mover, vincular en grupos); suena al reproducir y al moverse de celda; sale en el video exportado; volumen y silenciar por track
 - [x] Micrófonos como las cámaras: varios a la vez (también cada entrada de una placa de sonido), cada uno con su celda en vivo en su track de sonido (muestra lo que escucha), volumen, limpieza (eco, ruido, volumen automático), escucharse y adelantar lo grabado; «Grabar» graba con todos mientras la película se reproduce
 - [x] Ver el espectro del sonido (celdas, tira y panel)
+- [x] Combinar sonidos: volumen por celda (dibujado con la herramienta «Sonidos», fundidos), mezcla por track (volumen, parlante, silenciar, solo, medidor) y por grupo, efectos de voz (ardilla, monstruo, robot, eco, teléfono, cueva), bajar la música cuando hablan, unir en un sonido
 - [x] Panel de cada sonido (nombre, volumen propio, escuchar, hasta el final) y tira de sonido debajo de la imagen
 - [x] Biblioteca de efectos de sonido («Efectos»): 313 sonidos libres (CC0) de Kenney, OpenGameArt y BigSoundBank en 14 categorías, con búsqueda; se arma con `apps/studio/scripts/sfx-library.mjs` (necesita ffmpeg con libopus)
 - Efectos de sonido online (buscar en Freesound u otras fuentes desde la app)

@@ -1,7 +1,8 @@
-import { type Group, type Track, groupChain } from "@gepetta/core";
+import { type Group, type Track, groupChain, groupTracks } from "@gepetta/core";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useEditor } from "../state/editor";
 import { updateTrack } from "../state/layers";
+import { mergeSounds } from "../state/merge";
 import { trackLevel, useSound } from "../state/sound";
 import { VOICE_EFFECTS } from "../media/voices";
 import { Icon } from "./Icon";
@@ -60,6 +61,16 @@ function GroupStrip({ group, depth, muted }: { group: Group; depth: number; mute
         </button>
       </div>
       <OpacitySlider key={`g-${group.id}`} what="Volumen del grupo" value={group.volume ?? 1} onCommit={(volume) => update({ volume })} />
+      <button
+        className="btn small ghost"
+        onClick={() => {
+          const film = useEditor.getState().film;
+          if (film) void mergeSounds(groupTracks(film, group.id).filter((t) => t.kind === "sound").map((t) => t.id), `Mezcla de ${group.name}`);
+        }}
+        title="Mezcla los sonidos del grupo en uno nuevo (como se oyen) y los silencia"
+      >
+        Unir el grupo en un sonido
+      </button>
     </div>
   );
 }
@@ -163,6 +174,15 @@ export function Mixer() {
           </Fragment>
         );
       })}
+      {sounds.length > 1 && (
+        <button
+          className="btn small"
+          onClick={() => void mergeSounds(sounds.map((t) => t.id), "Mezcla")}
+          title="Mezcla todos los tracks de sonido que suenan en uno nuevo, como se oyen (volúmenes, parlantes, efectos), y los silencia; sirve para ordenar o para llevar el sonido a otra película"
+        >
+          Unir todo en un sonido
+        </button>
+      )}
     </div>
   );
 }
