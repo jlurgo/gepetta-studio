@@ -1,4 +1,5 @@
-import type { Clip, ClipId, FilmState, Stroke, Track, TrackId } from "./model";
+import { groupAtPlace, groupTracks, pruneGroups } from "./groups";
+import type { Clip, ClipId, FilmState, Group, GroupId, Stroke, Track, TrackId } from "./model";
 import { PHOTO_TRACK, clipEnd } from "./model";
 
 /**
@@ -36,12 +37,26 @@ export type Op =
   | { type: "track.add"; track: Track }
   | { type: "track.remove"; trackId: TrackId }
   | { type: "track.update"; trackId: TrackId; patch: TrackPatch }
-  /** Moves a track to `index` in the stack (0 = bottom). */
-  | { type: "track.move"; trackId: TrackId; index: number };
+  /**
+   * Moves a track to `index` in the stack (0 = bottom). It goes into the group
+   * it lands inside of, or stays in its own if it lands next to its tracks.
+   */
+  | { type: "track.move"; trackId: TrackId; index: number }
+  /** Makes a group of these tracks and groups (all in `group.parent`), putting its tracks together where the top one is. */
+  | { type: "group.add"; group: Group; tracks?: TrackId[]; groups?: GroupId[] }
+  /** Undoes a group: what was in it stays where it is, in the group around it. */
+  | { type: "group.remove"; id: GroupId }
+  | { type: "group.update"; id: GroupId; patch: GroupPatch }
+  /** Moves a group's tracks together, to `index` among the other tracks (0 = bottom), as track.move does with one. */
+  | { type: "group.move"; id: GroupId; index: number };
 
 export type ClipPatch = Partial<Pick<Clip, "name" | "visible" | "opacity" | "transform" | "length" | "media" | "look" | "fade" | "seq">>;
 export type StrokePatch = Partial<Omit<Stroke, "id" | "tool" | "layer">>;
-export type TrackPatch = Partial<Pick<Track, "name" | "visible" | "opacity" | "transform" | "exported">>;
+export type TrackPatch = Partial<Pick<Track, "name" | "visible" | "opacity" | "transform" | "exported">> & {
+  /** null: out of every group. */
+  group?: GroupId | null;
+};
+export type GroupPatch = Partial<Pick<Group, "name" | "linked">>;
 export type OpType = Op["type"];
 
 export class OpError extends Error {}
@@ -56,6 +71,23 @@ function requireTrack(film: FilmState, id: TrackId) {
   const i = film.tracks.findIndex((t) => t.id === id);
   if (i < 0) throw new OpError("El track ya no existe");
   return i;
+}
+
+function requireGroup(film: FilmState, id: GroupId): Group {
+  const group = film.groups?.[id];
+  if (!group) throw new OpError("El grupo ya no existe");
+  return group;
+}
+
+/** `tracks` with the one at `index` put in the group its neighbors say (see groupAtPlace). */
+function settle(film: FilmState, tracks: Track[], index: number): Track[] {
+  const group = groupAtPlace(film, tracks, index);
+  const track = tracks[index]!;
+  if (group === track.group) return tracks;
+  const { group: _, ...rest } = track;
+  const out = tracks.slice();
+  out[index] = group ? { ...rest, group } : rest;
+  return out;
 }
 
 function moveItem<T>(items: T[], from: number, to: number): T[] {
@@ -197,14 +229,81 @@ export function applyOp(film: FilmState, op: Op): FilmState {
       const i = requireTrack(film, op.trackId);
       // Its pictures go with it.
       const clips = Object.fromEntries(Object.entries(film.clips).filter(([, c]) => c.track !== op.trackId));
-      return { ...film, clips, tracks: film.tracks.filter((_, j) => j !== i) };
+      return pruneGroups({ ...film, clips, tracks: film.tracks.filter((_, j) => j !== i) });
     }
     case "track.update": {
       const i = requireTrack(film, op.trackId);
-      return { ...film, tracks: film.tracks.map((t, j) => (j === i ? { ...t, ...op.patch } : t)) };
+      const { group, ...patch } = op.patch;
+      if (group) requireGroup(film, group);
+      const update = (t: Track): Track => {
+        const next = { ...t, ...patch };
+        if (group === null) delete next.group;
+        else if (group) next.group = group;
+        return next;
+      };
+      return pruneGroups({ ...film, tracks: film.tracks.map((t, j) => (j === i ? update(t) : t)) });
     }
-    case "track.move":
-      return { ...film, tracks: moveItem(film.tracks, requireTrack(film, op.trackId), op.index) };
+    case "track.move": {
+      const tracks = moveItem(film.tracks, requireTrack(film, op.trackId), op.index);
+      return pruneGroups({ ...film, tracks: settle(film, tracks, tracks.findIndex((t) => t.id === op.trackId)) });
+    }
+    case "group.add": {
+      const g = op.group;
+      if (film.groups?.[g.id]) throw new OpError("El grupo ya existe");
+      if (g.parent) requireGroup(film, g.parent);
+      const tracks = new Set(op.tracks ?? []);
+      const groups = new Set(op.groups ?? []);
+      for (const id of tracks) if (film.tracks[requireTrack(film, id)]!.group !== g.parent) throw new OpError("Esos tracks no están en el mismo grupo");
+      for (const id of groups) if (requireGroup(film, id).parent !== g.parent) throw new OpError("Esos grupos no están en el mismo grupo");
+      const { parent, ...plain } = g;
+      const all: Record<GroupId, Group> = { ...film.groups, [g.id]: parent ? g : plain };
+      for (const id of groups) all[id] = { ...all[id]!, parent: g.id };
+      let next: FilmState = { ...film, groups: all, tracks: film.tracks.map((t) => (tracks.has(t.id) ? { ...t, group: g.id } : t)) };
+      const members = groupTracks(next, g.id);
+      if (!members.length) throw new OpError("El grupo no tiene tracks");
+      // Its tracks together, where the top one was.
+      const top = next.tracks.indexOf(members.at(-1)!);
+      const inside = new Set(members);
+      const rest = next.tracks.filter((t) => !inside.has(t));
+      const at = next.tracks.slice(0, top).filter((t) => !inside.has(t)).length;
+      next = { ...next, tracks: [...rest.slice(0, at), ...members, ...rest.slice(at)] };
+      return next;
+    }
+    case "group.remove": {
+      const g = requireGroup(film, op.id);
+      const groups: Record<GroupId, Group> = {};
+      for (const [id, x] of Object.entries(film.groups!)) {
+        if (id === g.id) continue;
+        if (x.parent !== g.id) groups[id] = x;
+        else {
+          const { parent: _, ...rest } = x;
+          groups[id] = g.parent ? { ...rest, parent: g.parent } : rest;
+        }
+      }
+      const tracks = film.tracks.map((t) => {
+        if (t.group !== g.id) return t;
+        const { group: _, ...rest } = t;
+        return g.parent ? { ...rest, group: g.parent } : rest;
+      });
+      return { ...film, groups, tracks };
+    }
+    case "group.update": {
+      const g = requireGroup(film, op.id);
+      return { ...film, groups: { ...film.groups, [g.id]: { ...g, ...op.patch } } };
+    }
+    case "group.move": {
+      const g = requireGroup(film, op.id);
+      const members = groupTracks(film, g.id);
+      const inside = new Set(members);
+      const rest = film.tracks.filter((t) => !inside.has(t));
+      const at = Math.max(0, Math.min(rest.length, Math.round(op.index)));
+      // Which group it lands in: as a track in its place would (one standing for the group).
+      const stand: Track = { ...members[0]!, id: `group:${g.id}`, ...(g.parent ? { group: g.parent } : { group: undefined }) };
+      const parent = groupAtPlace(film, [...rest.slice(0, at), stand, ...rest.slice(at)], at);
+      const { parent: _, ...plain } = g;
+      const moved = parent ? { ...plain, parent } : plain;
+      return pruneGroups({ ...film, groups: { ...film.groups, [g.id]: moved }, tracks: [...rest.slice(0, at), ...members, ...rest.slice(at)] });
+    }
     default:
       // Ops from another version of the app.
       throw new OpError("Este paso no se reconoce");
@@ -233,6 +332,8 @@ function describePatch(patch: ClipPatch | TrackPatch, what: string): string {
       return (patch as ClipPatch).seq ? `Poner ${what} en una secuencia` : `Sacar ${what} de su secuencia`;
     case "media":
       return `Dibujar en ${what}`;
+    case "group":
+      return (patch as TrackPatch).group ? "Meter el track en un grupo" : "Sacar el track del grupo";
     case "exported":
       return (patch as TrackPatch).exported ? `Exportar ${what}` : `${what[0]!.toUpperCase()}${what.slice(1)} solo de referencia`;
     default:
@@ -283,6 +384,14 @@ export function describeOp(op: Op): string {
       return describePatch(op.patch, "track");
     case "track.move":
       return "Ordenar tracks";
+    case "group.add":
+      return `Agrupar en "${op.group.name}"`;
+    case "group.remove":
+      return "Desagrupar";
+    case "group.update":
+      return op.patch.linked !== undefined && Object.keys(op.patch).length === 1 ? (op.patch.linked ? "Vincular el grupo" : "Desvincular el grupo") : op.patch.name ? `Renombrar el grupo a "${op.patch.name}"` : "Cambiar el grupo";
+    case "group.move":
+      return "Mover el grupo";
     default:
       return "Paso desconocido";
   }

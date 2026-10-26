@@ -157,6 +157,23 @@ export interface Track {
   transform: Transform2D;
   /** false = reference only (e.g. a video to rotoscope): seen while animating, left out of exports. */
   exported: boolean;
+  /** The innermost group it is in (see Group); none = at the top level. */
+  group?: GroupId;
+}
+
+export type GroupId = string;
+
+/**
+ * Tracks kept together (a character and its hair, its voice…), inside another
+ * group or at the top level. Its tracks are always next to each other in the
+ * stack. A linked group is edited as one: putting cells in, taking them out,
+ * cutting, pasting or moving them in one of its tracks does it in all of them.
+ */
+export interface Group {
+  id: GroupId;
+  name: string;
+  parent?: GroupId;
+  linked: boolean;
 }
 
 export interface FilmSettings {
@@ -175,6 +192,8 @@ export interface FilmState {
   /** Bottom to top. */
   tracks: Track[];
   clips: Record<ClipId, Clip>;
+  /** Groups of tracks (films before groups have none). */
+  groups?: Record<GroupId, Group>;
   /** Cells in the film; grows to fit clips, and can be extended by hand. */
   length: number;
 }
