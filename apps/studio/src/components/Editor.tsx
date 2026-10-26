@@ -36,7 +36,6 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { ExportDialog } from "./ExportDialog";
 import { VersionsDialog } from "./VersionsDialog";
 import type { Release } from "../state/releases";
-import { EffectsPanel } from "./EffectsPanel";
 import { HistoryPanel } from "./HistoryPanel";
 import { fitStage, zoomBy } from "../state/stageView";
 import { Icon } from "./Icon";
@@ -44,7 +43,6 @@ import { Stage } from "./Stage";
 import { FORMATS, formatOf, ratioLabel } from "./formats";
 import { Timeline, hoveredCell } from "./Timeline";
 import { groupPicked, ungroup, useGroups } from "../state/groups";
-import { useSound } from "../state/sound";
 import { cancelPickingMic, startMics, stopMics, stopRecording as stopMicRecording, useMics } from "../state/mics";
 import { ToysDialog } from "./ToysDialog";
 
@@ -479,7 +477,6 @@ export function Editor() {
   /** A published version being exported again: the film as it was. */
   const [past, setPast] = useState<{ film: FilmState; release: Release } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const effectsOpen = useSound((s) => s.effects);
   useShortcuts();
   useGamepad();
 
@@ -506,11 +503,6 @@ export function Editor() {
         {historyOpen && (
           <ErrorBoundary label="el historial">
             <HistoryPanel />
-          </ErrorBoundary>
-        )}
-        {effectsOpen && (
-          <ErrorBoundary label="los efectos de sonido">
-            <EffectsPanel />
           </ErrorBoundary>
         )}
         <Stage />

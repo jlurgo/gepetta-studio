@@ -12,6 +12,7 @@ import { Icon } from "./Icon";
 import { ImportPanel } from "./ImportPanel";
 import { LassoPanel } from "./LassoPanel";
 import { MagnifyPanel, ZOOM_KEYS } from "./MagnifyPanel";
+import { SoundToolPanel } from "./SoundToolPanel";
 import { AddMicPanel, MicToolPanel } from "./MicPanel";
 import { PhoneConnect } from "./PhoneConnect";
 import { Section } from "./Section";
@@ -369,6 +370,8 @@ export function ToolPanel() {
         <MicToolPanel />
       ) : tool === "addMic" ? (
         <AddMicPanel />
+      ) : tool === "sound" ? (
+        <SoundToolPanel />
       ) : tool === "import" ? (
         <ImportPanel />
       ) : tool === "lasso" ? (

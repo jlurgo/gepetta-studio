@@ -447,8 +447,14 @@ input[type="range"] {
   width: 280px;
 }
 
-.side-panel.effects {
+.effects {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+
+.fx-title {
+  margin: 8px 0 0;
 }
 
 .fx-search {

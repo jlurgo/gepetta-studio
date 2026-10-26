@@ -106,6 +106,7 @@ export function MicToolPanel() {
   const index = useMics((s) => s.mics.findIndex((m) => m.id === s.activeMic));
   const devices = useMics((s) => s.devices);
   const recording = useMics((s) => !!s.recording);
+  const together = useMics((s) => s.mics.filter((m) => m.enabled).length);
   const level = useMicLevels((s) => (mic ? (s[mic.id] ?? 0) : 0));
   if (!mic) return <AddMicPanel />;
   const color = micColor(index);
@@ -126,11 +127,29 @@ export function MicToolPanel() {
         <MicLive id={mic.id} color={color} width={252} height={48} bars={36} />
         <span className="mic-level" style={{ width: `${Math.round(level * 100)}%`, background: level > 0.95 ? "#ff5b5b" : color }} />
       </div>
-      <Toggle checked={mic.enabled} onChange={(v) => setMicEnabled(mic.id, v)} label="Graba con «Grabar»" title="Los micrófonos habilitados graban juntos con «Grabar» (abajo de los tracks)" />
+      <Toggle checked={mic.enabled} onChange={(v) => setMicEnabled(mic.id, v)} label="Graba junto con los otros" title="«Grabar» graba con todos los micrófonos que tienen esto marcado" />
       <div className="action-row">
-        <button className={`btn small${recording ? " recording" : ""}`} onClick={() => void (recording ? stopRecording() : startRecording(mic.id))} disabled={!!mic.error || mic.opening}>
-          <Icon name={recording ? "stop" : "record"} size={14} /> {recording ? "Parar" : "Grabar solo con este"}
-        </button>
+        {recording ? (
+          <button className="btn small recording" onClick={() => void stopRecording()} title="Esc o la barra también paran">
+            <Icon name="stop" size={14} /> Parar
+          </button>
+        ) : (
+          <>
+            <button
+              className="btn small primary"
+              onClick={() => void startRecording()}
+              disabled={!together}
+              title="Graba con los micrófonos marcados, cada uno desde su celda, mientras la película se reproduce (Esc o la barra paran)"
+            >
+              <Icon name="record" size={14} /> Grabar{together > 1 ? ` (${together} micrófonos)` : ""}
+            </button>
+            {together > 1 && (
+              <button className="btn small" onClick={() => void startRecording(mic.id)} disabled={!!mic.error || mic.opening}>
+                Solo con este
+              </button>
+            )}
+          </>
+        )}
       </div>
       {mic.error && (
         <div className="panel-error">
@@ -214,7 +233,7 @@ export function AddMicPanel() {
   return (
     <div className="tool-options">
       <p className="hint">
-        Cada micrófono es una herramienta, como las cámaras: tiene su celda en un track de sonido, que se ve en vivo, y sus ajustes. «Grabar» graba con todos a la vez.
+        Cada micrófono es una herramienta, como las cámaras: tiene su celda en un track de sonido, que se ve en vivo, y sus ajustes. Varios graban juntos, cada uno en su track.
       </p>
       <div className="free-cameras">
         <button className="btn small" onClick={() => add(null)}>

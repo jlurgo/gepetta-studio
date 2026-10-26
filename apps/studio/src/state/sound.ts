@@ -20,14 +20,10 @@ interface SoundState {
   /** How sound shows in cells: its loudness (a waveform) or its spectrum. */
   view: SoundView;
   setView(view: SoundView): void;
-  /** The sound effects library, beside the picture. */
-  effects: boolean;
-  setEffects(on: boolean): void;
 }
 
 const SCRUB_KEY = "gepetta.soundScrub";
 const STRIP_KEY = "gepetta.soundStrip";
-const EFFECTS_KEY = "gepetta.soundEffects";
 const VIEW_KEY = "gepetta.soundView";
 
 function loadView(): SoundView {
@@ -38,12 +34,11 @@ function loadView(): SoundView {
   }
 }
 
-function load(key: string, fallback = true): boolean {
+function load(key: string): boolean {
   try {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : v !== "0";
+    return localStorage.getItem(key) !== "0";
   } catch {
-    return fallback;
+    return true;
   }
 }
 
@@ -74,11 +69,6 @@ export const useSound = create<SoundState>((set) => ({
     } catch {
       // Only a convenience.
     }
-  },
-  effects: load(EFFECTS_KEY, false),
-  setEffects: (effects) => {
-    set({ effects });
-    save(EFFECTS_KEY, effects);
   },
 }));
 

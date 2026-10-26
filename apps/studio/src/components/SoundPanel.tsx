@@ -68,7 +68,7 @@ export function SoundDetails({ clip: picked }: { clip: Clip | null }) {
   if (!clip?.sound) {
     return (
       <p className="hint">
-        Celda vacía de un track de sonido. Con «Sonido» (abajo de los tracks) importás música o efectos acá; con «Grabar», grabás con el micrófono mientras se reproduce la película.
+        Celda vacía de un track de sonido. Con la herramienta «Sonidos» ponés acá música o efectos; con un micrófono (en la barra, al lado de las cámaras) grabás mientras se reproduce la película.
       </p>
     );
   }

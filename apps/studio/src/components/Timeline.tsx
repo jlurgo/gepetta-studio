@@ -6,7 +6,7 @@ import { SFX_DRAG, insertSfx } from "../media/sfx";
 import { isSoundFile, peaksNow, useSoundPeaks } from "../media/sound";
 import { sampleSpectrum, spectrumImage, spectrumNow, useSpectra } from "../media/spectrum";
 import { useSound } from "../state/sound";
-import { type Mic, cancelPickingMic, micColor, micLabel, pickMic, setMicTarget, toggleRecording, useMicLevels, useMics } from "../state/mics";
+import { type Mic, cancelPickingMic, micColor, micLabel, pickMic, setMicTarget, useMics } from "../state/mics";
 import { MicLive } from "./MicPanel";
 import { renameGroup, setLinked, toggleGroup, useGroups } from "../state/groups";
 import { playbackCell, useEditor } from "../state/editor";
@@ -235,36 +235,6 @@ function SoundStrip({ filmId, clip, from, count, cw, fps }: { filmId: string; cl
   return <canvas ref={ref} className="tl-sound" style={{ left: (from - clip.start) * cw, width: count * cw, height: h }} />;
 }
 
-/** Records with every enabled microphone while the film plays from their cells (again, or Esc / the bar: stops). */
-function VoiceButton() {
-  const recording = useMics((s) => !!s.recording);
-  const level = useMicLevels((s) => Math.max(0, ...Object.values(s)));
-  return (
-    <button
-      className={`btn small ghost tl-add${recording ? " recording" : ""}`}
-      onClick={toggleRecording}
-      title={
-        recording
-          ? "Parar de grabar (Esc o la barra)"
-          : "Grabar con los micrófonos (cada uno desde su celda), mientras la película se reproduce; los micrófonos se agregan y se ajustan en la barra de herramientas, al lado de las cámaras"
-      }
-    >
-      <Icon name={recording ? "stop" : "mic"} size={14} /> {recording ? "Parar" : "Grabar"}
-      {recording && <span className="tl-level" style={{ width: `${Math.round(level * 100)}%` }} aria-hidden />}
-    </button>
-  );
-}
-
-/** Opens or closes the sound effects library. */
-function EffectsButton() {
-  const open = useSound((s) => s.effects);
-  return (
-    <button className={`btn small ghost tl-add${open ? " active" : ""}`} onClick={() => useSound.getState().setEffects(!open)} title="Efectos de sonido que vienen con la app: golpes, pasos, puertas, boings, música…">
-      <Icon name="sound" size={14} /> Efectos
-    </button>
-  );
-}
-
 type Gesture =
   | { kind: "move"; x0: number; y0: number; id: ClipId; ids: ClipId[]; moved: boolean; dx: number; dy: number }
   | { kind: "resize"; x0: number; id: ClipId; length0: number; dx: number }
@@ -340,7 +310,6 @@ export function Timeline() {
     setGestureState(g);
   };
   const cellInput = useRef<HTMLInputElement>(null);
-  const soundInput = useRef<HTMLInputElement>(null);
   const scrub = useSound((s) => s.scrub);
   const soundView = useSound((s) => s.view);
   const pickAt = useRef<{ track: string; cell: number } | null>(null);
@@ -1071,11 +1040,6 @@ export function Timeline() {
             <button className="btn small ghost tl-add" onClick={() => addTrack()} title="Agregar un track vacío arriba (imágenes y videos: herramienta «Imágenes y videos»)">
               <Icon name="plus" size={14} /> Track
             </button>
-            <button className="btn small ghost tl-add" onClick={() => soundInput.current?.click()} title="Importar música, efectos o voces (mp3, wav, ogg, m4a…) desde la celda del cursor; también se pueden soltar los archivos en la línea de tiempo">
-              <Icon name="sound" size={14} /> Sonido
-            </button>
-            <VoiceButton />
-            <EffectsButton />
           </div>
         </div>
 
@@ -1348,18 +1312,6 @@ export function Timeline() {
           </div>
         </div>
 
-        <input
-          ref={soundInput}
-          type="file"
-          accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus"
-          multiple
-          hidden
-          onChange={(e) => {
-            const files = [...(e.target.files ?? [])];
-            if (files.length) void importSounds(files);
-            e.target.value = "";
-          }}
-        />
         <input
           ref={cellInput}
           data-role="cell-image"

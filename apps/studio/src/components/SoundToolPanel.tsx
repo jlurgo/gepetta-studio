@@ -1,17 +1,50 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SFX_DRAG, type SfxCategory, type SfxSound, insertSfx, previewSfx, sfxCatalog } from "../media/sfx";
-import { useSound } from "../state/sound";
+import { importSounds } from "../state/actions";
 import { Icon } from "./Icon";
 
 /** Lower case, without accents: what a search compares. */
 const plain = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 /**
+ * The «Sonidos» tool: a sound file (music, voices, effects) into the
+ * cursor's cell, and the sound effects that come with the app.
+ */
+export function SoundToolPanel() {
+  const input = useRef<HTMLInputElement>(null);
+  return (
+    <div className="tool-options">
+      <button className="btn small" onClick={() => input.current?.click()}>
+        <Icon name="import" size={14} /> Importar un sonido…
+      </button>
+      <p className="hint">
+        Música, voces o efectos (mp3, wav, ogg, m4a…): van desde la celda del cursor, en su track de sonido o en uno nuevo. También podés soltar los archivos en la línea de
+        tiempo. Para grabar, agregá un micrófono en la barra (al lado de las cámaras).
+      </p>
+      <input
+        ref={input}
+        type="file"
+        accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          if (files.length) void importSounds(files);
+          e.target.value = "";
+        }}
+      />
+      <h4 className="fx-title">Efectos de sonido</h4>
+      <EffectsLibrary />
+    </div>
+  );
+}
+
+/**
  * The sound effects that come with the app: touching one plays it (each time
  * another take, when it has several); «+» or dragging it to the timeline puts
  * the take last heard in the film.
  */
-export function EffectsPanel() {
+function EffectsLibrary() {
   const [categories, setCategories] = useState<SfxCategory[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [category, setCategory] = useState("");
@@ -53,13 +86,7 @@ export function EffectsPanel() {
   }
 
   return (
-    <aside className="side-panel history effects">
-      <div className="row spread">
-        <h3>Efectos de sonido</h3>
-        <button className="icon-btn" onClick={() => useSound.getState().setEffects(false)} title="Cerrar">
-          <Icon name="close" size={18} />
-        </button>
-      </div>
+    <div className="effects">
       <input className="fx-search" type="search" placeholder="Buscar (puerta, pasos, boing…)" value={query} onChange={(e) => setQuery(e.target.value)} />
       {!query.trim() && categories && (
         <div className="fx-cats">
@@ -107,6 +134,6 @@ export function EffectsPanel() {
       <p className="hint">
         Tocá un efecto para escucharlo; si tiene varias tomas, cada vez suena otra. Con <b>+</b> va a la celda del cursor, o arrastralo a la línea de tiempo. Son sonidos libres (CC0) de Kenney, OpenGameArt y BigSoundBank.
       </p>
-    </aside>
+    </div>
   );
 }
