@@ -1,0 +1,70 @@
+import { describe, expect, it } from "vitest";
+import { insertCellsOps, removeCellOps } from "./columns";
+import { stackAt } from "./layers";
+import { type Clip, type FilmState, IDENTITY_TRANSFORM, PHOTO_TRACK, emptyFilm } from "./model";
+import { type Op, applyOp } from "./ops";
+
+const media = { original: "w", proxy: "w", thumb: "w", width: 10, height: 10 };
+const ref = { original: "snd", peaks: "pk", duration: 5 };
+
+const clip = (id: string, track: string, start: number, length: number, from?: number): Clip => ({
+  id,
+  track,
+  start,
+  length,
+  media,
+  name: id,
+  visible: true,
+  opacity: 1,
+  transform: IDENTITY_TRANSFORM,
+  ...(from !== undefined && { sound: { ref, from } }),
+});
+
+/** A sound track "s" with a 10-cell sound from cell 2, and a picture at cell 4. */
+function film(...ops: Op[]): FilmState {
+  let f = emptyFilm({ name: "t", fps: 12, width: 160, height: 90 });
+  f = applyOp(f, { type: "track.add", track: { id: "s", name: "Sonido", kind: "sound", visible: true, opacity: 1, transform: IDENTITY_TRANSFORM, exported: true } });
+  f = applyOp(f, { type: "clip.place", clips: [clip("a", "s", 2, 10, 0), clip("p", PHOTO_TRACK, 4, 1)] });
+  for (const op of ops) f = applyOp(f, op);
+  return f;
+}
+
+const sounds = (f: FilmState) =>
+  Object.values(f.clips)
+    .filter((c) => c.sound)
+    .sort((a, b) => a.start - b.start)
+    .map((c) => `${c.start}+${c.length}@${Math.round(c.sound!.from * 12)}`);
+
+describe("sound clips", () => {
+  it("are slices of their sound: taking a cell out drops that slice", () => {
+    let f = film();
+    for (const op of removeCellOps(f, "s", 5)) f = applyOp(f, op);
+    // Cells 2–4 are slices 0–2; slice 3 is gone; 5–10 are slices 4–9.
+    expect(sounds(f)).toEqual(["2+3@0", "5+6@4"]);
+  });
+
+  it("an empty cell put in splits the sound, which goes on after it", () => {
+    let f = film();
+    for (const op of insertCellsOps(f, "s", 4, 2)) f = applyOp(f, op);
+    expect(sounds(f)).toEqual(["2+2@0", "6+8@2"]);
+  });
+
+  it("moving part of a sound takes those slices", () => {
+    const f = film({ type: "cells.move", start: 6, length: 3, to: 20, tracks: ["s"] });
+    expect(sounds(f)).toEqual(["2+4@0", "9+3@7", "20+3@4"]);
+  });
+
+  it("keeps its moment and length in seconds when the speed changes", () => {
+    const f = film({ type: "film.setFps", fps: 24 });
+    expect(Object.values(f.clips).find((c) => c.sound)).toMatchObject({ start: 4, length: 20, sound: { from: 0 } });
+    // Pictures keep their cells.
+    expect(f.clips.p).toMatchObject({ start: 4, length: 1 });
+  });
+
+  it("is not drawn, and only goes in sound tracks", () => {
+    const f = film();
+    expect(stackAt(f, 4).map((s) => s.clipId)).toEqual(["p"]);
+    expect(() => applyOp(f, { type: "clip.place", clips: [clip("x", "s", 20, 1)] })).toThrow();
+    expect(() => applyOp(f, { type: "clip.place", clips: [clip("y", PHOTO_TRACK, 20, 1, 0)] })).toThrow();
+  });
+});

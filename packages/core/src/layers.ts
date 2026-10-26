@@ -93,7 +93,8 @@ export function stackAt(film: FilmState, cell: number, options: StackOptions = {
   const index = options.index ?? cellIndex(film);
   const out: StackItem[] = [];
   for (const track of film.tracks) {
-    if (!track.visible || (options.exportOnly && !track.exported)) continue;
+    // Sound is heard, not drawn.
+    if (!track.visible || track.kind === "sound" || (options.exportOnly && !track.exported)) continue;
     if (options.tracks && !options.tracks.includes(track.id)) continue;
     const clip = clipIn(index.get(track.id) ?? [], cell);
     if (!clip || !clip.visible) continue;

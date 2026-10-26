@@ -1,6 +1,6 @@
 import { groupAtPlace, groupTracks, pruneGroups } from "./groups";
 import type { Clip, ClipId, FilmState, Group, GroupId, Stroke, Track, TrackId } from "./model";
-import { PHOTO_TRACK, clipEnd } from "./model";
+import { PHOTO_TRACK, clipEnd, clipFrom } from "./model";
 
 /**
  * Every change to a film is one of these serializable operations. They address
@@ -107,7 +107,7 @@ function checkPlacement(c: Pick<Clip, "start" | "length">) {
  * trimmed, a clip across both edges is split. The split-off part gets an id
  * derived from the cut, so replaying the history gives the same ids.
  */
-function carve(clips: Record<ClipId, Clip>, track: TrackId, start: number, end: number, keep: Set<ClipId>): Record<ClipId, Clip> {
+function carve(clips: Record<ClipId, Clip>, track: TrackId, start: number, end: number, keep: Set<ClipId>, fps: number): Record<ClipId, Clip> {
   const out: Record<ClipId, Clip> = {};
   for (const c of Object.values(clips)) {
     if (c.track !== track || keep.has(c.id) || clipEnd(c) <= start || c.start >= end) {
@@ -117,7 +117,7 @@ function carve(clips: Record<ClipId, Clip>, track: TrackId, start: number, end: 
     if (c.start < start) out[c.id] = { ...c, length: start - c.start };
     if (clipEnd(c) > end) {
       const id = c.start < start ? `${c.id}@${end}` : c.id;
-      out[id] = { ...c, id, start: end, length: clipEnd(c) - end };
+      out[id] = { ...clipFrom(c, end - c.start, fps), id, start: end, length: clipEnd(c) - end };
     }
   }
   return out;
@@ -129,8 +129,9 @@ function place(film: FilmState, placed: Clip[]): FilmState {
   let clips = film.clips;
   for (const c of placed) {
     checkPlacement(c);
-    requireTrack(film, c.track);
-    clips = carve(clips, c.track, c.start, clipEnd(c), ids);
+    const track = film.tracks[requireTrack(film, c.track)]!;
+    if ((track.kind === "sound") !== !!c.sound) throw new OpError(c.sound ? "El sonido va en un track de sonido" : "Las imágenes no van en un track de sonido");
+    clips = carve(clips, c.track, c.start, clipEnd(c), ids, film.settings.fps);
   }
   clips = { ...clips };
   let length = film.length;
@@ -155,11 +156,24 @@ function lift(film: FilmState, start: number, end: number, tracks?: TrackId[]): 
     const s = Math.max(start, c.start);
     const e = Math.min(end, clipEnd(c));
     const whole = s === c.start && e === clipEnd(c);
-    pieces.push({ ...c, id: whole ? c.id : `${c.id}~${s}`, start: s, length: e - s });
+    pieces.push({ ...clipFrom(c, s - c.start, film.settings.fps), id: whole ? c.id : `${c.id}~${s}`, start: s, length: e - s });
   }
   let clips = film.clips;
-  for (const t of film.tracks) if (inTracks(t.id)) clips = carve(clips, t.id, start, end, new Set());
+  for (const t of film.tracks) if (inTracks(t.id)) clips = carve(clips, t.id, start, end, new Set(), film.settings.fps);
   return { film: { ...film, clips }, pieces };
+}
+
+/**
+ * After a change of speed, sound clips are cut again so that they last as
+ * long as before and start at the same moment (pictures keep their cells).
+ */
+function resliceSounds(film: FilmState, before: number): FilmState {
+  const k = film.settings.fps / before;
+  const sounds = Object.values(film.clips).filter((c) => c.sound);
+  if (k === 1 || !sounds.length) return film;
+  const others = Object.fromEntries(Object.entries(film.clips).filter(([, c]) => !c.sound));
+  const moved = sounds.map((c) => ({ ...c, start: Math.round(c.start * k), length: Math.max(1, Math.round(c.length * k)) })).sort((a, b) => a.start - b.start);
+  return place({ ...film, clips: others }, moved);
 }
 
 function withClip(film: FilmState, clip: Clip): FilmState {
@@ -173,7 +187,7 @@ export function applyOp(film: FilmState, op: Op): FilmState {
       return { ...film, settings: { ...film.settings, name: op.name } };
     case "film.setFps":
       if (!(op.fps > 0)) throw new OpError("fps inválido");
-      return { ...film, settings: { ...film.settings, fps: op.fps } };
+      return resliceSounds({ ...film, settings: { ...film.settings, fps: op.fps } }, film.settings.fps);
     case "film.setSize":
       return { ...film, settings: { ...film.settings, width: op.width, height: op.height } };
     case "film.setLoop":

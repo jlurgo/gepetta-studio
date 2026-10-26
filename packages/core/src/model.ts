@@ -113,6 +113,36 @@ export interface Clip {
    * drawing), changed together from the sequence's details.
    */
   seq?: string;
+  /**
+   * A sound clip (in a sound track): its cells are slices of the sound one
+   * after another, each 1/fps seconds long; the first starts `from` seconds
+   * into it. `media` is then a picture of its waveform.
+   */
+  sound?: SoundSlice;
+}
+
+/** A sound file of the film and what is known about it. */
+export interface SoundRef {
+  original: AssetId;
+  /** Loudness every 1/PEAKS_PER_SECOND seconds (0–255), to draw it. */
+  peaks: AssetId;
+  /** Seconds. */
+  duration: number;
+}
+
+/** Peaks kept per second of sound (see SoundRef.peaks). */
+export const PEAKS_PER_SECOND = 240;
+
+export interface SoundSlice {
+  ref: SoundRef;
+  /** Seconds into the sound where the clip's first cell starts. */
+  from: number;
+}
+
+/** A clip moved `by` cells into what it shows: a sound clip starts that much later in its sound. */
+export function clipFrom(clip: Clip, by: number, fps: number): Clip {
+  if (!clip.sound || !by) return clip;
+  return { ...clip, sound: { ...clip.sound, from: clip.sound.from + by / fps } };
 }
 
 export type StrokeTool = "draw" | "erase" | "tint" | "shape" | "fill" | "clone";
@@ -157,6 +187,8 @@ export interface Track {
   transform: Transform2D;
   /** false = reference only (e.g. a video to rotoscope): seen while animating, left out of exports. */
   exported: boolean;
+  /** What its cells hold: pictures (absent) or sound (slices of a sound file, see Clip.sound). */
+  kind?: "sound";
   /** The innermost group it is in (see Group); none = at the top level. */
   group?: GroupId;
 }
