@@ -302,7 +302,8 @@ export const useEditor = create<EditorState>((set, get) => {
 
     moveTo(cell, track, along = false) {
       const film = get().film;
-      const at = Math.max(0, cell);
+      // Up to the cell after the end (where the next picture goes), never into cells that aren't there.
+      const at = film && !film.settings.loop ? Math.min(Math.max(0, cell), film.length) : Math.max(0, cell);
       const cursor = { track: track ?? get().cursor.track, cell: film ? wrapCell(film, at) : at };
       // Moving on by itself (shooting, recording) lets picked cells go.
       set({ cursor, cursorAlong: along, playback: null, ...(along && { span: null }) });

@@ -37,8 +37,8 @@ const rowHeight = (row: TimelineRow) => (row.kind === "track" ? TRACK_H : row.co
 const MIN_CW = 4;
 const MAX_CW = 240;
 const ZOOM_KEY = "gepetta.timelineZoom";
-/** Empty cells shown past the end, to place pictures there. */
-const TAIL_SECONDS = 2;
+/** Cells shown past the end: just the next one, where new pictures go (photos, a new drawing). */
+const NEXT_CELLS = 1;
 
 const mod = (v: number, n: number) => ((v % n) + n) % n;
 
@@ -480,7 +480,9 @@ export function Timeline() {
   const viewCells = Math.max(1, Math.ceil(scroll.width / cw));
   /** The whole drum fits: it shows once, with room after it to make it longer. */
   const whole = loop && period < viewCells;
-  const cells = loop ? period : film.length + TAIL_SECONDS * fps;
+  const cells = loop ? period : film.length + NEXT_CELLS;
+  /** Rows end where the film does (the next cell is drawn apart); a loop's drum fills the view. */
+  const rowWidth = loop ? undefined : film.length * cw;
   const firstCell = loop ? r : Math.max(0, Math.floor(scroll.left / cw) - 1);
   /** Cells of the drum on screen: all of it, or as many whole ones as fit. Its end is a fixed mark after them. */
   const shown = loop ? (whole ? period : Math.max(1, Math.min(period, Math.floor(scroll.width / cw)))) : 0;
@@ -538,7 +540,8 @@ export function Timeline() {
     const shown = rows[row];
     // A closed group's row stands for its top track.
     const track = !shown || y >= height ? null : shown.kind === "track" ? shown.track : shown.collapsed ? film.tracks.find((t) => t.id === shown.tracks.at(-1)) ?? null : null;
-    return { x, y, v, cell: wrap(v), row, track };
+    // Past the end only the next cell exists (where new pictures go).
+    return { x, y, v, cell: loop ? wrap(v) : Math.min(v, film.length), row, track };
   };
 
   // Results row: one box per run of cells that look the same (empty cells get none).
@@ -1130,11 +1133,18 @@ export function Timeline() {
                 <div
                   key={row.track.id}
                   className={`tl-row${row.track.id === cursor.track ? " current" : ""}${row.track.visible ? "" : " off"}`}
-                  style={{ top: tops[i], height: TRACK_H, backgroundSize: `${cw}px 100%` }}
+                  style={{ top: tops[i], height: TRACK_H, backgroundSize: `${cw}px 100%`, ...(rowWidth !== undefined && { right: "auto", width: rowWidth }) }}
                 />
               ) : (
-                <div key={`g:${row.group.id}`} className={`tl-row group${row.collapsed ? " collapsed" : ""}`} style={{ top: tops[i], height: rowHeight(row), backgroundSize: `${cw}px 100%` }} />
+                <div key={`g:${row.group.id}`} className={`tl-row group${row.collapsed ? " collapsed" : ""}`} style={{ top: tops[i], height: rowHeight(row), backgroundSize: `${cw}px 100%`, ...(rowWidth !== undefined && { right: "auto", width: rowWidth }) }} />
               ),
+            )}
+            {!loop && (
+              <div
+                className="tl-next"
+                style={{ left: film.length * cw, width: cw, top: rowsTop, height: height - rowsTop }}
+                title="La celda siguiente: lo nuevo va acá (la próxima foto, un dibujo nuevo). La película termina antes."
+              />
             )}
 
             {/* A closed group: a mark in each cell for each of its tracks with a picture there. */}

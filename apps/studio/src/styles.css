@@ -1057,6 +1057,15 @@ input[type="range"] {
   background-color: color-mix(in srgb, var(--panel) 60%, transparent);
 }
 
+/* The cell after the film's end: not part of it yet, where the next picture goes. */
+.tl-next {
+  position: absolute;
+  border: 1px dashed var(--muted);
+  border-radius: 6px;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 .tl-row.off {
   opacity: 0.4;
 }
