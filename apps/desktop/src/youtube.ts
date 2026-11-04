@@ -1,11 +1,13 @@
-import { ipcMain, shell } from "electron";
+import { type BrowserWindow, ipcMain, shell } from "electron";
 import { Innertube } from "youtubei.js";
 import { videoId } from "./youtubeLink";
+import { YtDlpError, downloadYouTube } from "./ytdlp";
 
 /**
- * Looking for videos on YouTube from the app (a search, or a pasted link),
- * to watch them in the browser. The app does not download them: that is up
- * to whoever has the right to, and the file is imported as any other video.
+ * Looking for videos on YouTube from the app (a search, or a pasted link) to
+ * watch them in the browser, and downloading one (with yt-dlp, see ytdlp.ts)
+ * to import it as any other video. Downloading is up to whoever has the right
+ * to use the video.
  */
 export interface YouTubeVideo {
   id: string;
@@ -17,12 +19,16 @@ export interface YouTubeVideo {
   thumb: string | null;
 }
 
-let client: Promise<Innertube> | null = null;
+/** An error whose (Spanish) message is meant to be shown to the user. */
+export class YouTubeError extends Error {}
+
+// Searching does not need the player, so it is turned off (faster to start).
+let searchClient: Promise<Innertube> | null = null;
 
 function youtube(): Promise<Innertube> {
-  client ??= Innertube.create({ retrieve_player: false });
-  client.catch(() => (client = null));
-  return client;
+  searchClient ??= Innertube.create({ retrieve_player: false });
+  searchClient.catch(() => (searchClient = null));
+  return searchClient;
 }
 
 async function thumbData(url: string | undefined): Promise<string | null> {
@@ -61,10 +67,43 @@ export async function searchYouTube(query: string): Promise<YouTubeVideo[]> {
   return Promise.all(videos.map(async (v) => ({ ...v, thumb: await thumbData(v.thumb) })));
 }
 
-export function registerYouTubeIpc() {
+/**
+ * A quick, best-effort check before handing a video to yt-dlp: a live stream
+ * has no fixed file to download, so stop early with a clear message instead of
+ * starting a download that never ends. Anything else is left to yt-dlp.
+ */
+async function assertDownloadable(id: string): Promise<void> {
+  try {
+    const yt = await youtube();
+    const b = (await yt.getBasicInfo(id)).basic_info;
+    if (b.is_live || b.is_upcoming) throw new YouTubeError("Es una transmisión en vivo: no se puede bajar como archivo de video.");
+  } catch (e) {
+    if (e instanceof YouTubeError) throw e;
+    // Could not check (no internet, YouTube changed): let yt-dlp try and report.
+  }
+}
+
+export function registerYouTubeIpc(getWindow: () => BrowserWindow | null) {
   ipcMain.handle("youtube:search", (_e, query: unknown) => (typeof query === "string" && query.trim() ? searchYouTube(query) : []));
   // Only YouTube's own page for that video, never another address.
   ipcMain.handle("youtube:open", (_e, id: unknown) => {
     if (typeof id === "string" && /^[\w-]{11}$/.test(id)) return shell.openExternal(`https://www.youtube.com/watch?v=${id}`);
+  });
+  ipcMain.handle("youtube:download", async (_e, id: unknown) => {
+    if (typeof id !== "string") throw new YouTubeError("Falta el video.");
+    const send = (channel: string, ...args: unknown[]) => getWindow()?.webContents.send(channel, ...args);
+    try {
+      await assertDownloadable(id);
+      return await downloadYouTube(
+        id,
+        (received, total) => send("youtube:progress", received, total),
+        (msg) => send("youtube:status", msg),
+      );
+    } catch (e) {
+      // Only the message crosses to the window, in Spanish when it is ours.
+      const ours = e instanceof YouTubeError || e instanceof YtDlpError;
+      if (!ours) console.error("[gepetta] youtube download", e);
+      throw new Error(ours ? (e as Error).message : "No se pudo bajar el video de YouTube: fijate que haya internet e intentá de nuevo.");
+    }
   });
 }

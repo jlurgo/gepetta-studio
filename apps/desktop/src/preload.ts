@@ -52,6 +52,9 @@ contextBridge.exposeInMainWorld("gepetta", {
   youtube: {
     search: (query: string) => ipcRenderer.invoke("youtube:search", query),
     open: (id: string) => ipcRenderer.invoke("youtube:open", id),
+    download: (id: string) => ipcRenderer.invoke("youtube:download", id),
+    onProgress: (cb: (received: number, total: number) => void) => subscribe("youtube:progress", cb),
+    onStatus: (cb: (message: string) => void) => subscribe("youtube:status", cb),
   },
   updates: {
     pending: () => ipcRenderer.invoke("update:pending"),

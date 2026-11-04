@@ -49,7 +49,7 @@ function registerIpc() {
   ipcMain.handle("file:reveal", (_e, filePath: unknown) => {
     if (typeof filePath === "string" && path.isAbsolute(filePath)) shell.showItemInFolder(filePath);
   });
-  registerYouTubeIpc();
+  registerYouTubeIpc(getWindow);
   registerVideoLinkIpc(getWindow);
   const dslr = registerDslrIpc(getWindow);
   releaseCameras = dslr.releaseCameras;

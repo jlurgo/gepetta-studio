@@ -26,7 +26,7 @@ export async function downloadVideo(link: string, progress: (received: number, t
     throw new LinkError("Eso no es un link: tiene que empezar con https://");
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") throw new LinkError("El link tiene que empezar con https://");
-  if (videoId(link)) throw new LinkError("Es un video de YouTube: la app no puede bajarlo de ahí. Si es tuyo o tenés permiso, bajalo (por ejemplo desde YouTube Studio) y elegí el archivo.");
+  if (videoId(link)) throw new LinkError("Es un link de YouTube: pegalo en «Video de internet» y tocá «Buscar»; desde el resultado lo podés bajar e importar.");
   const res = await fetch(driveDownload(url) ?? url.href, { redirect: "follow" });
   if (!res.ok) throw new LinkError(`No se pudo bajar (el servidor respondió ${res.status}).`);
   const mime = (res.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
