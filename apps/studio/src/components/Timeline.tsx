@@ -1143,7 +1143,7 @@ export function Timeline() {
               <div
                 className="tl-next"
                 style={{ left: film.length * cw, width: cw, top: rowsTop, height: height - rowsTop }}
-                title="La celda siguiente: lo nuevo va acá (la próxima foto, un dibujo nuevo). La película termina antes."
+                title="La celda siguiente: lo nuevo va acá (la próxima foto, un dibujo nuevo). La película termina antes; con → agregás celdas."
               />
             )}
 

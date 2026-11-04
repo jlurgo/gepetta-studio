@@ -478,10 +478,13 @@ export function deleteBack() {
     const t = camera.targetOf(r);
     return tracks.includes(t.track) && t.cell === cursor.cell;
   });
-  const back = !tracks.some((t) => clipAt(film, t, cursor.cell)) || shooting.length > 0;
+  // An empty cell of the film goes itself (even with a camera aiming there). Past the end (the next
+  // cell), or on the photo a camera just shot over, ⌫ takes the one before, as typing.
+  const empty = !tracks.some((t) => clipAt(film, t, cursor.cell));
+  const back = empty ? cursor.cell >= film.length : shooting.length > 0;
   const cell = back ? cursor.cell - 1 : cursor.cell;
   if (cell < 0) return;
-  const ops = tracks.flatMap((t) => removeCellOps(film, t, cell));
+  const ops = shrinkEnd(film, tracks.flatMap((t) => removeCellOps(film, t, cell)), 1);
   if (!ops.length) return;
   useEditor.getState().commit(ops, `Borrar la celda ${cell + 1}`, { cursor: { track: cursor.track, cell }, selection: [] });
   // Cameras shooting to these tracks from there on go one cell earlier too.
@@ -500,7 +503,7 @@ function removeCells(tracks: TrackId[], start: number, count: number, cursorTrac
   const { film, commit } = useEditor.getState();
   if (!film || count <= 0 || !tracks.length) return;
   tracks = reach(film, tracks);
-  const ops = tracks.flatMap((t) => removeCellsOps(film, t, start, count));
+  const ops = shrinkEnd(film, tracks.flatMap((t) => removeCellsOps(film, t, start, count)), count);
   if (!ops.length) return;
   useEditor.getState().setSpan(null);
   commit(ops, count === 1 ? `Borrar la celda ${start + 1}` : `Borrar ${count} celdas`, { cursor: { track: cursorTrack, cell: start }, selection: [] });
@@ -508,6 +511,52 @@ function removeCells(tracks: TrackId[], start: number, count: number, cursorTrac
 }
 
 /** Cameras shooting to these tracks after `from` move `by` cells (not before `from`). */
+/**
+ * Cells taken out of tracks leave empty ones at the film's end: up to
+ * `count` of them go too (when nothing else is there), so the film gets
+ * shorter instead of ending in blank cells. A loop keeps its length.
+ */
+function shrinkEnd(film: FilmState, ops: Op[], count: number): Op[] {
+  if (!ops.length || film.settings.loop) return ops;
+  let after = film;
+  for (const op of ops) after = applyOp(after, op);
+  const end = Math.max(0, ...Object.values(after.clips).map(clipEnd));
+  const length = Math.max(end, after.length - count);
+  return length < after.length ? [...ops, { type: "film.setLength", length }] : ops;
+}
+
+/** The last «new cell» step, so holding an arrow past an end makes one undo step. */
+let grown: { id: string; at: "start" | "end"; count: number } | null = null;
+
+/**
+ * An arrow past the film's end (or before its start, not in a loop) makes a
+ * new empty cell there and goes to it, as typing past the end of a line.
+ */
+function growFilm(at: "start" | "end") {
+  const { film, cursor, commit, history } = useEditor.getState();
+  if (!film || film.settings.loop) return;
+  const last = history?.entries[history.cursor - 1];
+  const again = grown && grown.at === at && last?.id === grown.id ? grown : null;
+  const count = (again?.count ?? 0) + 1;
+  const label = at === "end" ? (count === 1 ? "Celda nueva al final" : `${count} celdas nuevas al final`) : count === 1 ? "Celda nueva al principio" : `${count} celdas nuevas al principio`;
+  const ops = insertColumnsOps(film, at === "end" ? film.length : 0, 1);
+  // At the end the new cell joins the film and the cursor goes on to the next one; at the start it stays on the new first cell.
+  const cell = at === "end" ? film.length + 1 : 0;
+  const id = commit(ops, label, { cursor: { ...cursor, cell }, selection: [], ...(again && { amend: again.id }) });
+  if (id) grown = { id, at, count };
+  if (at === "start") {
+    shiftCameras(film.tracks.map((t) => t.id), 0, 1);
+    shiftMics(film.tracks.map((t) => t.id), 0, 1);
+  }
+}
+
+/** Microphones recording to these tracks from `from` on move along with their cells. */
+function shiftMics(tracks: TrackId[], from: number, by: number) {
+  const { mics } = useMics.getState();
+  if (!mics.some((m) => tracks.includes(m.target.track) && m.target.cell >= from)) return;
+  useMics.setState({ mics: mics.map((m) => (tracks.includes(m.target.track) && m.target.cell >= from ? { ...m, target: { ...m.target, cell: Math.max(0, m.target.cell + by) } } : m)) });
+}
+
 function shiftCameras(tracks: TrackId[], from: number, by: number) {
   const camera = useCamera.getState();
   for (const r of camera.rigs) {
@@ -587,6 +636,7 @@ export function moveCursor(dir: -1 | 1, opts: { extend?: boolean; word?: boolean
   if (opts.extend) anchorSpan();
   else setSpan(null);
   let cell = cursor.cell + dir;
+  if (!opts.extend && !opts.word && !film.settings.loop && (cell > film.length || cell < 0)) return growFilm(cell < 0 ? "start" : "end");
   if (opts.word) {
     const end = Math.max(film.length, cursor.cell + 1);
     // Picking forward stops on the run's last cell (so the gap after it is not taken).
@@ -875,8 +925,7 @@ export function moveRow(dir: "up" | "down", extend = false) {
     return;
   }
   if (i > 0) return goTo(stops[i - 1]!);
-  const bottom = film.tracks[0]!;
-  if (!Object.values(film.clips).some((c) => c.track === bottom.id)) return;
+  // Past the bottom track: a new empty one there (as an arrow past the end makes a new cell).
   const { id, op } = newTrackOp(`Capa ${film.tracks.length}`);
   commit([op, { type: "track.move", trackId: id, index: 0 }], "Track nuevo abajo", { cursor: { track: id, cell: cursor.cell } });
   useLayers.getState().showCell(id);
