@@ -383,7 +383,7 @@ function Transport() {
             {selection.length > 1 && <span className="hint">{selection.length} imágenes</span>}
           </>
         ) : (
-          <span className="hint">
+          <span className="hint cell-status" title={trackName}>
             Celda {cursor.cell + 1} · {cellTime(cursor.cell, film.settings.fps)} · {trackName}
           </span>
         )}

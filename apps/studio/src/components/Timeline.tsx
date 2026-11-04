@@ -114,8 +114,8 @@ function TrackHead({ track, current, picked, pickTo, depth, drag, setDrag, drop 
           <Icon name={track.visible ? "eye" : "eyeOff"} size={15} />
         </button>
       )}
-      <button className="tl-name" tabIndex={0} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && pick()}>
-        {track.name}
+      <button className="tl-name" tabIndex={0} title={track.name} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && pick()}>
+        <span className="tl-label">{track.name}</span>
         {!track.exported && <span className="ref-dot" aria-hidden />}
       </button>
       <OpacitySlider label={false} value={track.opacity} onCommit={(opacity) => updateTrack(track.id, { opacity })} />
@@ -168,7 +168,7 @@ function GroupHead({ row, current, height, pickTo, depth, drag, setDrag, drop }:
         />
       ) : (
         <button className="tl-name group-name" onDoubleClick={() => setEditing(true)}>
-          {group.name}
+          <span className="tl-label">{group.name}</span>
         </button>
       )}
       <button
