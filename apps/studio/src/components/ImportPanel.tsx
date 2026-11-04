@@ -5,6 +5,7 @@ import { addImageTrack, importImages } from "../state/actions";
 import { useEditor } from "../state/editor";
 import { Icon } from "./Icon";
 import { VideoImportDialog } from "./VideoImportDialog";
+import { WebVideoDialog } from "./WebVideoDialog";
 
 interface Pending {
   id: number;
@@ -42,6 +43,7 @@ export function ImportPanel() {
   const stillInput = useRef<HTMLInputElement>(null);
   const videoInput = useRef<HTMLInputElement>(null);
   const [video, setVideo] = useState<{ file: File; mode: "frames" | "track" } | null>(null);
+  const [web, setWeb] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const videoMode = useRef<"frames" | "track">("frames");
   const dragged = useRef<number | null>(null);
@@ -155,6 +157,9 @@ export function ImportPanel() {
       >
         <Icon name="video" size={14} /> Video en un track nuevo, para calcar…
       </button>
+      <button className="btn small" onClick={() => setWeb(true)}>
+        <Icon name="import" size={14} /> Video de internet (un link, o buscar en YouTube)…
+      </button>
 
       <h4>Imagen fija</h4>
       <button className="btn small" onClick={() => stillInput.current?.click()}>
@@ -194,6 +199,15 @@ export function ImportPanel() {
           e.target.value = "";
         }}
       />
+      {web && (
+        <WebVideoDialog
+          onVideo={(file, mode) => {
+            setWeb(false);
+            setVideo({ file, mode });
+          }}
+          onClose={() => setWeb(false)}
+        />
+      )}
       {video && <VideoImportDialog file={video.file} mode={video.mode} onClose={() => setVideo(null)} />}
     </div>
   );

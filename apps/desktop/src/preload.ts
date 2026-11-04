@@ -45,6 +45,14 @@ contextBridge.exposeInMainWorld("gepetta", {
     onFrame: (cb: (id: string, jpeg: Uint8Array) => void) => subscribe("dslr:frame", cb),
     onError: (cb: (id: string, message: string, code: string) => void) => subscribe("dslr:error", cb),
   },
+  video: {
+    download: (link: string) => ipcRenderer.invoke("video:download", link),
+    onProgress: (cb: (received: number, total: number) => void) => subscribe("video:progress", cb),
+  },
+  youtube: {
+    search: (query: string) => ipcRenderer.invoke("youtube:search", query),
+    open: (id: string) => ipcRenderer.invoke("youtube:open", id),
+  },
   updates: {
     pending: () => ipcRenderer.invoke("update:pending"),
     install: () => ipcRenderer.invoke("update:install"),

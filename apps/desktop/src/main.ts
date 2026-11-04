@@ -6,6 +6,8 @@ import { type FilmMeta, FilmLibrary } from "./films";
 import { registerDslrIpc } from "./dslr/ipc";
 import { registerRemoteIpc } from "./remote/ipc";
 import { registerUpdates } from "./updates";
+import { registerVideoLinkIpc } from "./videoLink";
+import { registerYouTubeIpc } from "./youtube";
 
 /** Gepetta Studio's logo: the renderer ships it (studio's public/logo.png). */
 const APP_ICON = path.join(__dirname, "..", "renderer", "logo.png");
@@ -47,6 +49,8 @@ function registerIpc() {
   ipcMain.handle("file:reveal", (_e, filePath: unknown) => {
     if (typeof filePath === "string" && path.isAbsolute(filePath)) shell.showItemInFolder(filePath);
   });
+  registerYouTubeIpc();
+  registerVideoLinkIpc(getWindow);
   const dslr = registerDslrIpc(getWindow);
   releaseCameras = dslr.releaseCameras;
   disposers.push(registerRemoteIpc(getWindow).dispose, dslr.dispose);

@@ -57,6 +57,16 @@ export interface DslrCapture {
 
 export type DslrErrorCode = "busy" | "disconnected" | "failed";
 
+export interface YouTubeVideo {
+  id: string;
+  title: string;
+  channel: string;
+  /** Seconds (0 when unknown). */
+  duration: number;
+  /** data: URL of a small picture, when there is one. */
+  thumb: string | null;
+}
+
 export interface GepettaNative {
   platform: string;
   films: {
@@ -96,6 +106,17 @@ export interface GepettaNative {
     releaseUsb(): Promise<void>; // dslr:releaseUsb
     onFrame(cb: (id: string, jpeg: Uint8Array) => void): () => void; // event dslr:frame
     onError(cb: (id: string, message: string, code: DslrErrorCode) => void): () => void; // event dslr:error
+  };
+  video: {
+    /** Downloads a video file from a link (rejects, with a message to show, when it is not one). */
+    download(link: string): Promise<{ name: string; mime: string; data: ArrayBuffer }>; // video:download
+    onProgress(cb: (received: number, total: number) => void): () => void; // event video:progress
+  };
+  youtube: {
+    /** Videos for a search, or the one of a pasted link. */
+    search(query: string): Promise<YouTubeVideo[]>; // youtube:search
+    /** Opens the video's YouTube page in the browser. */
+    open(id: string): Promise<void>; // youtube:open
   };
   updates: {
     /** Version already downloaded and waiting to install, if any. */
