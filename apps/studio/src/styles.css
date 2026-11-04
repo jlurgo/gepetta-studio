@@ -2872,11 +2872,27 @@ input[type="range"] {
   flex-wrap: wrap;
 }
 
+.dialog:has(.web-video) {
+  width: min(760px, 100%);
+}
+
 .web-video {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: min(640px, 80vw);
+  margin: 8px 0 12px;
+}
+
+.web-video form {
+  flex-wrap: nowrap;
+}
+
+.web-video form input {
+  min-width: 0;
+}
+
+.web-video .segmented {
+  flex-wrap: wrap;
 }
 
 .web-video .grow {

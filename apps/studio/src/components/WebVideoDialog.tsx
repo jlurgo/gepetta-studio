@@ -16,6 +16,8 @@ const mb = (bytes: number) => `${(bytes / 1024 ** 2).toLocaleString("es-AR", { m
  */
 export function WebVideoDialog({ onVideo, onClose }: { onVideo(file: File, mode: "frames" | "track"): void; onClose(): void }) {
   const native = window.gepetta;
+  // The window is newer than the app's main part until the app opens again.
+  const outdated = !!native && (!native.video || !native.youtube);
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"frames" | "track">("frames");
   const [busy, setBusy] = useState<{ received: number; total: number } | null>(null);
@@ -23,10 +25,10 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(file: File, mode:
   const [results, setResults] = useState<YouTubeVideo[] | null>(null);
   const [searching, setSearching] = useState(false);
 
-  useEffect(() => native?.video.onProgress((received, total) => setBusy({ received, total })), [native]);
+  useEffect(() => (outdated ? undefined : native?.video.onProgress((received, total) => setBusy({ received, total }))), [native, outdated]);
 
   async function go() {
-    if (!native || !text.trim()) return;
+    if (!native || outdated || !text.trim()) return;
     setError(null);
     if (isLink(text) && !isYouTube(text)) {
       setResults(null);
@@ -54,8 +56,8 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(file: File, mode:
 
   return (
     <Dialog title="Video de internet" onClose={onClose}>
-      {!native ? (
-        <p className="hint">Esto anda en la app de escritorio.</p>
+      {!native || outdated ? (
+        <p className="hint">{native ? "La app se actualizó: cerrala y volvé a abrirla para usar esto." : "Esto anda en la app de escritorio."}</p>
       ) : (
         <div className="web-video">
           <p className="hint">
@@ -111,8 +113,14 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(file: File, mode:
               ))}
             </ul>
           )}
+          <p className="hint">Después de bajarlo elegís desde qué segundo hasta cuál importar y cuántos cuadros por segundo sacarle.</p>
         </div>
       )}
+      <div className="row end">
+        <button className="btn" onClick={onClose}>
+          Cerrar
+        </button>
+      </div>
     </Dialog>
   );
 }
