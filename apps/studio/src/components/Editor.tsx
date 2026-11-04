@@ -45,6 +45,7 @@ import { Timeline, hoveredCell } from "./Timeline";
 import { groupPicked, ungroup, useGroups } from "../state/groups";
 import { cancelPickingMic, startMics, stopMics, stopRecording as stopMicRecording, useMics } from "../state/mics";
 import { ToysDialog } from "./ToysDialog";
+import { ALT } from "./keys";
 
 const FPS_OPTIONS = [6, 8, 10, 12, 15, 24, 25, 30];
 
@@ -350,10 +351,10 @@ function Transport() {
                   ? `Columna ${columns[0]!.start + 1}`
                   : `Columnas ${columns[0]!.start + 1}–${columns[0]!.end}`}
             </span>
-            <button className="icon-btn" onClick={() => nudgeSelected(-1)} disabled={columns.length > 1} title="Mover la columna una celda a la izquierda (⌥←)">
+            <button className="icon-btn" onClick={() => nudgeSelected(-1)} disabled={columns.length > 1} title={`Mover la columna una celda a la izquierda (${ALT} + ←)`}>
               <Icon name="left" />
             </button>
-            <button className="icon-btn" onClick={() => nudgeSelected(1)} disabled={columns.length > 1} title="Mover la columna una celda a la derecha (⌥→)">
+            <button className="icon-btn" onClick={() => nudgeSelected(1)} disabled={columns.length > 1} title={`Mover la columna una celda a la derecha (${ALT} + →)`}>
               <Icon name="right" />
             </button>
             <button className="icon-btn danger" onClick={deleteSelected} title="Eliminar estas columnas en todos los tracks: lo que sigue se corre (Supr)">

@@ -2311,7 +2311,11 @@ input[type="range"] {
 }
 
 .tool-buttons .camera-tool.add {
-  color: var(--muted);
+  color: var(--text);
+}
+
+.tool-buttons .camera-tool.add.active {
+  color: var(--accent-text);
 }
 
 .camera-tool-badge {

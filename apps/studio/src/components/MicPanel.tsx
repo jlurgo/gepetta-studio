@@ -85,7 +85,7 @@ function MicTarget({ mic, color }: { mic: Mic; color: string }) {
         Lo que graba va {track ? <>a <strong>{track.name}</strong></> : "a un track de sonido nuevo"}, desde la celda {mic.target.cell + 1}
       </span>
       <button className={`btn small${picking ? " active" : ""}`} onClick={() => (picking ? useMics.setState({ picking: null }) : startPickingMic(mic.id))}>
-        {picking ? "Elegí la celda… (Esc)" : "Elegir celda"}
+        {picking ? "Cancelar (Esc)" : "Elegir celda"}
       </button>
     </div>
   );

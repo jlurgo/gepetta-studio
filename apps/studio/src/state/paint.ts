@@ -22,6 +22,7 @@ import { type StrokePoint, along, composeStrokes, drawLine, drawShape, layerAsse
 import { storage } from "../storage";
 import { useBusy } from "./busy";
 import { useEditor } from "./editor";
+import { ALT } from "../components/keys";
 
 /**
  * Drawing tools, after Blender's Grease Pencil: they paint on the picture at
@@ -542,7 +543,7 @@ export function beginStroke(p: Point, pressure: number, pen: boolean, mods: { al
   // Only the clone stamp copies; the source stays set for when it comes back.
   const source = tool === "clone" ? paint.cloneSource : null;
   if (tool === "clone" && !source) {
-    useBusy.getState().notify("Primero Alt+clic (⌥+clic) donde querés copiar.");
+    useBusy.getState().notify(`Primero ${ALT} + clic donde querés copiar.`);
     return true;
   }
   const toPicture = filmToPicture(film, at.track.id, at.clip);

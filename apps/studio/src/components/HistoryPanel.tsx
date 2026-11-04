@@ -3,6 +3,7 @@ import { canRedo, canUndo, cellOfOp } from "@gepetta/core";
 import { useState } from "react";
 import { useEditor } from "../state/editor";
 import { Icon } from "./Icon";
+import { MOD } from "./keys";
 
 /** The single numeric/text parameter an op exposes for editing, if any. */
 function editableParam(op: Op): { label: string; value: string; numeric: boolean; apply(v: string): Op | null } | null {
@@ -117,10 +118,10 @@ export function HistoryPanel() {
       <div className="row spread">
         <h3>Historial</h3>
         <div className="row">
-          <button className="icon-btn" disabled={!canUndo(history)} onClick={undo} title="Deshacer (⌘Z)">
+          <button className="icon-btn" disabled={!canUndo(history)} onClick={undo} title={`Deshacer (${MOD} + Z)`}>
             <Icon name="undo" size={18} />
           </button>
-          <button className="icon-btn" disabled={!canRedo(history)} onClick={redo} title="Rehacer (⇧⌘Z)">
+          <button className="icon-btn" disabled={!canRedo(history)} onClick={redo} title={`Rehacer (⇧ + ${MOD} + Z)`}>
             <Icon name="redo" size={18} />
           </button>
         </div>

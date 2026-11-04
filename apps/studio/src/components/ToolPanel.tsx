@@ -20,14 +20,15 @@ import { Section } from "./Section";
 import { applyChange } from "../state/shot";
 import { ShotEditor } from "./ShotEditor";
 import { TOOLS, chooseCamera, useFreeCameras } from "./StageTools";
+import { ALT } from "./keys";
 
 const HINTS: Partial<Record<StageTool, string>> = {
-  draw: "⌥/Alt+clic toma un color.",
+  draw: `${ALT} + clic toma un color de la imagen.`,
   erase: "Fuerza baja: borra de a poco.",
-  fill: "Rellena la zona cerrada donde hacés clic. ⌥/Alt+clic toma un color.",
+  fill: `Rellena la zona cerrada donde hacés clic. ${ALT} + clic toma un color de la imagen.`,
   tint: "Cambia el color de lo ya dibujado, sin pintar afuera.",
   shape: "Arrastrá. ⇧ hace cuadrados, círculos y líneas a 45°.",
-  clone: "⌥/Alt+clic elige de dónde copiar; puede ser otra celda (por ejemplo la foto anterior, para borrar un soporte).",
+  clone: `${ALT} + clic elige de dónde copiar; puede ser otra celda (por ejemplo la foto anterior, para borrar un soporte).`,
   picker: "Clic en la imagen para tomar su color.",
   sculpt: "Pasá el pincel por los trazos del dibujo de esta celda. Empujar los arrastra (más en el centro del círculo); Suavizar alisa el pulso; Engrosar y Afinar cambian el grosor. Cada arrastre es un paso.",
 };
@@ -62,10 +63,12 @@ function PaintOptions() {
       {tool === "shape" && (
         <>
           <Choice value={p.shape} options={SHAPES} onChange={(shape: ShapeKind) => p.set({ shape })} />
-          <label className="control toggle">
-            <input type="checkbox" checked={p.shapeFill} onChange={(e) => p.set({ shapeFill: e.target.checked })} />
-            <span>Rellena</span>
-          </label>
+          {p.shape !== "line" && (
+            <label className="control toggle">
+              <input type="checkbox" checked={p.shapeFill} onChange={(e) => p.set({ shapeFill: e.target.checked })} />
+              <span>Rellena</span>
+            </label>
+          )}
         </>
       )}
       {usesColor && (
@@ -193,7 +196,7 @@ function CameraTarget({ rig, color }: { rig: Rig; color: string }) {
       </span>
       <div className="action-row">
         <button className={`btn small${picking ? " active" : ""}`} onClick={() => chooseCamera(rig.id)}>
-          {picking ? "Elegí la celda… (Esc)" : rig.live ? "Cambiar de celda" : "Elegir celda"}
+          {picking ? "Cancelar (Esc)" : rig.live ? "Cambiar de celda" : "Elegir celda"}
         </button>
         {rig.live && !picking && (
           <button className="btn small" onClick={() => useCamera.getState().setLive(rig.id, false)} title="Deja de mostrar la cámara en vivo (la cámara sigue disponible)">
@@ -232,7 +235,7 @@ function CameraToolPanel() {
       <CameraTarget rig={rig} color={color} />
       <label className="control toggle" title="Las cámaras habilitadas sacan juntas con el botón grande y la barra espaciadora">
         <input type="checkbox" checked={rig.enabled} onChange={(e) => useCamera.getState().setEnabled(rig.id, e.target.checked)} />
-        <span>Saca con el botón grande</span>
+        <span>Saca foto con el botón grande</span>
       </label>
       <div className="action-row">
         <button className="btn small" onClick={() => void capture(rig.id)} disabled={!rig.source || !rig.live || !!rig.recording} title={rig.live ? undefined : "Elegí una celda primero"}>
@@ -242,7 +245,7 @@ function CameraToolPanel() {
           className={`btn small${rig.recording ? " recording" : ""}`}
           onClick={() => (rig.recording ? void stopRecording(rig.id) : startVideo([rig]))}
           disabled={!rig.source || (!rig.live && !rig.recording)}
-          title="Una imagen por celda, a la velocidad de la película, y su sonido con los micrófonos habilitados"
+          title={!rig.live && !rig.recording ? "Elegí una celda primero" : "Una imagen por celda, a la velocidad de la película, y su sonido con los micrófonos habilitados"}
         >
           <Icon name={rig.recording ? "stop" : "record"} size={14} /> {rig.recording ? `Detener (${rig.recording.cells})` : "Grabar video"}
         </button>
@@ -271,7 +274,7 @@ function CameraToolPanel() {
       )}
 
       <Section title="Imagen: tamaño, recorte, giro, transparencia, efectos">
-        <p className="hint">Se ve en vivo y queda en cada foto o cuadro grabado; después se puede cambiar en cada uno. En la pantalla grande la arrastrás, la agrandás con las esquinas y la girás con el círculo.</p>
+        <p className="hint">Se ve en vivo y queda en cada foto o cuadro grabado; después se puede cambiar en cada uno.</p>
         <ShotEditor value={rig.shot} onPreview={(c) => useCamera.getState().setShot(rig.id, applyChange(rig.shot, c))} onCommit={() => undefined} />
       </Section>
 

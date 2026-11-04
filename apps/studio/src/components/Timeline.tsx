@@ -17,6 +17,7 @@ import { sequenceColor } from "./SequencePanel";
 import { pickPlateAt } from "../state/lasso";
 import { capturePointer } from "./pointer";
 import { OpacitySlider } from "./TrackPanel";
+import { MOD } from "./keys";
 
 const RULER_H = 22;
 /** Every row (results and tracks) has the same height: a uniform grid. */
@@ -1019,10 +1020,10 @@ export function Timeline() {
       <div className={`timeline${anyPicking ? " picking" : ""}${loop ? " drum" : ""}`} style={{ ["--thumb-aspect" as string]: aspect, ...(anyPicking && { ["--rig" as string]: pickColor }) }}>
         <div className="tl-heads" ref={headsRef} style={{ minHeight: height + 40 }}>
           <div className="tl-head ruler" style={{ height: RULER_H }}>
-            <button className="icon-btn small" onClick={() => zoomBy(1 / 1.5)} title="Alejar (⌘ + rueda, o pellizcar en el pad)">
+            <button className="icon-btn small" onClick={() => zoomBy(1 / 1.5)} title={`Alejar (${MOD} + rueda, o pellizcar en el pad)`}>
               <Icon name="minus" size={14} />
             </button>
-            <button className="icon-btn small" onClick={() => zoomBy(1.5)} title="Acercar (⌘ + rueda, o pellizcar en el pad)">
+            <button className="icon-btn small" onClick={() => zoomBy(1.5)} title={`Acercar (${MOD} + rueda, o pellizcar en el pad)`}>
               <Icon name="plus" size={14} />
             </button>
             {film.tracks.some((t) => t.kind === "sound") && (

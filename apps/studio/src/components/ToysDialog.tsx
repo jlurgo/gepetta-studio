@@ -361,11 +361,6 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
                   <span>Velocidad de la vista previa: {flipFps} hojas/s</span>
                   <input type="range" min={2} max={30} value={flipFps} onChange={(e) => setFlipFps(Number(e.target.value))} />
                 </label>
-                <div className="row end">
-                  <button className="btn primary" disabled={!n} onClick={() => void exportFlipbook()}>
-                    Guardar PDF
-                  </button>
-                </div>
               </>
             )}
 
@@ -482,11 +477,6 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
                   <span>Velocidad de la vista previa: {flipFps} tarjetas/s</span>
                   <input type="range" min={2} max={30} value={flipFps} onChange={(e) => setFlipFps(Number(e.target.value))} />
                 </label>
-                <div className="row end">
-                  <button className="btn primary" disabled={!n || !mutoFits} onClick={() => void exportMutoscope()}>
-                    Guardar PDF
-                  </button>
-                </div>
               </>
             )}
 
@@ -536,14 +526,6 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
                   </span>
                   <input type="range" min={10} max={150} value={rpm} onChange={(e) => setRpm(Number(e.target.value))} />
                 </label>
-                <div className="row end">
-                  <button className="btn" disabled={!n} onClick={() => void exportZoetrope("svg")} title="Las dos tiras enteras, sin cortar en pedazos (para plotter o láser)">
-                    SVG
-                  </button>
-                  <button className="btn primary" disabled={!n} onClick={() => void exportZoetrope("pdf")}>
-                    Guardar PDF
-                  </button>
-                </div>
               </>
             )}
 
@@ -594,23 +576,8 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
                   </span>
                   <input type="range" min={10} max={150} value={rpm} onChange={(e) => setRpm(Number(e.target.value))} />
                 </label>
-                <div className="row end">
-                  <button className="btn" disabled={!n} onClick={() => void exportDisc("dxf")} title="Solo el contorno, las ranuras y el agujero: para cortar con láser">
-                    DXF
-                  </button>
-                  <button className="btn" disabled={!n} onClick={() => void exportDisc("svg")}>
-                    SVG
-                  </button>
-                  <button className="btn primary" disabled={!n} onClick={() => void exportDisc("pdf")}>
-                    Guardar PDF
-                  </button>
-                </div>
               </>
             )}
-            <p className="hint">
-              Imprimí al 100 % (tamaño real), sin «ajustar a la página». En cada hoja hay una raya de 5 cm para comprobarlo. Línea llena:
-              cortar; punteada: doblar.
-            </p>
           </div>
           <div className="toys-preview">
             {preview.length !== n ? (
@@ -626,6 +593,48 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
             )}
           </div>
         </div>
+      </div>
+      <p className="hint">
+        Imprimí al 100 % (tamaño real), sin «ajustar a la página». En cada hoja hay una raya de 5 cm para comprobarlo. Línea llena: cortar; punteada:
+        doblar.
+      </p>
+      <div className="row end">
+        <button className="btn ghost" onClick={onClose}>
+          Cerrar
+        </button>
+        {toy === "flipbook" && (
+          <button className="btn primary" disabled={!n} onClick={() => void exportFlipbook()}>
+            Guardar PDF
+          </button>
+        )}
+        {toy === "mutoscope" && (
+          <button className="btn primary" disabled={!n || !mutoFits} onClick={() => void exportMutoscope()}>
+            Guardar PDF
+          </button>
+        )}
+        {toy === "zoetrope" && (
+          <>
+            <button className="btn" disabled={!n} onClick={() => void exportZoetrope("svg")} title="Las dos tiras enteras, sin cortar en pedazos (para plotter o láser)">
+              SVG
+            </button>
+            <button className="btn primary" disabled={!n} onClick={() => void exportZoetrope("pdf")}>
+              Guardar PDF
+            </button>
+          </>
+        )}
+        {toy === "disc" && (
+          <>
+            <button className="btn" disabled={!n} onClick={() => void exportDisc("dxf")} title="Solo el contorno, las ranuras y el agujero: para cortar con láser">
+              DXF
+            </button>
+            <button className="btn" disabled={!n} onClick={() => void exportDisc("svg")}>
+              SVG
+            </button>
+            <button className="btn primary" disabled={!n} onClick={() => void exportDisc("pdf")}>
+              Guardar PDF
+            </button>
+          </>
+        )}
       </div>
     </Dialog>
   );
