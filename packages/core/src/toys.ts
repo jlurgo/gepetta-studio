@@ -17,13 +17,14 @@ export interface Rect {
   height: number;
 }
 
-export type PaperId = "a4" | "letter";
+export type PaperId = "a4" | "letter" | "a3";
 export type Orientation = "portrait" | "landscape";
 
 /** Paper sizes in mm, standing up. */
 export const PAPERS: Record<PaperId, PageSize & { label: string }> = {
   a4: { label: "A4", width: 210, height: 297 },
   letter: { label: "Carta", width: 215.9, height: 279.4 },
+  a3: { label: "A3", width: 297, height: 420 },
 };
 
 /** Most printers can't print closer than this to the edge. */
@@ -244,6 +245,115 @@ export function zoetropeLayout(o: ZoetropeOptions): ZoetropeLayout {
     pages[pages.length - 1]!.push({ kind: "base", cx: area.x + area.width / 2, cy: y + r, r });
   }
   return { circumference, pitch, wallHeight, pieces, pages, baseFits };
+}
+
+// --------------------------------------------------------------- mutoscope
+
+/** The edge of a mutoscope card held by the reel (its hub). */
+export type BindingSide = "bottom" | "left" | "top" | "right";
+
+export interface MutoscopeOptions {
+  page: PageSize;
+  /** Number of pictures (one per card). */
+  frames: number;
+  /** Times the pictures go round on the reel (a fuller reel turns longer). */
+  repeats: number;
+  /** Size of the picture on each card, in mm. */
+  pictureWidth: number;
+  pictureHeight: number;
+  /** Strip along one edge where the card is held to the reel's hub. */
+  binding: number;
+  side: BindingSide;
+  /** White border around the picture. */
+  border: number;
+  /** Space between cards on the page (0: one cut between two cards). */
+  gap: number;
+  /** A first card with the film's name. */
+  title: boolean;
+  /** Diameter of two holes in the binding strip to thread them on the hub (0: none). */
+  holes: number;
+}
+
+export interface MutoscopeCard {
+  /** The whole card: what gets cut out. */
+  card: Rect;
+  binding: Rect;
+  picture: Rect;
+  /** Index of the picture, or "title". */
+  frame: number | "title";
+  /** Its place on the reel, from 1, after the title card (0 for that one). */
+  number: number;
+  /** Centres of the holes (none when there are no holes). */
+  holes: [number, number][];
+}
+
+export interface MutoscopeLayout {
+  cols: number;
+  rows: number;
+  perPage: number;
+  cardWidth: number;
+  cardHeight: number;
+  /** Total cards, the title card included. */
+  cards: number;
+  pages: MutoscopeCard[][];
+}
+
+/** Size of a card for a picture: picture, border round it and the binding strip on its side. */
+export function mutoscopeCardSize(o: Pick<MutoscopeOptions, "pictureWidth" | "pictureHeight" | "binding" | "side" | "border">): { width: number; height: number } {
+  const across = o.side === "left" || o.side === "right";
+  return { width: o.pictureWidth + 2 * o.border + (across ? o.binding : 0), height: o.pictureHeight + 2 * o.border + (across ? 0 : o.binding) };
+}
+
+/** The picture (border and binding left out) of a card that size. */
+export function mutoscopePictureFor(card: { width: number; height: number }, o: Pick<MutoscopeOptions, "binding" | "side" | "border">): { width: number; height: number } {
+  const across = o.side === "left" || o.side === "right";
+  return { width: Math.max(5, card.width - 2 * o.border - (across ? o.binding : 0)), height: Math.max(5, card.height - 2 * o.border - (across ? 0 : o.binding)) };
+}
+
+/**
+ * Cards for a mutoscope (a reel of cards held by one edge, that flip past a
+ * stop as it turns), in a grid centred on each page: the title card, then
+ * the pictures in order, `repeats` times round.
+ */
+export function mutoscopeLayout(o: MutoscopeOptions): MutoscopeLayout {
+  const area = printableArea(o.page);
+  const { width: cardWidth, height: cardHeight } = mutoscopeCardSize(o);
+  const cols = Math.max(1, Math.floor((area.width + o.gap) / (cardWidth + o.gap) + 1e-9));
+  const rows = Math.max(1, Math.floor((area.height + o.gap) / (cardHeight + o.gap) + 1e-9));
+  const perPage = cols * rows;
+  const gridWidth = cols * cardWidth + (cols - 1) * o.gap;
+  const gridHeight = rows * cardHeight + (rows - 1) * o.gap;
+  const x0 = area.x + (area.width - gridWidth) / 2;
+  const y0 = area.y + (area.height - gridHeight) / 2;
+  const order: (number | "title")[] = [...(o.title ? ["title" as const] : [])];
+  for (let r = 0; r < Math.max(1, o.repeats); r++) for (let i = 0; i < o.frames; i++) order.push(i);
+  const pages: MutoscopeCard[][] = [];
+  order.forEach((frame, i) => {
+    const slot = i % perPage;
+    if (slot === 0) pages.push([]);
+    const card = { x: x0 + (slot % cols) * (cardWidth + o.gap), y: y0 + Math.floor(slot / cols) * (cardHeight + o.gap), width: cardWidth, height: cardHeight };
+    const b = o.binding;
+    const binding =
+      o.side === "bottom"
+        ? { x: card.x, y: card.y + card.height - b, width: card.width, height: b }
+        : o.side === "top"
+          ? { x: card.x, y: card.y, width: card.width, height: b }
+          : o.side === "left"
+            ? { x: card.x, y: card.y, width: b, height: card.height }
+            : { x: card.x + card.width - b, y: card.y, width: b, height: card.height };
+    const inner = {
+      x: card.x + (o.side === "left" ? b : 0) + o.border,
+      y: card.y + (o.side === "top" ? b : 0) + o.border,
+      width: o.pictureWidth,
+      height: o.pictureHeight,
+    };
+    const across = o.side === "left" || o.side === "right";
+    const holes: [number, number][] = o.holes
+      ? [0.25, 0.75].map((t) => (across ? [binding.x + b / 2, binding.y + binding.height * t] : [binding.x + binding.width * t, binding.y + b / 2]))
+      : [];
+    pages[pages.length - 1]!.push({ card, binding, picture: inner, frame, number: frame === "title" ? 0 : i + 1 - (o.title ? 1 : 0), holes });
+  });
+  return { cols, rows, perPage, cardWidth, cardHeight, cards: order.length, pages };
 }
 
 // --------------------------------------------------------- phenakistoscope

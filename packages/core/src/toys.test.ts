@@ -9,6 +9,8 @@ import {
   everyNth,
   fitDiscPicture,
   flipbookLayout,
+  mutoscopeLayout,
+  mutoscopePictureFor,
   pageSize,
   polar,
   printableArea,
@@ -168,5 +170,40 @@ describe("cut files", () => {
     expect(text.match(/\nVERTEX\n/g)).toHaveLength(3);
     expect(text).toContain("CIRCLE\n8\nCORTE\n10\n0.000000\n20\n-2.000000\n30\n0.000000\n40\n3.000000");
     expect(text.trimEnd().endsWith("EOF")).toBe(true);
+  });
+});
+
+describe("mutoscopeLayout", () => {
+  const page = pageSize("a4", "portrait");
+  const base = { page, frames: 10, repeats: 2, pictureWidth: 60, pictureHeight: 45, binding: 15, side: "bottom" as const, border: 2, gap: 0, title: true, holes: 4 };
+
+  it("cards hold the picture, its border and the binding strip on its side", () => {
+    const l = mutoscopeLayout(base);
+    expect([l.cardWidth, l.cardHeight]).toEqual([64, 64]);
+    expect(l.cards).toBe(21);
+    const first = l.pages[0]![0]!;
+    expect(first.frame).toBe("title");
+    expect(first.binding.y + first.binding.height).toBeCloseTo(first.card.y + first.card.height);
+    expect(first.picture.y).toBeCloseTo(first.card.y + 2);
+    // Two holes across the strip, in its middle.
+    expect(first.holes.map(([, y]) => y)).toEqual([first.binding.y + 7.5, first.binding.y + 7.5]);
+    // The pictures go round twice, numbered along.
+    const all = l.pages.flat();
+    expect(all.map((c) => c.frame).slice(1, 13)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1]);
+    expect(all.at(-1)!.number).toBe(20);
+  });
+
+  it("fits a grid on the page, with or without space between cards", () => {
+    const area = printableArea(page);
+    for (const gap of [0, 4]) {
+      const l = mutoscopeLayout({ ...base, side: "left", gap });
+      expect(l.cardWidth).toBe(79);
+      for (const c of l.pages.flat()) {
+        expect(c.card.x).toBeGreaterThanOrEqual(area.x - 1e-6);
+        expect(c.card.x + c.card.width).toBeLessThanOrEqual(area.x + area.width + 1e-6);
+        expect(c.card.y + c.card.height).toBeLessThanOrEqual(area.y + area.height + 1e-6);
+      }
+    }
+    expect(mutoscopePictureFor({ width: 64, height: 64 }, base)).toEqual({ width: 60, height: 45 });
   });
 });

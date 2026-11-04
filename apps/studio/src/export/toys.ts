@@ -2,6 +2,8 @@ import {
   type DiscOptions,
   type FilmState,
   type FlipbookLayout,
+  type MutoscopeLayout,
+  type MutoscopeOptions,
   PAGE_HEADER,
   PAGE_MARGIN,
   type PageSize,
@@ -306,6 +308,83 @@ export function flipbookPdf(layout: FlipbookLayout, page: PageSize, images: read
     for (const x of xs) p.polygon([[x, area.y], [x, area.y + area.height]], { line: "guide" }, false);
     for (const y of ys) p.polygon([[area.x, y], [area.x + area.width, y]], { line: "guide" }, false);
     cropMarks(p, area, xs, ys);
+  });
+  return p.doc.output("blob");
+}
+
+// ------------------------------------------------------------ mutoscope
+
+const MUTOSCOPE_HOWTO =
+  "Recortá cada tarjeta por las líneas. Apilalas en orden (la 1 arriba de todo, después la 2, la 3…), con la franja gris del mismo lado, y sujetalas por esa franja al eje del mutoscopio: pasá un alambre o un tornillo por los agujeros, o pegalas una al lado de la otra alrededor de un cilindro. Al girar la manivela, cada tarjeta se frena en el tope y se suelta: así se mueve el dibujo.";
+
+/**
+ * The frames made the shape of a card's picture (`width`×`height` px):
+ * whole with white around it ("fit"), or cut to fill it ("fill").
+ */
+export async function fittedFrames(frames: readonly ImageBitmap[], width: number, height: number, fit: "fit" | "fill"): Promise<ToyImage[]> {
+  const out: ToyImage[] = [];
+  const done = new Map<ImageBitmap, ToyImage>();
+  const canvas = new OffscreenCanvas(Math.max(8, Math.round(width)), Math.max(8, Math.round(height)));
+  const ctx = canvas.getContext("2d")!;
+  for (const [i, frame] of frames.entries()) {
+    let image = done.get(frame);
+    if (!image) {
+      const scale = (fit === "fill" ? Math.max : Math.min)(canvas.width / frame.width, canvas.height / frame.height);
+      const w = frame.width * scale;
+      const h = frame.height * scale;
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(frame, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+      const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.9 });
+      const url = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+      image = { key: `m${i}`, url };
+      done.set(frame, image);
+    }
+    out.push(image);
+  }
+  return out;
+}
+
+export function mutoscopePdf(layout: MutoscopeLayout, o: MutoscopeOptions, images: readonly ToyImage[], title: string, numbers: boolean): Blob {
+  const p = new PdfPainter(o.page);
+  layout.pages.forEach((cards, i) => {
+    p.newPage();
+    frame(p, `${title} — mutoscopio (${layout.cards} tarjetas)`, MUTOSCOPE_HOWTO, i + 1, layout.pages.length);
+    for (const c of cards) {
+      p.polygon(rectPoints(c.binding), { fill: "#e6e6e6" });
+      if (c.frame === "title") {
+        const size = Math.min(18, Math.max(8, c.picture.width / 6));
+        p.text(title, c.picture.x + c.picture.width / 2, c.picture.y + c.picture.height / 2 - 2, { size, bold: true, align: "center" });
+        p.text("Gepetta Studio", c.picture.x + c.picture.width / 2, c.picture.y + c.picture.height - 3, { size: 6, align: "center", color: "#777777" });
+      } else p.image(images[c.frame]!, c.picture);
+      for (const [x, y] of c.holes) p.circle(x, y, o.holes / 2, { line: "cut", fill: "#ffffff" });
+      if (numbers) {
+        // In the strip, away from the holes: at its start along the strip.
+        const across = o.side === "left" || o.side === "right";
+        const x = across ? c.binding.x + c.binding.width / 2 : c.binding.x + 6;
+        const y = across ? c.binding.y + 4 : c.binding.y + c.binding.height / 2;
+        p.text(c.frame === "title" ? "T" : String(c.number), x, y, { size: 7, bold: true, align: "center", color: "#333333" });
+      }
+    }
+    if (o.gap > 0) {
+      // Apart: each card cut on its own.
+      for (const c of cards) p.polygon(rectPoints(c.card), { line: "cut" });
+      return;
+    }
+    // Edge to edge: lines across the grid, and marks outside it.
+    const used = cards.map((c) => c.card);
+    const x0 = Math.min(...used.map((r) => r.x));
+    const y0 = Math.min(...used.map((r) => r.y));
+    const x1 = Math.max(...used.map((r) => r.x + r.width));
+    const y1 = Math.max(...used.map((r) => r.y + r.height));
+    const xs = [...new Set(used.flatMap((r) => [r.x, r.x + r.width]).map((v) => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
+    const ys = [...new Set(used.flatMap((r) => [r.y, r.y + r.height]).map((v) => Math.round(v * 1000) / 1000))].sort((a, b) => a - b);
+    for (const c of cards) p.polygon(rectPoints(c.card), { line: "guide" });
+    cropMarks(p, { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }, xs, ys);
   });
   return p.doc.output("blob");
 }

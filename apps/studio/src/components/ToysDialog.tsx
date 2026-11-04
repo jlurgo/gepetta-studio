@@ -1,5 +1,7 @@
 import {
+  type BindingSide,
   type DiscOptions,
+  type MutoscopeOptions,
   type Orientation,
   PAPERS,
   type PaperId,
@@ -8,6 +10,8 @@ import {
   exportedCells,
   flipbookLayout,
   maxFlipbookPicture,
+  mutoscopeLayout,
+  mutoscopePictureFor,
   pageSize,
   printableArea,
   slitEffect,
@@ -20,8 +24,11 @@ import {
   discFramePixels,
   discPdf,
   discSvg,
+  PRINT_PX_PER_MM,
+  fittedFrames,
   flipbookPdf,
   frameBitmaps,
+  mutoscopePdf,
   printFrames,
   printPixels,
   zoetropePdf,
@@ -31,13 +38,14 @@ import { runTask, useBusy } from "../state/busy";
 import { useEditor } from "../state/editor";
 import { saveBlob } from "../storage";
 import { Dialog } from "./Dialog";
-import { DiscPreview, FlipbookPreview, ZoetropePreview } from "./ToyPreviews";
+import { DiscPreview, FlipbookPreview, MutoscopePreview, ZoetropePreview } from "./ToyPreviews";
 import "./toys.css";
 
-type Toy = "flipbook" | "zoetrope" | "disc";
+type Toy = "flipbook" | "mutoscope" | "zoetrope" | "disc";
 
 const TOYS: { id: Toy; label: string }[] = [
   { id: "flipbook", label: "Flipbook" },
+  { id: "mutoscope", label: "Mutoscopio" },
   { id: "zoetrope", label: "Zootropo" },
   { id: "disc", label: "Fenakitoscopio" },
 ];
@@ -49,6 +57,23 @@ const FLIPBOOK_SIZES = [
   { width: 70, label: "Mediano (7 cm)" },
   { width: 90, label: "Grande (9 cm)" },
   { width: 120, label: "Muy grande (12 cm)" },
+];
+
+/** Picture widths for a mutoscope's cards; 0: a card size of one's own. */
+const MUTOSCOPE_SIZES = [
+  { width: 40, label: "Mini (4 cm)" },
+  { width: 55, label: "Chico (5,5 cm)" },
+  { width: 70, label: "Mediano (7 cm)" },
+  { width: 90, label: "Grande (9 cm)" },
+  { width: 120, label: "Muy grande (12 cm)" },
+  { width: 0, label: "Tarjeta a medida…" },
+];
+
+const SIDES: { id: BindingSide; label: string }[] = [
+  { id: "bottom", label: "Abajo" },
+  { id: "left", label: "Izquierda" },
+  { id: "top", label: "Arriba" },
+  { id: "right", label: "Derecha" },
 ];
 
 /** A number field in mm that only reports sensible values. */
@@ -113,6 +138,38 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
   const [flipFps, setFlipFps] = useState(film.settings.fps);
   const binding = 15;
   const flip = useMemo(() => flipbookLayout({ page, frames: n, pictureWidth, aspect, binding, cover }), [page, n, pictureWidth, aspect, cover]);
+
+  // Mutoscope.
+  const [mutoWidth, setMutoWidth] = useState(70);
+  const [cardW, setCardW] = useState(90);
+  const [cardH, setCardH] = useState(70);
+  const [fit, setFit] = useState<"fit" | "fill">("fill");
+  const [mutoBinding, setMutoBinding] = useState(15);
+  const [side, setSide] = useState<BindingSide>("bottom");
+  const [border, setBorder] = useState(2);
+  const [gap, setGap] = useState(0);
+  const [repeats, setRepeats] = useState(1);
+  const [titleCard, setTitleCard] = useState(true);
+  const [numbers, setNumbers] = useState(true);
+  const [holes, setHoles] = useState(0);
+  const custom = mutoWidth === 0;
+  const mutoPicture = custom ? mutoscopePictureFor({ width: cardW, height: cardH }, { binding: mutoBinding, side, border }) : { width: mutoWidth, height: mutoWidth / aspect };
+  const muto: MutoscopeOptions = {
+    page,
+    frames: n,
+    repeats,
+    pictureWidth: mutoPicture.width,
+    pictureHeight: mutoPicture.height,
+    binding: mutoBinding,
+    side,
+    border,
+    gap,
+    title: titleCard,
+    holes,
+  };
+  const mutoLayout = mutoscopeLayout(muto);
+  const mutoArea = printableArea(page);
+  const mutoFits = mutoLayout.cardWidth <= mutoArea.width + 1e-6 && mutoLayout.cardHeight <= mutoArea.height + 1e-6;
 
   // Zoetrope.
   const [diameter, setDiameter] = useState(150);
@@ -194,6 +251,20 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
     await save(blob, `${title} - flipbook.pdf`);
   }
 
+  async function exportMutoscope() {
+    // Big enough to cover the card's picture, never bigger than the film.
+    const target = { width: muto.pictureWidth * PRINT_PX_PER_MM, height: muto.pictureHeight * PRINT_PX_PER_MM };
+    const cover = Math.max(target.width, target.height * aspect);
+    const width = Math.min(film.settings.width, cover);
+    const blob = await runTask("Armando el mutoscopio", n, async (progress) => {
+      const frames = await frameBitmaps(filmId, film, cells, { width, height: width / aspect }, "original", progress);
+      const images = await fittedFrames(frames, target.width, target.height, fit);
+      frames.forEach((b) => b.close());
+      return mutoscopePdf(mutoLayout, muto, images, title, numbers);
+    });
+    await save(blob, `${title} - mutoscopio.pdf`);
+  }
+
   async function exportZoetrope(format: "pdf" | "svg") {
     const cell = Math.min(zoeLayout.pitch, pictureHeight * aspect);
     const px = printPixels(film, cell);
@@ -214,7 +285,7 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
   }
 
   const steps = [1, 2, 3, 4, 6].filter((s) => s === 1 || Math.ceil(all.length / s) >= 2);
-  const tooMany = toy !== "flipbook" && n > MANY;
+  const tooMany = (toy === "zoetrope" || toy === "disc") && n > MANY;
   const effect = slitEffect(disc.frames, disc.slits);
 
   return (
@@ -290,6 +361,117 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
                 </label>
                 <div className="row end">
                   <button className="btn primary" disabled={!n} onClick={() => void exportFlipbook()}>
+                    Guardar PDF
+                  </button>
+                </div>
+              </>
+            )}
+
+            {toy === "mutoscope" && (
+              <>
+                <label className="control">
+                  <span>Tamaño de cada dibujo</span>
+                  <select value={mutoWidth} onChange={(e) => setMutoWidth(Number(e.target.value))}>
+                    {MUTOSCOPE_SIZES.map((s) => (
+                      <option key={s.width} value={s.width}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {custom && (
+                  <>
+                    <div className="control">
+                      <span>Tarjeta (ancho × alto, con la franja)</span>
+                      <div className="row">
+                        <MmInput value={cardW} onChange={setCardW} min={20} max={400} />×
+                        <MmInput value={cardH} onChange={setCardH} min={20} max={400} />
+                      </div>
+                    </div>
+                    <div className="control">
+                      <span>El dibujo en la tarjeta</span>
+                      <Segmented
+                        value={fit}
+                        options={[
+                          { id: "fill", label: "Llenarla (se recorta)" },
+                          { id: "fit", label: "Entero (con blanco)" },
+                        ]}
+                        onChange={setFit}
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="control">
+                  <span>Franja para sujetar al eje</span>
+                  <div className="row">
+                    <MmInput value={mutoBinding} onChange={setMutoBinding} min={5} max={40} />
+                    <Segmented value={side} options={SIDES} onChange={setSide} />
+                  </div>
+                </div>
+                <div className="control">
+                  <span>Agujeros en la franja (para pasar un alambre o tornillo)</span>
+                  <Segmented
+                    value={String(holes)}
+                    options={[
+                      { id: "0", label: "Sin" },
+                      { id: "3", label: "3 mm" },
+                      { id: "5", label: "5 mm" },
+                      { id: "8", label: "8 mm" },
+                    ]}
+                    onChange={(v) => setHoles(Number(v))}
+                  />
+                </div>
+                <div className="control">
+                  <span>Borde blanco alrededor del dibujo</span>
+                  <MmInput value={border} onChange={setBorder} min={0} max={15} />
+                </div>
+                <div className="control">
+                  <span>Entre tarjeta y tarjeta</span>
+                  <div className="row">
+                    <Segmented
+                      value={gap ? "apart" : "joined"}
+                      options={[
+                        { id: "joined", label: "Pegadas (un solo corte)" },
+                        { id: "apart", label: "Separadas" },
+                      ]}
+                      onChange={(v) => setGap(v === "apart" ? 4 : 0)}
+                    />
+                    {gap > 0 && <MmInput value={gap} onChange={setGap} min={1} max={20} />}
+                  </div>
+                </div>
+                <label className="control">
+                  <span>Vueltas de la animación en el rollo</span>
+                  <select value={repeats} onChange={(e) => setRepeats(Number(e.target.value))}>
+                    {[1, 2, 3, 4, 5, 6, 8, 10].map((r) => (
+                      <option key={r} value={r}>
+                        {r === 1 ? "Una" : `${r} veces`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="control toggle">
+                  <input type="checkbox" checked={titleCard} onChange={(e) => setTitleCard(e.target.checked)} />
+                  <span>Tarjeta con el nombre de la película al principio</span>
+                </label>
+                <label className="control toggle">
+                  <input type="checkbox" checked={numbers} onChange={(e) => setNumbers(e.target.checked)} />
+                  <span>Número de cada tarjeta en la franja</span>
+                </label>
+                {mutoFits ? (
+                  <p className="hint">
+                    {mutoLayout.cards} tarjetas de {Math.round(mutoLayout.cardWidth)}×{Math.round(mutoLayout.cardHeight)} mm (dibujo de{" "}
+                    {Math.round(muto.pictureWidth)}×{Math.round(muto.pictureHeight)} mm) · {mutoLayout.perPage} por hoja · {mutoLayout.pages.length}{" "}
+                    {mutoLayout.pages.length === 1 ? "hoja" : "hojas"}
+                  </p>
+                ) : (
+                  <p className="panel-error">La tarjeta no entra en la hoja: elegí una más chica, o una hoja más grande o acostada.</p>
+                )}
+                <label className="control">
+                  <span>Velocidad de la vista previa: {flipFps} tarjetas/s</span>
+                  <input type="range" min={2} max={30} value={flipFps} onChange={(e) => setFlipFps(Number(e.target.value))} />
+                </label>
+                <div className="row end">
+                  <button className="btn primary" disabled={!n || !mutoFits} onClick={() => void exportMutoscope()}>
                     Guardar PDF
                   </button>
                 </div>
@@ -423,6 +605,8 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
               <p className="hint">Preparando los cuadros…</p>
             ) : toy === "flipbook" ? (
               <FlipbookPreview frames={preview} aspect={aspect} fps={flipFps} />
+            ) : toy === "mutoscope" ? (
+              <MutoscopePreview frames={preview} pictureAspect={muto.pictureWidth / muto.pictureHeight} fps={flipFps} fill={!custom || fit === "fill"} />
             ) : toy === "zoetrope" ? (
               <ZoetropePreview frames={preview} aspect={aspect} rpm={rpm} />
             ) : (

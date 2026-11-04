@@ -198,3 +198,64 @@ export function DiscPreview({
   });
   return <canvas ref={ref} width={W} height={H} className="toy-canvas" />;
 }
+
+/**
+ * A mutoscope: the reel's cards held at the hub, the front one held back by
+ * the stop and then let go, falling forward so the next one shows.
+ */
+export function MutoscopePreview({ frames, pictureAspect, fps, fill }: { frames: readonly CanvasImageSource[]; pictureAspect: number; fps: number; fill: boolean }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const W = 420;
+  const H = 300;
+  useAnimation(ref, (ctx, t) => {
+    ctx.fillStyle = BG;
+    ctx.fillRect(0, 0, W, H);
+    const n = frames.length;
+    if (!n) return;
+    const bind = 26;
+    const ph = Math.min(H - bind - 60, (W - 80) / pictureAspect);
+    const pw = ph * pictureAspect;
+    const x0 = (W - pw) / 2;
+    const y0 = 30;
+    const hubY = y0 + ph + bind;
+    // The hub, and the cards' edges behind (the rest of the reel).
+    ctx.fillStyle = "#555";
+    ctx.fillRect(x0 - 20, hubY - 4, pw + 40, 10);
+    for (let i = 4; i > 0; i--) {
+      ctx.fillStyle = i % 2 ? "#d9d4cc" : "#f3efe8";
+      ctx.fillRect(x0 + i * 1.5, y0 - i * 2, pw, ph + bind);
+    }
+    const card = (frame: CanvasImageSource, y: number, h: number, shade: number) => {
+      const k = h / (ph + bind);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(x0, y, pw, h);
+      const img = frame as { width: number; height: number };
+      const scale = (fill ? Math.max : Math.min)(pw / img.width, ph / img.height);
+      const w = img.width * scale;
+      const hh = img.height * scale;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, y, pw, ph * k);
+      ctx.clip();
+      ctx.drawImage(frame, x0 + (pw - w) / 2, y + ((ph - hh) / 2) * k, w, hh * k);
+      ctx.restore();
+      ctx.fillStyle = "#e6e6e6";
+      ctx.fillRect(x0, y + ph * k, pw, bind * k);
+      if (shade) {
+        ctx.fillStyle = `rgba(0,0,0,${shade})`;
+        ctx.fillRect(x0, y, pw, h);
+      }
+    };
+    const f = t * fps;
+    const k = Math.floor(f) % n;
+    // A card stays held most of the time and falls quickly at the end.
+    const q = Math.max(0, (f - Math.floor(f) - 0.5) / 0.5);
+    card(frames[(k + 1) % n]!, y0, ph + bind, 0);
+    const h = (ph + bind) * Math.cos((q * Math.PI) / 2);
+    if (h > 0.5) card(frames[k]!, hubY - h, h, 0.4 * q);
+    // The stop that holds the front card.
+    ctx.fillStyle = "#888";
+    ctx.fillRect(x0 + pw / 2 - 18, y0 - 12, 36, 6);
+  });
+  return <canvas ref={ref} width={W} height={H} className="toy-canvas" />;
+}
