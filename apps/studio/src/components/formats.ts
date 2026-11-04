@@ -1,7 +1,7 @@
 /** Frame sizes a film can have (pictures fit inside the frame, whatever its shape). */
 export const FORMATS = [
-  { id: "1920x1080", label: "Horizontal Full HD (16:9)", width: 1920, height: 1080 },
-  { id: "3840x2160", label: "Horizontal 4K (16:9)", width: 3840, height: 2160 },
+  { id: "1920x1080", label: "Full HD (16:9)", width: 1920, height: 1080 },
+  { id: "3840x2160", label: "4K (16:9)", width: 3840, height: 2160 },
   { id: "1620x1080", label: "Réflex (3:2)", width: 1620, height: 1080 },
   { id: "1440x1080", label: "Clásico (4:3)", width: 1440, height: 1080 },
   { id: "1080x1080", label: "Cuadrado (1:1)", width: 1080, height: 1080 },

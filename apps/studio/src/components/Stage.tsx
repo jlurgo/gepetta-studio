@@ -41,7 +41,6 @@ import { beginStroke, brushOutline, cloneMarker, currentSettings, endStroke, isP
 import { drawGuides, hitVanishingPoint } from "../render/guides";
 import { magnifyControl } from "./MagnifyPanel";
 import { capturePointer } from "./pointer";
-import { StageTools } from "./StageTools";
 import { beginSculpt, endSculpt, moveSculpt, sculpting } from "../state/sculpt";
 import { useBusy } from "../state/busy";
 import { type ShotChange, commitShot, useShotPreview, withShotPreview } from "../state/shot";
@@ -1196,7 +1195,6 @@ export function Stage() {
       }}
     >
       <canvas ref={canvasRef} />
-      {!playing && <StageTools />}
       <ZoomControl />
       <StageSound />
       <StageSoundView />

@@ -1,5 +1,5 @@
 import { currentSettings, hasSettings, usePaint } from "../state/paint";
-import { TOOLS } from "./StageTools";
+import { StageTools, TOOLS } from "./StageTools";
 import { type FilmState, cellsInColumns, clipAt } from "@gepetta/core";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -218,9 +218,11 @@ function TopBar({
         onBlur={rename}
         onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         aria-label="Nombre de la película"
+        title={name}
       />
-      <span className={`save-status ${saveStatus}`}>
-        {saveStatus === "saved" ? "Guardado" : saveStatus === "pending" ? "Guardando…" : "Error al guardar"}
+      <span className={`save-status ${saveStatus}`} title={saveStatus === "saved" ? "Guardado: todo lo que hacés se guarda solo" : undefined}>
+        {saveStatus === "saved" && <Icon name="check" size={14} />}
+        <span className="save-text">{saveStatus === "saved" ? "Guardado" : saveStatus === "pending" ? "Guardando…" : "Error al guardar"}</span>
       </span>
       <div className="spacer" />
       <label className="inline-control" title="Cuadros por segundo de esta película">
@@ -247,16 +249,17 @@ function TopBar({
         </select>
       </label>
       <button className={`btn${historyOpen ? " active" : ""}`} onClick={onToggleHistory} title="Historial de cambios">
-        <Icon name="history" /> Historial
+        <Icon name="history" /> <span className="btn-label">Historial</span>
       </button>
       <button className="btn" onClick={onVersions} title="Versiones publicadas: fecha, archivo, exportar de nuevo">
-        <Icon name="tag" /> Versiones{releaseCount ? ` (${releaseCount})` : ""}
+        <Icon name="tag" /> <span className="btn-label">Versiones</span>
+        {releaseCount ? <span className="btn-count">{releaseCount}</span> : null}
       </button>
-      <button className="btn" onClick={onToys} disabled={film.length === 0} title="Flipbook, zootropo y fenakitoscopio para imprimir y armar">
-        <Icon name="film" /> Juguetes
+      <button className="btn" onClick={onToys} disabled={film.length === 0} title="Juguetes ópticos para imprimir y armar: flipbook, zootropo, fenakitoscopio y mutoscopio">
+        <Icon name="film" /> <span className="btn-label">Juguetes</span>
       </button>
-      <button className="btn primary" onClick={onExport} disabled={film.length === 0}>
-        <Icon name="export" /> Exportar
+      <button className="btn primary" onClick={onExport} disabled={film.length === 0} title="Exportar la película como video (MP4 o WebM)">
+        <Icon name="export" /> <span className="btn-label">Exportar</span>
       </button>
     </header>
   );
@@ -320,7 +323,7 @@ function Transport() {
           </button>
         )}
         <button className="btn small" onClick={goToLive} disabled={!hasCamera || atLive} title="Ir a la celda del vivo de la cámara (I; en el control, apretar la palanca izquierda)">
-          <span className="live-dot static" /> Ir al vivo
+          <span className="live-dot static" /> <span className="btn-label">Ir al vivo</span>
         </button>
         <div className="segmented capture-mode" role="radiogroup" aria-label="Foto o video">
           {(["photo", "video"] as const).map((m) => (
@@ -337,7 +340,7 @@ function Transport() {
         </select>}
       </div>
 
-      <div className="group">
+      <div className="group status">
         {columns ? (
           <>
             <span className="hint">
@@ -471,6 +474,7 @@ function SidePanel() {
 }
 
 export function Editor() {
+  const playing = useEditor((s) => s.playback !== null);
   const [exporting, setExporting] = useState(false);
   const [toysOpen, setToysOpen] = useState(false);
   const [versionsOpen, setVersionsOpen] = useState(false);
@@ -505,6 +509,7 @@ export function Editor() {
             <HistoryPanel />
           </ErrorBoundary>
         )}
+        <StageTools hidden={playing} />
         <Stage />
         <SidePanel />
       </div>

@@ -101,8 +101,13 @@ function MicTool({ mic, index }: { mic: Mic; index: number }) {
   );
 }
 
-/** The toolbar of the big picture (after Blender's Grease Pencil): moving pictures, cameras, and painting tools. */
-export function StageTools() {
+/**
+ * The toolbar of the big picture (after Blender's Grease Pencil): moving
+ * pictures, cameras, and painting tools. A column of its own beside the
+ * picture, never over it; while playing it only hides, so the picture
+ * doesn't jump.
+ */
+export function StageTools({ hidden }: { hidden: boolean }) {
   const tool = usePaint((s) => s.tool);
   const rigs = useCamera((s) => s.rigs);
   const free = useFreeCameras();
@@ -115,7 +120,7 @@ export function StageTools() {
   );
 
   return (
-    <div className="stage-tools" onPointerDown={(e) => e.stopPropagation()}>
+    <div className={`stage-tools${hidden ? " hidden" : ""}`}>
       <div className="tool-buttons" role="toolbar" aria-label="Herramientas">
         {button(pick!)}
         {button(importer!)}
