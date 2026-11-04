@@ -1032,6 +1032,30 @@ input[type="range"] {
   border-left-color: var(--muted);
 }
 
+/* The line between the results row and the tracks (heads and cells). */
+.tl-result-sep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--line);
+  pointer-events: none;
+}
+
+.tl-head.main {
+  position: relative;
+}
+
+.tl-head.main::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: -8px;
+  bottom: -9px;
+  height: 1px;
+  background: var(--line);
+}
+
 .tl-result {
   position: absolute;
   border-radius: 6px;

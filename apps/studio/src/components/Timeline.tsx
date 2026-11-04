@@ -24,6 +24,8 @@ const RULER_H = 22;
 const RESULT_H = 54;
 const TRACK_H = RESULT_H;
 const ROW_GAP = 4;
+/** Room between the results row and the tracks, with a line across: the result is not a track. */
+const RESULT_GAP = 18;
 /** A group's title row: open (its tracks below it), or closed (one row for all of them, with marks where they have pictures). */
 const GROUP_OPEN_H = 22;
 const GROUP_SHUT_H = 30;
@@ -494,7 +496,7 @@ export function Timeline() {
   if (loop) for (let l = Math.floor(firstCell / period); l <= Math.floor(Math.max(firstCell, lastCell - 1) / period); l++) laps.push(l);
   else laps.push(0);
   const lapX = (lap: number) => lap * period * cw;
-  const rowsTop = RULER_H + ROW_GAP + RESULT_H + ROW_GAP;
+  const rowsTop = RULER_H + ROW_GAP + RESULT_H + RESULT_GAP;
   const tops: number[] = [];
   let height = rowsTop;
   for (const row of rows) {
@@ -1048,7 +1050,7 @@ export function Timeline() {
               </button>
             )}
           </div>
-          <div className="tl-head main" style={{ height: RESULT_H }}>
+          <div className="tl-head main" style={{ height: RESULT_H, marginBottom: RESULT_GAP - ROW_GAP }}>
             Resultado
           </div>
           {rows.map((row) =>
@@ -1139,6 +1141,7 @@ export function Timeline() {
                 <div key={`g:${row.group.id}`} className={`tl-row group${row.collapsed ? " collapsed" : ""}`} style={{ top: tops[i], height: rowHeight(row), backgroundSize: `${cw}px 100%`, ...(rowWidth !== undefined && { right: "auto", width: rowWidth }) }} />
               ),
             )}
+            <div className="tl-result-sep" style={{ top: RULER_H + ROW_GAP + RESULT_H + RESULT_GAP / 2 }} />
             {!loop && (
               <div
                 className="tl-next"
