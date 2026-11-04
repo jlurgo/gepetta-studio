@@ -6,6 +6,7 @@ import { type Mic, micColor, micLabel, useMics } from "../state/mics";
 import { type StageTool, usePaint } from "../state/paint";
 import { Icon, type IconName } from "./Icon";
 import { chooseMic } from "./MicPanel";
+import { ZoomControl } from "./Stage";
 
 export const TOOLS: { id: StageTool; icon: IconName; label: string; key: string }[] = [
   { id: "move", icon: "pointer", label: "Elegir", key: "V" },
@@ -150,6 +151,7 @@ export function StageTools({ hidden }: { hidden: boolean }) {
         <span className="tool-sep" />
         {paint.map(button)}
       </div>
+      <ZoomControl />
     </div>
   );
 }

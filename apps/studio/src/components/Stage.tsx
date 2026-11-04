@@ -44,6 +44,7 @@ import { capturePointer } from "./pointer";
 import { beginSculpt, endSculpt, moveSculpt, sculpting } from "../state/sculpt";
 import { useBusy } from "../state/busy";
 import { type ShotChange, commitShot, useShotPreview, withShotPreview } from "../state/shot";
+import { MOD } from "./keys";
 
 const PREFETCH = 12;
 
@@ -526,18 +527,19 @@ function useStageGestures(wrapRef: React.RefObject<HTMLDivElement | null>) {
 }
 
 /** − / percent (back to fitting) / + over the big picture. */
-function ZoomControl() {
+/** Zoom of the big picture, at the foot of the tool column (over the picture it hid the frame's handles). */
+export function ZoomControl() {
   const zoom = useStageView((s) => s.zoom);
   return (
-    <div className="zoom-control" onPointerDown={(e) => e.stopPropagation()}>
-      <button className="icon-btn small" title="Alejar (Ctrl + −)" onClick={() => zoomBy(1 / 1.5)} disabled={zoom <= ZOOM_MIN}>
-        <Icon name="minus" size={14} />
-      </button>
-      <button className="zoom-value" title="Ver todo el cuadro (Ctrl + 0)" onClick={fitStage}>
-        {zoom === 1 ? "Ajustado" : `${Math.round(zoom * 100)} %`}
-      </button>
-      <button className="icon-btn small" title="Acercar (Ctrl + +; o pellizcá el trackpad, o Ctrl + rueda)" onClick={() => zoomBy(1.5)} disabled={zoom >= ZOOM_MAX}>
+    <div className="zoom-control" role="group" aria-label="Zoom">
+      <button className="icon-btn small" title={`Acercar (${MOD} + +; o pellizcá el trackpad, o ${MOD} + rueda)`} onClick={() => zoomBy(1.5)} disabled={zoom >= ZOOM_MAX}>
         <Icon name="plus" size={14} />
+      </button>
+      <button className="zoom-value" title={`Ver todo el cuadro (${MOD} + 0)`} onClick={fitStage}>
+        {zoom === 1 ? "Todo" : `${Math.round(zoom * 100)}%`}
+      </button>
+      <button className="icon-btn small" title={`Alejar (${MOD} + −)`} onClick={() => zoomBy(1 / 1.5)} disabled={zoom <= ZOOM_MIN}>
+        <Icon name="minus" size={14} />
       </button>
     </div>
   );
@@ -977,7 +979,10 @@ export function Stage() {
         placingArea = area;
       }
       // Fitted in the stage, then zoomed and moved as the view says (see stageView).
-      const layout = { width: cw, height: ch, area, fit: containScale(area, { width: cw, height: ch }) * (placing ? 0.9 : 0.98), dpr };
+      // A fixed margin all round, so the frame's handles never sit on the stage's edge.
+      const margin = 16 * dpr;
+      const room = { width: Math.max(1, cw - 2 * margin), height: Math.max(1, ch - 2 * margin) };
+      const layout = { width: cw, height: ch, area, fit: containScale(area, room) * (placing ? 0.92 : 1), dpr };
       setStageLayout(layout);
       const { s, ox, oy } = viewTransform(layout);
       ctx.setTransform(s, 0, 0, s, ox, oy);
@@ -1195,7 +1200,6 @@ export function Stage() {
       }}
     >
       <canvas ref={canvasRef} />
-      <ZoomControl />
       <StageSound />
       <StageSoundView />
       {marker && <div className="focus-marker" style={{ left: marker.x, top: marker.y }} />}
