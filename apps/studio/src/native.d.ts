@@ -117,6 +117,9 @@ export interface GepettaNative {
     search(query: string): Promise<YouTubeVideo[]>; // youtube:search
     /** Opens the video's YouTube page in the browser. */
     open(id: string): Promise<void>; // youtube:open
+    /** Downloads a video as a single .mp4 (rejects, with a message to show, when it can't). */
+    download(id: string): Promise<{ name: string; mime: string; data: ArrayBuffer }>; // youtube:download
+    onProgress(cb: (received: number, total: number) => void): () => void; // event youtube:progress
   };
   updates: {
     /** Version already downloaded and waiting to install, if any. */

@@ -401,6 +401,23 @@ input[type="range"] {
   color: var(--danger);
 }
 
+.stage-badge.live .live-off {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: -2px -4px -2px 2px;
+  border: none;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.15);
+  color: #fff;
+  cursor: pointer;
+}
+
+.stage-badge.live .live-off:hover {
+  background: rgb(255 255 255 / 0.3);
+}
+
 /* Blinks while the big picture shows a camera live. */
 .live-dot {
   width: 10px;
@@ -2951,6 +2968,17 @@ input[type="range"] {
 
 .yt-info small {
   color: var(--muted);
+}
+
+.yt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.yt-actions .btn {
+  white-space: nowrap;
 }
 
 /* Choosing the stretch of a video to import, over its full length. */

@@ -611,7 +611,7 @@ export function Timeline() {
   };
   // Results row: the film at each cell on screen, with every camera live where it aims.
   // A loop film: a camera aims inside the drum.
-  const liveTargets = rigs.filter((r) => r.source).map((r) => ({ id: r.id, target: { ...r.target, cell: wrap(r.target.cell) } }));
+  const liveTargets = rigs.filter((r) => r.source && r.live).map((r) => ({ id: r.id, target: { ...r.target, cell: wrap(r.target.cell) } }));
   const resultCells: { cell: number; items: CellItem[] }[] = [];
   for (let c = firstCell; c < lastCell; c++) {
     const stack = wrap(c) < film.length ? stackAt(film, wrap(c), { index }) : [];
@@ -692,7 +692,7 @@ export function Timeline() {
       const { setColumns, moveTo } = useEditor.getState();
       const shownRun = runs.find((r) => p.v >= r.start && p.v < r.end);
       // An empty cell (or a camera's live one) is a column of its own.
-      const live = rigs.some((r) => r.source && wrap(r.target.cell) === p.cell);
+      const live = rigs.some((r) => r.source && r.live && wrap(r.target.cell) === p.cell);
       const run = shownRun
         ? { start: wrap(shownRun.start), end: wrap(shownRun.start) + shownRun.end - shownRun.start }
         : p.cell < film!.length || live
@@ -717,7 +717,7 @@ export function Timeline() {
       return;
     }
     // A camera's live cell: dragging it takes its photos elsewhere.
-    const liveRig = rigs.find((r) => r.target.track === p.track!.id && wrap(r.target.cell) === p.cell);
+    const liveRig = rigs.find((r) => r.source && r.live && r.target.track === p.track!.id && wrap(r.target.cell) === p.cell);
     if (liveRig) {
       capturePointer(e);
       setGesture({ kind: "live", rig: liveRig.id, x0: p.x, y0: p.y, moved: false, to: null });
@@ -1238,7 +1238,7 @@ export function Timeline() {
 
             {/* Each camera live in the cell it aims at. */}
             {laps.map((l) => rigs.map((r) => {
-              if (!r.source) return null;
+              if (!r.source || !r.live) return null;
               const target = r.target;
               const v = wrap(target.cell) + l * period;
               const track = film.tracks.find((t) => t.id === target.track);
@@ -1252,7 +1252,7 @@ export function Timeline() {
 
             {/* Where each camera puts its photos (not while its cell is being picked again). */}
             {laps.map((l) => rigs.map((r, i) => {
-              if (r.id === picking) return null;
+              if (!r.live || r.id === picking) return null;
               if (rowOf(r.target.track) < 0) return null;
               const color = rigColor(i);
               return (

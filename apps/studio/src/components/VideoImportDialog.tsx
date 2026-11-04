@@ -5,8 +5,8 @@ import { useBusy } from "../state/busy";
 import { useEditor } from "../state/editor";
 import { Dialog } from "./Dialog";
 
-/** A video to import: a file chosen from disk, or a link to download. */
-export type VideoSource = { kind: "file"; file: File } | { kind: "web"; url: string; name: string };
+/** A video to import: a file chosen from disk, a link to download, or a YouTube video. */
+export type VideoSource = { kind: "file"; file: File } | { kind: "web"; url: string; name: string } | { kind: "youtube"; id: string; name: string };
 
 const mmss = (s: number) => (Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "—");
 const mb = (bytes: number) => `${(bytes / 1024 ** 2).toLocaleString("es-AR", { maximumFractionDigits: 1 })} MB`;
@@ -55,6 +55,8 @@ function RangeBar({ duration, from, to, current, onFrom, onTo, onSeek }: { durat
 export function VideoImportDialog({ source, mode = "frames", onClose }: { source: VideoSource; mode?: "frames" | "track"; onClose(): void }) {
   const name = source.kind === "file" ? source.file.name : source.name;
   const web = source.kind === "web" ? source.url : null;
+  // A YouTube video can't be streamed on screen: it's downloaded first, then shown.
+  const youtubeId = source.kind === "youtube" ? source.id : null;
   const filmFps = useEditor((s) => s.film!.settings.fps);
   const loaded = useRef<Awaited<ReturnType<typeof loadVideo>> | null>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -70,27 +72,55 @@ export function VideoImportDialog({ source, mode = "frames", onClose }: { source
 
   useEffect(() => {
     let disposed = false;
-    loadVideo(web ?? (source as { file: File }).file).then(
-      (v) => {
-        if (disposed) return v.dispose();
-        loaded.current = v;
-        v.video.controls = true;
-        v.video.ontimeupdate = () => setCurrent(v.video.currentTime);
-        previewRef.current?.appendChild(v.video);
-        setInfo(v.info);
-        if (Number.isFinite(v.info.duration)) setTo(Number(v.info.duration.toFixed(2)));
-        else setError("Este video no tiene una duración conocida (¿es una transmisión en vivo?): no se puede importar un tramo.");
-      },
-      (e) => setError(e.message),
-    );
+    const show = (v: Awaited<ReturnType<typeof loadVideo>>) => {
+      if (disposed) return v.dispose();
+      loaded.current = v;
+      v.video.controls = true;
+      v.video.ontimeupdate = () => setCurrent(v.video.currentTime);
+      previewRef.current?.appendChild(v.video);
+      setInfo(v.info);
+      if (Number.isFinite(v.info.duration)) setTo(Number(v.info.duration.toFixed(2)));
+      else setError("Este video no tiene una duración conocida (¿es una transmisión en vivo?): no se puede importar un tramo.");
+    };
+    const fail = (e: unknown) => setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(e));
+    if (youtubeId) {
+      // YouTube streams can't play on screen: download the whole file first, then preview it.
+      const native = window.gepetta;
+      if (!native?.youtube?.download) setError("Esto anda en la app de escritorio.");
+      else {
+        setDownloading({ received: 0, total: 0 });
+        native.youtube
+          .download(youtubeId)
+          .then((got) => loadVideo(new File([got.data], name, { type: got.mime })))
+          .then(
+            (v) => {
+              if (disposed) return v.dispose();
+              setDownloading(null);
+              show(v);
+            },
+            (e) => {
+              if (disposed) return;
+              setDownloading(null);
+              fail(e);
+            },
+          );
+      }
+    } else {
+      loadVideo(web ?? (source as { file: File }).file).then(show, (e) => setError((e as Error).message));
+    }
     return () => {
       disposed = true;
       loaded.current?.dispose();
       loaded.current?.video.remove();
     };
-  }, [web, source]);
+  }, [web, youtubeId, name, source]);
 
-  useEffect(() => (web ? window.gepetta?.video.onProgress((received, total) => setDownloading({ received, total })) : undefined), [web]);
+  useEffect(() => {
+    const native = window.gepetta;
+    const onProgress = (received: number, total: number) => setDownloading({ received, total });
+    if (web) return native?.video.onProgress(onProgress);
+    if (youtubeId) return native?.youtube?.onProgress?.(onProgress);
+  }, [web, youtubeId]);
 
   const ok = !!info && Number.isFinite(info.duration);
   const times = ok ? sampleTimes(from, Math.min(to, info!.duration), fps) : [];

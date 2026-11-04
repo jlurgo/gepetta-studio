@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { YouTubeVideo } from "../native";
 import { Dialog } from "./Dialog";
 import { Icon } from "./Icon";
+import type { VideoSource } from "./VideoImportDialog";
 
 const isLink = (text: string) => /^https?:\/\//i.test(text.trim());
 const isYouTube = (text: string) => /(?:youtube\.com|youtu\.be)\//i.test(text);
@@ -22,12 +23,13 @@ function nameFromUrl(link: string): string {
 /**
  * A video from the internet: the link of a video file goes to the preview, to
  * pick the stretch before it downloads; words or a YouTube link look for
- * videos on YouTube, to watch them in the browser (YouTube is not downloaded).
+ * videos on YouTube, each one to watch in the browser or to download and
+ * import (whoever downloads it has to have the right to use the video).
  */
-export function WebVideoDialog({ onVideo, onClose }: { onVideo(url: string, name: string, mode: "frames" | "track"): void; onClose(): void }) {
+export function WebVideoDialog({ onPick, onClose }: { onPick(source: VideoSource, mode: "frames" | "track"): void; onClose(): void }) {
   const native = window.gepetta;
   // The window is newer than the app's main part until the app opens again.
-  const outdated = !!native && (!native.video || !native.youtube);
+  const outdated = !!native && (!native.video || !native.youtube.download);
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"frames" | "track">("frames");
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(url: string, name
     setError(null);
     if (directLink(text)) {
       // The preview streams it and downloads only the stretch chosen.
-      onVideo(text.trim(), nameFromUrl(text.trim()), mode);
+      onPick({ kind: "web", url: text.trim(), name: nameFromUrl(text.trim()) }, mode);
       return;
     }
     setResults(null);
@@ -54,6 +56,8 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(url: string, name
     }
   }
 
+  const chooseMode = directLink(text) || (!!results && results.length > 0);
+
   return (
     <Dialog title="Video de internet" onClose={onClose}>
       {!native || outdated ? (
@@ -62,8 +66,8 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(url: string, name
         <div className="web-video">
           <p className="hint">
             Pegá el link de un archivo de video (.mp4, .webm, .mov… o un archivo de Google Drive compartido): se abre la vista previa para ver el video y elegir el tramo, y recién
-            ahí se baja. Con palabras o un link de YouTube, buscás en YouTube para verlo en el navegador: de YouTube la app no puede bajarlo (si es tuyo o tenés permiso, bajalo y
-            elegí el archivo).
+            ahí se baja. Con palabras o un link de YouTube, buscás en YouTube: cada resultado lo podés ver en el navegador o bajarlo e importarlo acá. Bajá solo videos que sean
+            tuyos o que tengas permiso de usar.
           </p>
           <form
             className="row"
@@ -77,7 +81,7 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(url: string, name
               {directLink(text) ? "Ver y elegir el tramo" : searching ? "Buscando…" : "Buscar"}
             </button>
           </form>
-          {directLink(text) && (
+          {chooseMode && (
             <div className="segmented">
               <button type="button" className={mode === "frames" ? "active" : ""} onClick={() => setMode("frames")}>
                 Cuadro por cuadro, desde la celda elegida
@@ -101,9 +105,14 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(url: string, name
                       {v.duration ? ` · ${time(v.duration)}` : ""}
                     </small>
                   </div>
-                  <button className="btn small" onClick={() => void native.youtube.open(v.id)} title="Abrirlo en el navegador">
-                    <Icon name="play" size={12} /> Ver en YouTube
-                  </button>
+                  <div className="yt-actions">
+                    <button className="btn small ghost" onClick={() => void native.youtube.open(v.id)} title="Abrirlo en el navegador">
+                      <Icon name="play" size={12} /> Ver en YouTube
+                    </button>
+                    <button className="btn small primary" onClick={() => onPick({ kind: "youtube", id: v.id, name: v.title }, mode)} title="Bajarlo e importarlo">
+                      <Icon name="import" size={12} /> Bajar e importar
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

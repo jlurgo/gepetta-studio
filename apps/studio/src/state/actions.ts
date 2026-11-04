@@ -123,14 +123,16 @@ export async function capture(rigId?: string) {
 
 /** The cameras the big camera button shoots with: enabled, open and not recording. */
 export function readyRigs(rigs: Rig[]): Rig[] {
-  return rigs.filter((r) => r.enabled && r.source && !r.recording);
+  // Only cameras whose live is placed on a cell shoot (choosing a cell places it).
+  return rigs.filter((r) => r.enabled && r.source && r.live && !r.recording);
 }
 
 /** Takes a photo with every enabled camera at once, each into its own target. */
 export async function captureAll() {
   const rigs = readyRigs(useCamera.getState().rigs);
   if (rigs.length === 0) {
-    useBusy.getState().notify("No hay ninguna cámara habilitada para sacar la foto.", "error");
+    const placeable = useCamera.getState().rigs.some((r) => r.source && !r.live && !r.recording);
+    useBusy.getState().notify(placeable ? "Elegí una celda para la cámara (tocala en la barra y después una celda): ahí saca la foto." : "No hay ninguna cámara habilitada para sacar la foto.", "error");
     return;
   }
   await Promise.all(rigs.map((r) => capture(r.id)));
@@ -240,7 +242,10 @@ export function shoot() {
   if (rigs.some((r) => r.recording)) return stopAllRecordings();
   if (useEditor.getState().captureMode === "photo") return void captureAll();
   const ready = readyRigs(rigs);
-  if (ready.length === 0) return useBusy.getState().notify("No hay ninguna cámara habilitada para grabar.", "error");
+  if (ready.length === 0) {
+    const placeable = rigs.some((r) => r.source && !r.live && !r.recording);
+    return useBusy.getState().notify(placeable ? "Elegí una celda para la cámara (tocala en la barra y después una celda): ahí graba." : "No hay ninguna cámara habilitada para grabar.", "error");
+  }
   startVideo(ready);
 }
 

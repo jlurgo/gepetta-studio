@@ -293,11 +293,11 @@ function useGuideDrag(filmRect: React.RefObject<FilmRect | null>) {
   return { onPointerDown, onPointerMove, onPointerUp, dragging: () => drag.current !== null };
 }
 
-/** The open camera aimed at a track's cell, if any. */
+/** The open camera showing live at a track's cell, if any. */
 function liveRigAt(track: string, cell: number) {
   const camera = useCamera.getState();
   return camera.rigs.find((r) => {
-    if (!r.source) return false;
+    if (!r.source || !r.live) return false;
     const t = camera.targetOf(r);
     return t.track === track && t.cell === cell;
   });
@@ -930,7 +930,7 @@ export function Stage() {
   });
   // Whether the big picture shows a camera live: one aimed at the cell on screen (or magnified).
   const cursorCell = useEditor((s) => s.cursor.cell);
-  const liveHere = useCamera((s) => s.rigs.some((r) => r.source && s.targetOf(r).cell === cursorCell));
+  const liveHere = useCamera((s) => s.rigs.some((r) => r.source && r.live && s.targetOf(r).cell === cursorCell));
   const cameraError = useCamera((s) => s.error?.message ?? null);
   const recording = useCamera((s) => s.rigs.some((r) => r.recording));
   const playing = useEditor((s) => s.playback !== null);
@@ -1039,7 +1039,7 @@ export function Stage() {
         };
         if (magnified && active) {
           // A magnified view does not line up with the film: only the camera, plain.
-          const live = camera.liveOf(active);
+          const live = active.live ? camera.liveOf(active) : null;
           if (live) drawLive(live, IDENTITY_TRANSFORM, 1, true);
           showGuides = false;
           showOnion = false;
@@ -1048,7 +1048,7 @@ export function Stage() {
           // live in its track, with the track's transparency and position.
           // While a change is previewed the index (built from the film) has the old pictures.
           const items = stackAt(shown, cursor.cell, shown === film ? { index } : {});
-          const here = camera.rigs.filter((r) => r.source && camera.targetOf(r).cell === cursor.cell);
+          const here = camera.rigs.filter((r) => r.source && r.live && camera.targetOf(r).cell === cursor.cell);
           for (const t of shown.tracks) {
             // While drawing, the cell drawn on shows its drawing, not the camera aimed there.
             const drawingHere = isPainting(tool) && t.id === cursor.track;
@@ -1210,6 +1210,19 @@ export function Stage() {
         <div className="stage-badge live">
           <span className="live-dot" />
           {recording ? "Grabando · espacio o el botón grande para detener" : "En vivo"}
+          {liveHere && !recording && (
+            <button
+              className="live-off"
+              title="Quitar la cámara en vivo de esta celda"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => {
+                const cam = useCamera.getState();
+                for (const r of cam.rigs) if (r.live && cam.targetOf(r).cell === cursorCell) cam.setLive(r.id, false);
+              }}
+            >
+              <Icon name="close" size={13} />
+            </button>
+          )}
         </div>
       )}
       {!playing && focused && (

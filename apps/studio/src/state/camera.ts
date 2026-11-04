@@ -13,10 +13,11 @@ import { useFocusProbes } from "./focusProbes";
 
 /**
  * Cameras in use. Each one is a tool with its own target (a track and a cell)
- * where its photos go; the target moves on after each photo. Several can be
- * open at once: every one whose target is the cell on screen shows live there.
- * The grid cursor is only what is looked at: a target is chosen on purpose,
- * by picking a cell for a camera (`picking`).
+ * where its photos go; the target moves on after each photo. A camera shows
+ * live on the grid (its cell and the stage) only once a cell is chosen for it
+ * (`live`); until then, and after it is taken off (`setLive`), it shows
+ * nothing. Several can be open at once. The grid cursor is only what is looked
+ * at: a target is chosen on purpose, by picking a cell for a camera (`picking`).
  *
  * One is "active": the panels (settings, focus, magnifier) act on it. The
  * top-level fields (`source`, `controls`, …) mirror the active camera, so those
@@ -36,6 +37,8 @@ export interface Rig {
   autoRotation: number | null;
   /** Where its photos go. */
   target: GridCursor;
+  /** Its live view is placed on `target` (shown there and on the stage): on only once a cell is chosen, off until then and after it is taken off. */
+  live: boolean;
   /** Shoots with the big camera button (with every other enabled camera). */
   enabled: boolean;
   /** Video being recorded: pictures taken so far. */
@@ -82,6 +85,8 @@ interface CameraState {
   /** Picks the cell for the camera being picked for, and stops picking. */
   pick(target: GridCursor): void;
   cancelPicking(): void;
+  /** Shows or hides a camera's live view on the grid (hiding keeps the camera open). */
+  setLive(rigId: string, on: boolean): void;
   setEnabled(rigId: string, enabled: boolean): void;
   /** The camera's next photos start a sequence of their own. */
   newSequence(rigId: string): void;
@@ -220,6 +225,7 @@ function newRig(deviceId: string | null, target: GridCursor): Rig {
     overview: null,
     autoRotation: null,
     target,
+    live: false,
     enabled: true,
     recording: null,
     shot: PLAIN_SHOT,
@@ -461,13 +467,17 @@ export const useCamera = create<CameraState>((set, get) => {
       const rigId = get().picking;
       set({ picking: null });
       if (!rigId || !rig(rigId)) return;
-      // Picking a cell starts a new sequence of photos.
-      patch(rigId, { target, seq: newId() });
+      // Choosing a cell shows the camera live there and starts a new sequence of photos.
+      patch(rigId, { target, seq: newId(), live: true });
       useEditor.getState().moveTo(target.cell, target.track);
     },
 
     cancelPicking() {
       set({ picking: null });
+    },
+
+    setLive(rigId, on) {
+      patch(rigId, { live: on });
     },
 
     setEnabled(rigId, enabled) {

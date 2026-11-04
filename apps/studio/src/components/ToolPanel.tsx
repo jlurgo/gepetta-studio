@@ -176,18 +176,31 @@ function OrientationControl() {
   );
 }
 
-/** Where the camera's photos go, and the cell picking. */
+/** Where the camera's photos go, choosing its cell, and taking its live view off. */
 function CameraTarget({ rig, color }: { rig: Rig; color: string }) {
   const track = useEditor((s) => s.film?.tracks.find((t) => t.id === rig.target.track));
   const picking = useCamera((s) => s.picking === rig.id);
   return (
     <div className="camera-target" style={{ ["--rig" as string]: color }}>
       <span>
-        Sus fotos van a <strong>{track?.name ?? "—"}</strong>, celda {useCamera.getState().targetOf(rig).cell + 1}
+        {rig.live ? (
+          <>
+            En vivo en <strong>{track?.name ?? "—"}</strong>, celda {useCamera.getState().targetOf(rig).cell + 1}
+          </>
+        ) : (
+          "Elegí una celda para verla en vivo y sacar sus fotos ahí."
+        )}
       </span>
-      <button className={`btn small${picking ? " active" : ""}`} onClick={() => chooseCamera(rig.id)}>
-        {picking ? "Elegí la celda… (Esc)" : "Elegir celda"}
-      </button>
+      <div className="action-row">
+        <button className={`btn small${picking ? " active" : ""}`} onClick={() => chooseCamera(rig.id)}>
+          {picking ? "Elegí la celda… (Esc)" : rig.live ? "Cambiar de celda" : "Elegir celda"}
+        </button>
+        {rig.live && !picking && (
+          <button className="btn small" onClick={() => useCamera.getState().setLive(rig.id, false)} title="Deja de mostrar la cámara en vivo (la cámara sigue disponible)">
+            Quitar el vivo
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -222,13 +235,13 @@ function CameraToolPanel() {
         <span>Saca con el botón grande</span>
       </label>
       <div className="action-row">
-        <button className="btn small" onClick={() => void capture(rig.id)} disabled={!rig.source || !!rig.recording}>
+        <button className="btn small" onClick={() => void capture(rig.id)} disabled={!rig.source || !rig.live || !!rig.recording} title={rig.live ? undefined : "Elegí una celda primero"}>
           <Icon name="camera" size={14} /> Foto solo con esta
         </button>
         <button
           className={`btn small${rig.recording ? " recording" : ""}`}
           onClick={() => (rig.recording ? void stopRecording(rig.id) : startVideo([rig]))}
-          disabled={!rig.source}
+          disabled={!rig.source || (!rig.live && !rig.recording)}
           title="Una imagen por celda, a la velocidad de la película, y su sonido con los micrófonos habilitados"
         >
           <Icon name={rig.recording ? "stop" : "record"} size={14} /> {rig.recording ? `Detener (${rig.recording.cells})` : "Grabar video"}

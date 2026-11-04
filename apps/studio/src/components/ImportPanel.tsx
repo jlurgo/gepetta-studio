@@ -201,9 +201,9 @@ export function ImportPanel() {
       />
       {web && (
         <WebVideoDialog
-          onVideo={(url, name, mode) => {
+          onPick={(source, mode) => {
             setWeb(false);
-            setVideo({ source: { kind: "web", url, name }, mode });
+            setVideo({ source, mode });
           }}
           onClose={() => setWeb(false)}
         />
