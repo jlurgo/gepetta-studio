@@ -31,7 +31,7 @@ import type { LiveFrame } from "../capture/types";
 import { type Drawable, type Size, containScale, drawStack, pictureMatrix } from "../render/frame";
 import { beginLasso, drawLassoOutline, endLasso, lassoActive, lassoGhost, moveLasso } from "../state/lasso";
 import { objectsAt, pickedStrokes, selectStrokes, strokesBounds, transformStrokes, updateStrokes, useStrokePreview, useStrokes, withStrokePreview } from "../state/strokes";
-import { type CropSide, type HandleKind, dragCrop, drawHandles, dragTransform, hitHandle } from "../render/handles";
+import { type CropSide, type HandleKind, dragCrop, drawHandles, dragTransform, hitHandle, setVisibleTop } from "../render/handles";
 import { type HandleTarget, commitTransform, selectedClipId, sequenceMoved, useLayers } from "../state/layers";
 import { shotOn, useCamera } from "../state/camera";
 import { measureProbes, probeColor, probeSize, readings, useFocusProbes } from "../state/focusProbes";
@@ -987,6 +987,7 @@ export function Stage() {
       const { s, ox, oy } = viewTransform(layout);
       ctx.setTransform(s, 0, 0, s, ox, oy);
       filmRect.current = { x: ox / dpr, y: oy / dpr, s: s / dpr };
+      setVisibleTop(-oy / s);
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, size.width, size.height);
       ctx.imageSmoothingQuality = "high";

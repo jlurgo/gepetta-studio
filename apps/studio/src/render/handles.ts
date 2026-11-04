@@ -28,13 +28,25 @@ function sides(corners: Point[]): [CropSide, Point][] {
   ];
 }
 
-/** Rotation knob: beyond the middle of the top side, at a fixed screen distance. */
+/** Top edge of what the stage shows, in film coordinates (set by the stage every frame). */
+let visibleTop = -Infinity;
+export function setVisibleTop(y: number) {
+  visibleTop = y;
+}
+
+/**
+ * Rotation knob: beyond the middle of the top side, at a fixed screen
+ * distance; inside the frame instead when that would be off the stage (a
+ * frame as tall as the stage), so it can always be grabbed.
+ */
 function knob(corners: Point[], px: number): Point {
   const [a, b, , d] = corners as [Point, Point, Point, Point];
   const m = mid(a, b);
   const up = { x: a.x - d.x, y: a.y - d.y };
   const len = Math.hypot(up.x, up.y) || 1;
-  return { x: m.x + (up.x / len) * KNOB_GAP * px, y: m.y + (up.y / len) * KNOB_GAP * px };
+  const out = { x: m.x + (up.x / len) * KNOB_GAP * px, y: m.y + (up.y / len) * KNOB_GAP * px };
+  if (out.y >= visibleTop + CORNER * px) return out;
+  return { x: m.x - (up.x / len) * KNOB_GAP * px, y: m.y - (up.y / len) * KNOB_GAP * px };
 }
 
 export function drawHandles(ctx: CanvasRenderingContext2D, corners: Point[], px: number, crop: boolean) {
