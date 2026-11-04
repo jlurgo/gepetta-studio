@@ -428,6 +428,12 @@ export function moveColumns(by: number) {
 export function removeColumns(ranges: ColumnRange[]) {
   const { film, commit, cursor } = useEditor.getState();
   if (!film || !ranges.length) return;
+  // The column of the next cell (past the end) has nothing to take out: ⌫ there takes the last one, as typing.
+  const past = !film.settings.loop && ranges.every((r) => r.start >= film.length);
+  if (past) {
+    if (film.length === 0) return;
+    ranges = [{ start: film.length - 1, end: film.length }];
+  }
   const ops = removeColumnsOps(film, ranges);
   const removed = cellsInColumns(ranges);
   if (ops.length) {
@@ -437,7 +443,7 @@ export function removeColumns(ranges: ColumnRange[]) {
   const after = useEditor.getState().film!;
   // The next column comes picked (the last one's, when the end went), so ⌫ again takes it out too.
   const first = Math.min(...ranges.map((r) => r.start));
-  const next = first < after.length ? first : after.length - 1;
+  const next = past ? after.length : first < after.length ? first : after.length - 1;
   if (ops.length && next >= 0) {
     useEditor.getState().moveTo(next);
     useEditor.getState().setColumns([{ start: next, end: next + 1 }]);
