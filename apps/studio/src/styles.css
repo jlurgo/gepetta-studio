@@ -2952,3 +2952,53 @@ input[type="range"] {
 .yt-info small {
   color: var(--muted);
 }
+
+/* Choosing the stretch of a video to import, over its full length. */
+.range-bar {
+  position: relative;
+  height: 26px;
+  margin: 10px 0 2px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.range-sel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  border-left: 2px solid var(--accent);
+  border-right: 2px solid var(--accent);
+}
+
+.range-play {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--teal);
+  pointer-events: none;
+}
+
+.range-handle {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 20px;
+  margin-left: -6px;
+  transform: translateY(-50%);
+  border-radius: 3px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.range-times {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.range-times strong {
+  color: var(--text);
+}

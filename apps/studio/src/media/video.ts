@@ -6,16 +6,23 @@ export interface VideoInfo {
   height: number;
 }
 
-export async function loadVideo(file: File): Promise<{ video: HTMLVideoElement; info: VideoInfo; dispose(): void }> {
-  const url = URL.createObjectURL(file);
+/**
+ * Loads a video for previewing and for pulling stills: from a file (an
+ * object URL, read and drawn same-origin) or from a link (streamed, only
+ * watched — drawing it to a canvas is blocked by the browser, so to take its
+ * stills download the file first and load that).
+ */
+export async function loadVideo(src: File | string): Promise<{ video: HTMLVideoElement; info: VideoInfo; dispose(): void }> {
+  const objectUrl = typeof src === "string" ? null : URL.createObjectURL(src);
+  const url = objectUrl ?? (src as string);
   const video = Object.assign(document.createElement("video"), { src: url, muted: true, preload: "auto", playsInline: true });
   try {
     await new Promise<void>((resolve, reject) => {
       video.onloadeddata = () => resolve();
-      video.onerror = () => reject(new Error("No se pudo leer el video (¿formato no soportado?)"));
+      video.onerror = () => reject(new Error(objectUrl ? "No se pudo leer el video (¿formato no soportado?)" : "No se pudo abrir el video de ese link (¿no es un video, o el servidor no deja verlo?)."));
     });
   } catch (e) {
-    URL.revokeObjectURL(url);
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
     throw e;
   }
   return {
@@ -24,7 +31,7 @@ export async function loadVideo(file: File): Promise<{ video: HTMLVideoElement; 
     dispose: () => {
       video.removeAttribute("src");
       video.load();
-      URL.revokeObjectURL(url);
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     },
   };
 }

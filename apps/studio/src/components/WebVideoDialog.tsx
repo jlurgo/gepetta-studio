@@ -1,54 +1,54 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { YouTubeVideo } from "../native";
 import { Dialog } from "./Dialog";
 import { Icon } from "./Icon";
 
 const isLink = (text: string) => /^https?:\/\//i.test(text.trim());
 const isYouTube = (text: string) => /(?:youtube\.com|youtu\.be)\//i.test(text);
+const directLink = (text: string) => isLink(text) && !isYouTube(text);
 
 const time = (s: number) => (s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}` : "");
-const mb = (bytes: number) => `${(bytes / 1024 ** 2).toLocaleString("es-AR", { maximumFractionDigits: 1 })} MB`;
+
+/** A name for a web video from its link, before it is downloaded. */
+function nameFromUrl(link: string): string {
+  try {
+    const last = decodeURIComponent(new URL(link).pathname.split("/").pop() ?? "");
+    return /\.\w{2,4}$/.test(last) ? last : "video de internet";
+  } catch {
+    return "video de internet";
+  }
+}
 
 /**
- * A video from the internet: a link to a video file is downloaded and goes
- * on to be imported (frame by frame, or in a track to trace over); words or
- * a YouTube link look for videos on YouTube, to watch them in the browser.
+ * A video from the internet: the link of a video file goes to the preview, to
+ * pick the stretch before it downloads; words or a YouTube link look for
+ * videos on YouTube, to watch them in the browser (YouTube is not downloaded).
  */
-export function WebVideoDialog({ onVideo, onClose }: { onVideo(file: File, mode: "frames" | "track"): void; onClose(): void }) {
+export function WebVideoDialog({ onVideo, onClose }: { onVideo(url: string, name: string, mode: "frames" | "track"): void; onClose(): void }) {
   const native = window.gepetta;
   // The window is newer than the app's main part until the app opens again.
   const outdated = !!native && (!native.video || !native.youtube);
   const [text, setText] = useState("");
   const [mode, setMode] = useState<"frames" | "track">("frames");
-  const [busy, setBusy] = useState<{ received: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<YouTubeVideo[] | null>(null);
   const [searching, setSearching] = useState(false);
 
-  useEffect(() => (outdated ? undefined : native?.video.onProgress((received, total) => setBusy({ received, total }))), [native, outdated]);
-
   async function go() {
     if (!native || outdated || !text.trim()) return;
     setError(null);
-    if (isLink(text) && !isYouTube(text)) {
-      setResults(null);
-      setBusy({ received: 0, total: 0 });
-      try {
-        const got = await native.video.download(text.trim());
-        onVideo(new File([got.data], got.name, { type: got.mime }), mode);
-      } catch (e) {
-        setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(e));
-      } finally {
-        setBusy(null);
-      }
+    if (directLink(text)) {
+      // The preview streams it and downloads only the stretch chosen.
+      onVideo(text.trim(), nameFromUrl(text.trim()), mode);
       return;
     }
+    setResults(null);
     setSearching(true);
     try {
       setResults(await native.youtube.search(text.trim()));
     } catch (e) {
       console.error("[gepetta] youtube search", e);
-      setError("No se pudo buscar en YouTube: fijate que haya internet.");
+      setError("No se pudo buscar en YouTube: fijate que haya internet. (Si acabás de actualizar la app, cerrala y volvé a abrirla.)");
     } finally {
       setSearching(false);
     }
@@ -61,8 +61,9 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(file: File, mode:
       ) : (
         <div className="web-video">
           <p className="hint">
-            Pegá el link de un archivo de video (.mp4, .webm, .mov… o un archivo de Google Drive compartido) y se baja y se importa. Con palabras o un link de YouTube, buscás en
-            YouTube para verlo en el navegador: de YouTube la app no puede bajarlo (si es tuyo o tenés permiso, bajalo y elegí el archivo).
+            Pegá el link de un archivo de video (.mp4, .webm, .mov… o un archivo de Google Drive compartido): se abre la vista previa para ver el video y elegir el tramo, y recién
+            ahí se baja. Con palabras o un link de YouTube, buscás en YouTube para verlo en el navegador: de YouTube la app no puede bajarlo (si es tuyo o tenés permiso, bajalo y
+            elegí el archivo).
           </p>
           <form
             className="row"
@@ -71,12 +72,12 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(file: File, mode:
               void go();
             }}
           >
-            <input className="grow" autoFocus placeholder="https://… o qué buscar" value={text} onChange={(e) => setText(e.target.value)} disabled={!!busy} />
-            <button className="btn primary" disabled={!text.trim() || !!busy || searching}>
-              {isLink(text) && !isYouTube(text) ? "Bajar e importar" : searching ? "Buscando…" : "Buscar"}
+            <input className="grow" autoFocus placeholder="https://… o qué buscar" value={text} onChange={(e) => setText(e.target.value)} />
+            <button className="btn primary" disabled={!text.trim() || searching}>
+              {directLink(text) ? "Ver y elegir el tramo" : searching ? "Buscando…" : "Buscar"}
             </button>
           </form>
-          {isLink(text) && !isYouTube(text) && (
+          {directLink(text) && (
             <div className="segmented">
               <button type="button" className={mode === "frames" ? "active" : ""} onClick={() => setMode("frames")}>
                 Cuadro por cuadro, desde la celda elegida
@@ -84,12 +85,6 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(file: File, mode:
               <button type="button" className={mode === "track" ? "active" : ""} onClick={() => setMode("track")}>
                 En un track nuevo, para calcar
               </button>
-            </div>
-          )}
-          {busy && (
-            <div className="web-progress">
-              <span>Bajando… {mb(busy.received)}{busy.total ? ` de ${mb(busy.total)}` : ""}</span>
-              {busy.total > 0 && <progress value={busy.received} max={busy.total} />}
             </div>
           )}
           {error && <p className="panel-error">{error}</p>}
@@ -113,7 +108,6 @@ export function WebVideoDialog({ onVideo, onClose }: { onVideo(file: File, mode:
               ))}
             </ul>
           )}
-          <p className="hint">Después de bajarlo elegís desde qué segundo hasta cuál importar y cuántos cuadros por segundo sacarle.</p>
         </div>
       )}
       <div className="row end">

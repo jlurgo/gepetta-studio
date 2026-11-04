@@ -4,7 +4,7 @@ import { isImageFile, isVideoFile, sortFiles } from "../media/ingest";
 import { addImageTrack, importImages } from "../state/actions";
 import { useEditor } from "../state/editor";
 import { Icon } from "./Icon";
-import { VideoImportDialog } from "./VideoImportDialog";
+import { type VideoSource, VideoImportDialog } from "./VideoImportDialog";
 import { WebVideoDialog } from "./WebVideoDialog";
 
 interface Pending {
@@ -42,7 +42,7 @@ export function ImportPanel() {
   const imagesInput = useRef<HTMLInputElement>(null);
   const stillInput = useRef<HTMLInputElement>(null);
   const videoInput = useRef<HTMLInputElement>(null);
-  const [video, setVideo] = useState<{ file: File; mode: "frames" | "track" } | null>(null);
+  const [video, setVideo] = useState<{ source: VideoSource; mode: "frames" | "track" } | null>(null);
   const [web, setWeb] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const videoMode = useRef<"frames" | "track">("frames");
@@ -195,20 +195,20 @@ export function ImportPanel() {
         hidden
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f && isVideoFile(f)) setVideo({ file: f, mode: videoMode.current });
+          if (f && isVideoFile(f)) setVideo({ source: { kind: "file", file: f }, mode: videoMode.current });
           e.target.value = "";
         }}
       />
       {web && (
         <WebVideoDialog
-          onVideo={(file, mode) => {
+          onVideo={(url, name, mode) => {
             setWeb(false);
-            setVideo({ file, mode });
+            setVideo({ source: { kind: "web", url, name }, mode });
           }}
           onClose={() => setWeb(false)}
         />
       )}
-      {video && <VideoImportDialog file={video.file} mode={video.mode} onClose={() => setVideo(null)} />}
+      {video && <VideoImportDialog source={video.source} mode={video.mode} onClose={() => setVideo(null)} />}
     </div>
   );
 }
