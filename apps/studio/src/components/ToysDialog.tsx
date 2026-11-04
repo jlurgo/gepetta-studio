@@ -20,6 +20,7 @@ import {
 } from "@gepetta/core";
 import { useEffect, useMemo, useState } from "react";
 import {
+  type Corner,
   discDxf,
   discFramePixels,
   discPdf,
@@ -151,6 +152,7 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
   const [repeats, setRepeats] = useState(1);
   const [titleCard, setTitleCard] = useState(true);
   const [numbers, setNumbers] = useState(true);
+  const [cornerNum, setCornerNum] = useState<Corner | "">("");
   const [holes, setHoles] = useState(0);
   const custom = mutoWidth === 0;
   const mutoPicture = custom ? mutoscopePictureFor({ width: cardW, height: cardH }, { binding: mutoBinding, side, border }) : { width: mutoWidth, height: mutoWidth / aspect };
@@ -260,7 +262,7 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
       const frames = await frameBitmaps(filmId, film, cells, { width, height: width / aspect }, "original", progress);
       const images = await fittedFrames(frames, target.width, target.height, fit);
       frames.forEach((b) => b.close());
-      return mutoscopePdf(mutoLayout, muto, images, title, numbers);
+      return mutoscopePdf(mutoLayout, muto, images, title, numbers, cornerNum || null);
     });
     await save(blob, `${title} - mutoscopio.pdf`);
   }
@@ -457,6 +459,16 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
                   <input type="checkbox" checked={numbers} onChange={(e) => setNumbers(e.target.checked)} />
                   <span>Número de cada tarjeta en la franja</span>
                 </label>
+                <label className="control">
+                  <span>Número del cuadro en una esquina del dibujo</span>
+                  <select value={cornerNum} onChange={(e) => setCornerNum(e.target.value as Corner | "")}>
+                    <option value="">No</option>
+                    <option value="tl">Arriba a la izquierda</option>
+                    <option value="tr">Arriba a la derecha</option>
+                    <option value="bl">Abajo a la izquierda</option>
+                    <option value="br">Abajo a la derecha</option>
+                  </select>
+                </label>
                 {mutoFits ? (
                   <p className="hint">
                     {mutoLayout.cards} tarjetas de {Math.round(mutoLayout.cardWidth)}×{Math.round(mutoLayout.cardHeight)} mm (dibujo de{" "}
@@ -606,7 +618,7 @@ export function ToysDialog({ onClose }: { onClose(): void }) {
             ) : toy === "flipbook" ? (
               <FlipbookPreview frames={preview} aspect={aspect} fps={flipFps} />
             ) : toy === "mutoscope" ? (
-              <MutoscopePreview frames={preview} pictureAspect={muto.pictureWidth / muto.pictureHeight} fps={flipFps} fill={!custom || fit === "fill"} />
+              <MutoscopePreview frames={preview} pictureAspect={muto.pictureWidth / muto.pictureHeight} fps={flipFps} fill={!custom || fit === "fill"} corner={cornerNum} />
             ) : toy === "zoetrope" ? (
               <ZoetropePreview frames={preview} aspect={aspect} rpm={rpm} />
             ) : (

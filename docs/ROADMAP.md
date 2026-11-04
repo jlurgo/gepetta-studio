@@ -71,7 +71,7 @@
   simulación en el espejo, impresión en papel + SVG/DXF (falta STL)
 - [x] Flipbook: imposición en hojas para imprimir y encuadernar (tapa, franja para
   abrochar con el número, líneas y marcas de corte; vista previa que pasa las hojas)
-- [x] Mutoscopio: tarjetas para un rollo, con franja para sujetar (de qué lado y cuánto), agujeros para el eje, borde, tamaño del dibujo o tarjeta a medida (llenar o entero), pegadas o separadas, vueltas de la animación, tarjeta de título y números; hojas A4, Carta o A3
+- [x] Mutoscopio: tarjetas para un rollo, con franja para sujetar (de qué lado y cuánto), agujeros para el eje, borde, tamaño del dibujo o tarjeta a medida (llenar o entero), pegadas o separadas, vueltas de la animación, tarjeta de título, número en la franja y/o en una esquina del dibujo; hojas A4, Carta o A3
 
 ## Fase 5 — Audio, exportaciones avanzadas y online
 - [x] Tracks de sonido: importar mp3, wav, ogg, m4a… («+ Sonido» o soltarlos en la línea de tiempo); cada celda es un pedacito del sonido y se edita como las imágenes (borrar, meter espacios, cortar, pegar, mover, vincular en grupos); suena al reproducir y al moverse de celda; sale en el video exportado; volumen y silenciar por track

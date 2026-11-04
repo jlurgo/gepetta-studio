@@ -203,7 +203,7 @@ export function DiscPreview({
  * A mutoscope: the reel's cards held at the hub, the front one held back by
  * the stop and then let go, falling forward so the next one shows.
  */
-export function MutoscopePreview({ frames, pictureAspect, fps, fill }: { frames: readonly CanvasImageSource[]; pictureAspect: number; fps: number; fill: boolean }) {
+export function MutoscopePreview({ frames, pictureAspect, fps, fill, corner }: { frames: readonly CanvasImageSource[]; pictureAspect: number; fps: number; fill: boolean; corner: "tl" | "tr" | "bl" | "br" | "" }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const W = 420;
   const H = 300;
@@ -225,7 +225,7 @@ export function MutoscopePreview({ frames, pictureAspect, fps, fill }: { frames:
       ctx.fillStyle = i % 2 ? "#d9d4cc" : "#f3efe8";
       ctx.fillRect(x0 + i * 1.5, y0 - i * 2, pw, ph + bind);
     }
-    const card = (frame: CanvasImageSource, y: number, h: number, shade: number) => {
+    const card = (frame: CanvasImageSource, y: number, h: number, shade: number, num: number) => {
       const k = h / (ph + bind);
       ctx.fillStyle = "#fff";
       ctx.fillRect(x0, y, pw, h);
@@ -241,6 +241,23 @@ export function MutoscopePreview({ frames, pictureAspect, fps, fill }: { frames:
       ctx.restore();
       ctx.fillStyle = "#e6e6e6";
       ctx.fillRect(x0, y + ph * k, pw, bind * k);
+      // The frame number in the chosen corner of the picture (where the export prints it).
+      if (corner && k > 0.6) {
+        const fs = 11 * k;
+        const text = String(num);
+        const bw = text.length * fs * 0.62 + 5;
+        const bh = fs + 4;
+        const m = 3;
+        const bx = corner[1] === "l" ? x0 + m : x0 + pw - m - bw;
+        const by = corner[0] === "t" ? y + m : y + ph * k - m - bh;
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.fillStyle = "#111";
+        ctx.font = `bold ${fs}px system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, bx + bw / 2, by + bh / 2 + 0.5);
+      }
       if (shade) {
         ctx.fillStyle = `rgba(0,0,0,${shade})`;
         ctx.fillRect(x0, y, pw, h);
@@ -250,9 +267,9 @@ export function MutoscopePreview({ frames, pictureAspect, fps, fill }: { frames:
     const k = Math.floor(f) % n;
     // A card stays held most of the time and falls quickly at the end.
     const q = Math.max(0, (f - Math.floor(f) - 0.5) / 0.5);
-    card(frames[(k + 1) % n]!, y0, ph + bind, 0);
+    card(frames[(k + 1) % n]!, y0, ph + bind, 0, ((k + 1) % n) + 1);
     const h = (ph + bind) * Math.cos((q * Math.PI) / 2);
-    if (h > 0.5) card(frames[k]!, hubY - h, h, 0.4 * q);
+    if (h > 0.5) card(frames[k]!, hubY - h, h, 0.4 * q, k + 1);
     // The stop that holds the front card.
     ctx.fillStyle = "#888";
     ctx.fillRect(x0 + pw / 2 - 18, y0 - 12, 36, 6);

@@ -67,6 +67,7 @@ export function VideoImportDialog({ source, mode = "frames", onClose }: { source
   const [fps, setFps] = useState(filmFps);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<{ received: number; total: number } | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -119,7 +120,14 @@ export function VideoImportDialog({ source, mode = "frames", onClose }: { source
     const native = window.gepetta;
     const onProgress = (received: number, total: number) => setDownloading({ received, total });
     if (web) return native?.video.onProgress(onProgress);
-    if (youtubeId) return native?.youtube?.onProgress?.(onProgress);
+    if (youtubeId) {
+      const offProgress = native?.youtube?.onProgress?.(onProgress);
+      const offStatus = native?.youtube?.onStatus?.(setStatus);
+      return () => {
+        offProgress?.();
+        offStatus?.();
+      };
+    }
   }, [web, youtubeId]);
 
   const ok = !!info && Number.isFinite(info.duration);
@@ -219,7 +227,10 @@ export function VideoImportDialog({ source, mode = "frames", onClose }: { source
       )}
       {downloading && (
         <div className="web-progress">
-          <span>Bajando el video… {mb(downloading.received)}{downloading.total ? ` de ${mb(downloading.total)}` : ""}</span>
+          <span>
+            {status ?? "Bajando el video…"}
+            {downloading.received > 0 ? ` ${mb(downloading.received)}${downloading.total ? ` de ${mb(downloading.total)}` : ""}` : ""}
+          </span>
           {downloading.total > 0 && <progress value={downloading.received} max={downloading.total} />}
         </div>
       )}

@@ -120,6 +120,8 @@ export interface GepettaNative {
     /** Downloads a video as a single .mp4 (rejects, with a message to show, when it can't). */
     download(id: string): Promise<{ name: string; mime: string; data: ArrayBuffer }>; // youtube:download
     onProgress(cb: (received: number, total: number) => void): () => void; // event youtube:progress
+    /** Progress text while downloading (e.g. the first-time setup step). */
+    onStatus(cb: (message: string) => void): () => void; // event youtube:status
   };
   updates: {
     /** Version already downloaded and waiting to install, if any. */

@@ -349,7 +349,23 @@ export async function fittedFrames(frames: readonly ImageBitmap[], width: number
   return out;
 }
 
-export function mutoscopePdf(layout: MutoscopeLayout, o: MutoscopeOptions, images: readonly ToyImage[], title: string, numbers: boolean): Blob {
+/** A corner of a card's picture, to print the frame number in. */
+export type Corner = "tl" | "tr" | "bl" | "br";
+
+/** Draws a number in a corner of a rectangle, over a white box so it reads on any picture. */
+function cornerLabel(p: Painter, num: number, pic: Rect, corner: Corner) {
+  const size = Math.min(9, Math.max(6, pic.height / 7));
+  const text = String(num);
+  const boxW = text.length * size * 0.22 + 2.4;
+  const boxH = size * 0.36 + 1.8;
+  const m = 1.2;
+  const x = corner[1] === "l" ? pic.x + m : pic.x + pic.width - m - boxW;
+  const y = corner[0] === "t" ? pic.y + m : pic.y + pic.height - m - boxH;
+  p.polygon(rectPoints({ x, y, width: boxW, height: boxH }), { fill: "#ffffff" });
+  p.text(text, x + boxW / 2, y + boxH / 2, { size, bold: true, align: "center", color: "#111111" });
+}
+
+export function mutoscopePdf(layout: MutoscopeLayout, o: MutoscopeOptions, images: readonly ToyImage[], title: string, numbers: boolean, corner: Corner | null): Blob {
   const p = new PdfPainter(o.page);
   layout.pages.forEach((cards, i) => {
     p.newPage();
@@ -361,6 +377,7 @@ export function mutoscopePdf(layout: MutoscopeLayout, o: MutoscopeOptions, image
         p.text(title, c.picture.x + c.picture.width / 2, c.picture.y + c.picture.height / 2 - 2, { size, bold: true, align: "center" });
         p.text("Gepetta Studio", c.picture.x + c.picture.width / 2, c.picture.y + c.picture.height - 3, { size: 6, align: "center", color: "#777777" });
       } else p.image(images[c.frame]!, c.picture);
+      if (corner && c.frame !== "title") cornerLabel(p, c.number, c.picture, corner);
       for (const [x, y] of c.holes) p.circle(x, y, o.holes / 2, { line: "cut", fill: "#ffffff" });
       if (numbers) {
         // In the strip, away from the holes: at its start along the strip.
