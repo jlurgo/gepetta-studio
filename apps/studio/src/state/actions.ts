@@ -434,8 +434,14 @@ export function removeColumns(ranges: ColumnRange[]) {
     const label = removed === 1 ? "Eliminar una columna" : `Eliminar ${removed} columnas`;
     commit(ops, label, { cursor: { ...cursor, cell: Math.max(0, Math.min(cellAfterRemoving(ranges, cursor.cell) ?? ranges[0]!.start, film.length - removed)) } });
   }
-  useEditor.getState().setColumns(null);
   const after = useEditor.getState().film!;
+  // The next column comes picked (the last one's, when the end went), so ⌫ again takes it out too.
+  const first = Math.min(...ranges.map((r) => r.start));
+  const next = first < after.length ? first : after.length - 1;
+  if (ops.length && next >= 0) {
+    useEditor.getState().moveTo(next);
+    useEditor.getState().setColumns([{ start: next, end: next + 1 }]);
+  } else useEditor.getState().setColumns(null);
   const camera = useCamera.getState();
   for (const r of camera.rigs) {
     const moved = cellAfterRemoving(ranges, r.target.cell);
