@@ -126,7 +126,8 @@ export interface EditorState {
   setOnion(patch: Partial<OnionSettings>): void;
   set(patch: Partial<Pick<EditorState, "loop" | "tailSeconds" | "captureAverage" | "captureStep" | "captureMode" | "focusOpacity">>): void;
   /** Plays from the cursor (from the start if the cursor is past the end), or the last seconds. */
-  play(tail?: boolean): void;
+  /** From the cell at the cursor; `true`: the last seconds; "start": the whole film from its first cell. */
+  play(from?: boolean | "start"): void;
   /** Stops where it is: the cursor moves to the cell being shown. */
   pause(): void;
   /** Stops and goes back to the cursor (the selected cell). */
@@ -330,11 +331,12 @@ export const useEditor = create<EditorState>((set, get) => {
       set(patch);
     },
 
-    play(tail = false) {
+    play(mode = false) {
       const { film, tailSeconds, loop, cursor } = get();
       if (!film || film.length === 0) return;
+      const tail = mode === true;
       const tailStart = tailStartCell(film, tailSeconds);
-      const from = tail ? tailStart : cursor.cell < film.length - 1 ? cursor.cell : 0;
+      const from = mode === "start" ? 0 : tail ? tailStart : cursor.cell < film.length - 1 ? cursor.cell : 0;
       set({ playback: { startCell: from, loopFrom: tail ? tailStart : 0, loop, startedAt: performance.now() } });
     },
     pause() {

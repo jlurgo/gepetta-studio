@@ -687,6 +687,13 @@ input[type="range"] {
   .transport .group.status .cell-status {
     display: none;
   }
+  .transport {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+  .transport .group {
+    gap: 3px;
+  }
 }
 
 .capture-btn {

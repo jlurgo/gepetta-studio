@@ -92,6 +92,7 @@ function useShortcuts() {
       else if ((e.key === " " || e.key === "Escape") && useMics.getState().recording) void stopMicRecording();
       else if (e.key === " ") spaceBar();
       else if (key === "i") goToLive();
+      else if (e.key === "Enter" && e.shiftKey) s.play("start");
       else if (e.key === "Enter") (s.playback ? s.pause() : s.play());
       else if (key === "p") (s.playback ? s.stop() : s.play(true));
       else if (e.key === "Escape" && useCamera.getState().picking) useCamera.getState().cancelPicking();
@@ -394,6 +395,9 @@ function Transport() {
       </div>
 
       <div className="group">
+        <button className="icon-btn" onClick={() => play("start")} title="Ver toda la película desde el principio (⇧ + Enter)" disabled={film.length === 0}>
+          <Icon name="first" />
+        </button>
         <button
           className={`icon-btn${playing ? " active" : ""}`}
           onClick={() => (playing ? pause() : play())}
