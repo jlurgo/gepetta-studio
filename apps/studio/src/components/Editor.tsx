@@ -46,6 +46,7 @@ import { groupPicked, ungroup, useGroups } from "../state/groups";
 import { cancelPickingMic, startMics, stopMics, stopRecording as stopMicRecording, useMics } from "../state/mics";
 import { ToysDialog } from "./ToysDialog";
 import { ALT } from "./keys";
+import { LibraryVideoDialog } from "./VideoImportDialog";
 
 const FPS_OPTIONS = [6, 8, 10, 12, 15, 24, 25, 30];
 
@@ -514,6 +515,7 @@ export function Editor() {
             <HistoryPanel />
           </ErrorBoundary>
         )}
+        <LibraryVideoDialog />
         <StageTools hidden={playing} />
         <Stage />
         <SidePanel />

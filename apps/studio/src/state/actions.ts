@@ -20,6 +20,7 @@ import {
   setSequenceOps,
   wrapCell,
   type MediaRef,
+  type SoundRef,
   applyOp,
   type Op,
   type Track,
@@ -263,7 +264,7 @@ export function stopAllRecordings() {
 
 /** Images in a row from the cursor (or `at`), in name order. */
 export async function importImages(files: File[], at?: GridCursor, ordered = false) {
-  const { filmId, cursor, captureStep } = useEditor.getState();
+  const { filmId, cursor } = useEditor.getState();
   // In name order, unless already put in order (the import tool's list).
   const images = ordered ? files.filter(isImageFile) : sortFiles(files.filter(isImageFile));
   if (!filmId || images.length === 0) return;
@@ -276,14 +277,36 @@ export async function importImages(files: File[], at?: GridCursor, ordered = fal
     return out;
   });
   if (!media || useEditor.getState().filmId !== filmId) return;
-  const from = at ?? cursor;
+  placeImages(media, images.map((f) => f.name.replace(/\.[^.]+$/, "")), at ?? cursor);
+}
+
+/** Pictures already in the film's files (from its library), one after another from `at`, each lasting as photos do. */
+export function placeImages(media: MediaRef[], names: string[], at: GridCursor) {
+  const { captureStep, commit } = useEditor.getState();
+  if (media.length === 0) return;
   // Each picture named after its file.
-  const clips = clipsFrom(from, media, captureStep, "", undefined, media.length > 1 ? newId() : undefined).map((c, i) => ({ ...c, name: images[i]!.name.replace(/\.[^.]+$/, "") }));
-  const label = `Importar ${media.length} ${media.length === 1 ? "imagen" : "imágenes"}`;
-  useEditor.getState().commit([{ type: "clip.place", clips, label }], label, {
-    cursor: { track: from.track, cell: clipEnd(clips.at(-1)!) },
+  const clips = clipsFrom(at, media, captureStep, "", undefined, media.length > 1 ? newId() : undefined).map((c, i) => ({ ...c, name: names[i]! }));
+  const label = `Poner ${media.length} ${media.length === 1 ? "imagen" : "imágenes"}`;
+  commit([{ type: "clip.place", clips, label }], label, {
+    cursor: { track: at.track, cell: clipEnd(clips.at(-1)!) },
     selection: clips.map((c) => c.id),
   });
+}
+
+/**
+ * An effect animation's frames (rain, snow…) on a new track just above `at`'s
+ * (on top of all when there is none), one per cell from `at`.
+ */
+export function placeAnimation(frames: MediaRef[], name: string, at: GridCursor) {
+  const film = useEditor.getState().film;
+  if (!film || frames.length === 0) return;
+  const below = film.tracks.findIndex((t) => t.id === at.track);
+  const { id, op } = newTrackOp(name);
+  const clips = clipsFrom({ track: id, cell: at.cell }, frames, 1, name, undefined, newId());
+  const ops: Op[] = [op];
+  if (below >= 0) ops.push({ type: "track.move", trackId: id, index: below + 1 });
+  ops.push({ type: "clip.place", clips, label: `Animación «${name}»` });
+  useEditor.getState().commit(ops, `Animación «${name}»`, { cursor: { track: id, cell: at.cell }, selection: [] });
 }
 
 /**
@@ -303,12 +326,20 @@ export async function importSounds(files: File[], at?: GridCursor) {
     }
     return out;
   });
+  if (!read || useEditor.getState().filmId !== filmId) return;
+  placeSounds(read, sounds.map((f) => f.name.replace(/\.[^.]+$/, "")), at ?? cursor);
+}
+
+/**
+ * Sounds already in the film's files (from its library), one after another
+ * from `at`: into that track when it is a sound track, else into a new one at
+ * the bottom, named after the first one.
+ */
+export function placeSounds(read: { ref: SoundRef; media: MediaRef }[], names: string[], from: GridCursor) {
   const film = useEditor.getState().film;
-  if (!read || !film || useEditor.getState().filmId !== filmId) return;
-  const from = at ?? cursor;
+  if (!film || read.length === 0) return;
   const ops: Op[] = [];
   let track = film.tracks.find((t) => t.id === from.track && t.kind === "sound")?.id;
-  const names = sounds.map((f) => f.name.replace(/\.[^.]+$/, ""));
   if (!track) {
     const made = newTrackOp(names[0]!, { kind: "sound" });
     ops.push(made.op, { type: "track.move", trackId: made.id, index: 0 });
@@ -321,7 +352,7 @@ export async function importSounds(files: File[], at?: GridCursor) {
     cell += length;
     return clip;
   });
-  const label = clips.length === 1 ? `Sonido «${names[0]}»` : `Importar ${clips.length} sonidos`;
+  const label = clips.length === 1 ? `Sonido «${names[0]}»` : `Poner ${clips.length} sonidos`;
   ops.push({ type: "clip.place", clips, label });
   useEditor.getState().commit(ops, label, { cursor: { track: track, cell: from.cell }, selection: [] });
 }
@@ -331,7 +362,7 @@ export async function importSounds(files: File[], at?: GridCursor) {
  * they go to a new track meant to rotoscope over: half transparent and left
  * out of exports.
  */
-export async function importVideoStills(video: HTMLVideoElement, times: number[], name: string, fps: number, newTrack = false) {
+export async function importVideoStills(video: HTMLVideoElement, times: number[], name: string, fps: number, newTrack = false, at?: GridCursor) {
   const { filmId } = useEditor.getState();
   if (!filmId || times.length === 0) return;
   const media = await runTask("Importando cuadros del video", times.length, async (progress) => {
@@ -346,14 +377,15 @@ export async function importVideoStills(video: HTMLVideoElement, times: number[]
   if (!media || state.filmId !== filmId || !state.film) return;
   const title = name.replace(/\.[^.]+$/, "");
   const ops: Op[] = [];
-  let track = state.cursor.track;
+  const from = at ?? state.cursor;
+  let track = from.track;
   if (newTrack) {
     track = newId();
     ops.push({ type: "track.add", track: { id: track, name: title, visible: true, opacity: 0.5, transform: IDENTITY_TRANSFORM, exported: false } });
   }
   // Each picture lasts as long as it lasted in the video, in cells of the film.
   const length = Math.max(1, Math.round(state.film.settings.fps / fps));
-  const clips = clipsFrom({ track, cell: state.cursor.cell }, media, length, title, undefined, newId());
+  const clips = clipsFrom({ track, cell: from.cell }, media, length, title, undefined, newId());
   ops.push({ type: "clip.place", clips, label: `Video "${title}"` });
   state.commit(ops, `Video "${title}" (${media.length} imágenes)`, { cursor: { track, cell: clipEnd(clips.at(-1)!) }, selection: [] });
   if (newTrack) useLayers.getState().select(track);
@@ -389,9 +421,14 @@ export async function addImageTrack(file: File) {
   const { filmId } = useEditor.getState();
   if (!filmId) return;
   const media = await ingestImage(filmId, file, null, { sourceKind: "import" });
+  if (useEditor.getState().filmId !== filmId) return;
+  placeImageTrack(media, file.name.replace(/\.[^.]+$/, ""));
+}
+
+/** A new track with a picture already in the film's files over the whole film. */
+export function placeImageTrack(media: MediaRef, name: string) {
   const state = useEditor.getState();
-  if (state.filmId !== filmId || !state.film) return;
-  const name = file.name.replace(/\.[^.]+$/, "");
+  if (!state.film) return;
   const { id, op } = newTrackOp(name);
   const [clip] = clipsFrom({ track: id, cell: 0 }, [media], Math.max(1, state.film.length), name);
   state.commit([op, { type: "clip.place", clips: [clip!] }], `Agregar "${name}"`, { selection: [clip!.id] });

@@ -10,7 +10,7 @@ import { ZoomControl } from "./Stage";
 
 export const TOOLS: { id: StageTool; icon: IconName; label: string; key: string }[] = [
   { id: "move", icon: "pointer", label: "Elegir", key: "V" },
-  { id: "import", icon: "image", label: "Imágenes y videos", key: "M" },
+  { id: "import", icon: "library", label: "Biblioteca", key: "M" },
   { id: "sound", icon: "sound", label: "Sonidos", key: "N" },
   { id: "gain", icon: "gain", label: "Volumen del sonido", key: "" },
   { id: "pan", icon: "pan", label: "Parlante del sonido (izquierda o derecha)", key: "" },

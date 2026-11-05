@@ -1,9 +1,11 @@
 import { type CellIndex, type Clip, type ClipId, type GroupId, type Op, PEAKS_PER_SECOND, type TimelineRow, type Track, type TrackId, cellGain, cellIndex, groupTracks, groupWithin, timelineRows, clipEnd, composeTransforms, columnsContain, fadeAt, extendColumns, playedCell, stackAt, toggleColumns } from "@gepetta/core";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type CellItem, CellCanvas } from "./CellCanvas";
-import { addTrack, extendFilm, resizeDrum, importImages, importSounds, moveClips, moveColumns, setCellImage, spanCells } from "../state/actions";
+import { addTrack, extendFilm, resizeDrum, moveClips, moveColumns, setCellImage, spanCells } from "../state/actions";
+import { ANIMATION_DRAG, ANIMATIONS } from "../media/animations";
+import { LIBRARY_DRAG, addToLibrary, animationToLibrary, openVideo, placeFromLibrary } from "../state/library";
 import { SFX_DRAG, insertSfx } from "../media/sfx";
-import { isSoundFile, peaksNow, useSoundPeaks } from "../media/sound";
+import { peaksNow, useSoundPeaks } from "../media/sound";
 import { sampleSpectrum, spectrumImage, spectrumNow, useSpectra } from "../media/spectrum";
 import { useSound } from "../state/sound";
 import { type Mic, cancelPickingMic, micColor, micLabel, pickMic, setMicTarget, useMics } from "../state/mics";
@@ -320,6 +322,8 @@ export function Timeline() {
   const shownSeq = useLayers((s) => (s.detail === "sequence" ? s.seq : null));
   /** While picking a camera's cell: the cell under the pointer. */
   const [hover, setHover] = useState<{ track: string; cell: number; v: number } | null>(null);
+  /** Where what is being dragged in (from the library, a collection or the computer) would go. */
+  const [dropAt, setDropAt] = useState<{ cell: number; track: TrackId | null } | null>(null);
   const [cw, setCw] = useState(loadZoom);
   const scroller = useRef<HTMLDivElement>(null);
   const [scroll, setScroll] = useState({ left: 0, width: 1200 });
@@ -924,17 +928,44 @@ export function Timeline() {
 
   function onDrop(e: React.DragEvent) {
     e.preventDefault();
+    setDropAt(null);
     const p = at(e);
+    const to = { track: p.track?.id ?? cursor.track, cell: p.cell };
     const sfx = e.dataTransfer.getData(SFX_DRAG);
     if (sfx) {
       const { name, file } = JSON.parse(sfx) as { name: string; file: string };
-      void insertSfx(name, file, { track: p.track?.id ?? cursor.track, cell: p.cell }).catch((err) => console.error("[gepetta] sound effect", err));
+      void insertSfx(name, file, to).catch((err) => console.error("[gepetta] sound effect", err));
       return;
     }
+    const anim = ANIMATIONS.find((a) => a.id === e.dataTransfer.getData(ANIMATION_DRAG));
+    if (anim) {
+      // Over the track it is dropped on (on top of all, below the tracks).
+      void animationToLibrary(anim).then((item) => item && placeFromLibrary([item], { track: p.track?.id ?? "", cell: p.cell }));
+      return;
+    }
+    const ids = e.dataTransfer.getData(LIBRARY_DRAG);
+    if (ids) {
+      const library = useEditor.getState().library;
+      const items = (JSON.parse(ids) as string[]).map((id) => library.find((i) => i.id === id)).filter((i) => !!i);
+      const video = placeFromLibrary(items, to);
+      if (video) void openVideo(video, "frames", to);
+      return;
+    }
+    // Files from the computer go to the library too, to be put again later.
     const files = [...e.dataTransfer.files];
-    if (files.some(isSoundFile)) void importSounds(files.filter(isSoundFile), { track: p.track?.id ?? cursor.track, cell: p.cell });
-    if (!p.track || !files.some((f) => !isSoundFile(f))) return;
-    void importImages(files.filter((f) => !isSoundFile(f)), { track: p.track.id, cell: p.cell });
+    if (files.length)
+      void addToLibrary(files).then((items) => {
+        const video = placeFromLibrary(items, to);
+        if (video) void openVideo(video, "frames", to);
+      });
+  }
+
+  /** Where something dragged from outside would go (the cell under the pointer). */
+  function onDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    const p = at(e);
+    const track = p.track?.id ?? null;
+    setDropAt((now) => (now?.cell === p.cell && now.track === track ? now : { cell: p.cell, track }));
   }
 
   // Where moved clips are drawn while dragging.
@@ -1082,7 +1113,7 @@ export function Timeline() {
           )}
           {headMark && <div className="tl-drop" style={headMark} />}
           <div className="tl-adds">
-            <button className="btn small ghost tl-add" onClick={() => addTrack()} title="Agregar un track vacío arriba (imágenes y videos: herramienta «Imágenes y videos»)">
+            <button className="btn small ghost tl-add" onClick={() => addTrack()} title="Agregar un track vacío arriba (videos, imágenes y sonidos: herramienta «Biblioteca»)">
               <Icon name="plus" size={14} /> Track
             </button>
           </div>
@@ -1098,7 +1129,8 @@ export function Timeline() {
             onPointerUp={onPointerUp}
             onClick={onClick}
             onDoubleClick={onDoubleClick}
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={onDragOver}
+            onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setDropAt(null)}
             onDrop={onDrop}
           >
             <div
@@ -1191,6 +1223,14 @@ export function Timeline() {
             {laps.map((l) => (
               <div key={l} className="tl-cursor-cell" style={{ left: wrap(cursor.cell) * cw + lapX(l), width: cw, top: topOf(cursor.track), height: heightOf(cursor.track) }} />
             ))}
+            {dropAt &&
+              laps.map((l) => (
+                <div
+                  key={`drop${l}`}
+                  className={`tl-drop${dropAt.track ? "" : " new"}`}
+                  style={{ left: wrap(dropAt.cell) * cw + lapX(l), width: cw, top: dropAt.track ? topOf(dropAt.track) : height, height: dropAt.track ? heightOf(dropAt.track) : TRACK_H }}
+                />
+              ))}
 
             {laps.map((lap) =>
               tracks.map((t) =>

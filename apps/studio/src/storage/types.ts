@@ -1,4 +1,5 @@
 import type { AssetId, History } from "@gepetta/core";
+import type { LibraryItem } from "../state/library";
 import type { Release } from "../state/releases";
 
 export interface FilmMeta {
@@ -20,6 +21,8 @@ export interface FilmFile {
   legacy?: History;
   /** Published versions, oldest first. */
   releases?: Release[];
+  /** The film's resource library (videos, pictures, sounds…), outside the history. */
+  library?: LibraryItem[];
 }
 
 export interface StorageBackend {

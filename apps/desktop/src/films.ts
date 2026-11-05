@@ -34,6 +34,21 @@ const EXT_BY_MIME: Record<string, string> = {
   "image/x-olympus-orf": "orf",
   "image/x-panasonic-rw2": "rw2",
   "image/x-raw": "raw",
+  // Videos and sounds of the film's library (and sounds in its tracks).
+  "video/mp4": "mp4",
+  "video/webm": "webm",
+  "video/quicktime": "mov",
+  "video/x-matroska": "mkv",
+  "audio/mpeg": "mp3",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/ogg": "ogg",
+  "audio/webm": "weba",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/aac": "aac",
+  "audio/flac": "flac",
+  "audio/opus": "opus",
 };
 
 const SAFE_ID = /^[A-Za-z0-9-]+$/;

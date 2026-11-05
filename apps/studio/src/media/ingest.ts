@@ -70,6 +70,16 @@ export async function ingestImage(
   }
 }
 
+/** A small picture of an image (a video's still, say), stored with the film. */
+export async function storeThumb(filmId: string, blob: Blob): Promise<AssetId> {
+  const bitmap = await createImageBitmap(blob);
+  try {
+    return await storeBlob(filmId, await encode(shrink(bitmap, THUMB_MAX), false, 0.8));
+  } finally {
+    bitmap.close();
+  }
+}
+
 /** Natural sort so "frame2.png" comes before "frame10.png". */
 export function sortFiles(files: File[]): File[] {
   return [...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));

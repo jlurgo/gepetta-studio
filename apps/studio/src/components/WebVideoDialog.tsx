@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { YouTubeVideo } from "../native";
 import { Dialog } from "./Dialog";
 import { Icon } from "./Icon";
-import type { VideoSource } from "./VideoImportDialog";
+import { downloadToLibrary } from "../state/library";
 
 const isLink = (text: string) => /^https?:\/\//i.test(text.trim());
 const isYouTube = (text: string) => /(?:youtube\.com|youtu\.be)\//i.test(text);
@@ -21,17 +21,17 @@ function nameFromUrl(link: string): string {
 }
 
 /**
- * A video from the internet: the link of a video file goes to the preview, to
- * pick the stretch before it downloads; words or a YouTube link look for
- * videos on YouTube, each one to watch in the browser or to download and
- * import (whoever downloads it has to have the right to use the video).
+ * Videos from the internet into the library, whole: the link of a video file,
+ * or words or a YouTube link to look for videos on YouTube, each one to watch
+ * in the browser or to download (whoever downloads it has to have the right
+ * to use the video). Downloads go on after the dialog is closed.
  */
-export function WebVideoDialog({ onPick, onClose }: { onPick(source: VideoSource, mode: "frames" | "track"): void; onClose(): void }) {
+export function WebVideoDialog({ onClose }: { onClose(): void }) {
   const native = window.gepetta;
   // The window is newer than the app's main part until the app opens again.
   const outdated = !!native && (!native.video || !native.youtube.download);
   const [text, setText] = useState("");
-  const [mode, setMode] = useState<"frames" | "track">("frames");
+  const [asked, setAsked] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<YouTubeVideo[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -40,8 +40,8 @@ export function WebVideoDialog({ onPick, onClose }: { onPick(source: VideoSource
     if (!native || outdated || !text.trim()) return;
     setError(null);
     if (directLink(text)) {
-      // The preview streams it and downloads only the stretch chosen.
-      onPick({ kind: "web", url: text.trim(), name: nameFromUrl(text.trim()) }, mode);
+      downloadToLibrary({ kind: "web", url: text.trim(), name: nameFromUrl(text.trim()) });
+      onClose();
       return;
     }
     setResults(null);
@@ -56,8 +56,6 @@ export function WebVideoDialog({ onPick, onClose }: { onPick(source: VideoSource
     }
   }
 
-  const chooseMode = directLink(text) || (!!results && results.length > 0);
-
   return (
     <Dialog title="Video de internet" onClose={onClose}>
       {!native || outdated ? (
@@ -65,9 +63,8 @@ export function WebVideoDialog({ onPick, onClose }: { onPick(source: VideoSource
       ) : (
         <div className="web-video">
           <p className="hint">
-            Pegá el link de un archivo de video (.mp4, .webm, .mov… o un archivo de Google Drive compartido): se abre la vista previa para ver el video y elegir el tramo, y recién
-            ahí se baja. Con palabras o un link de YouTube, buscás en YouTube: cada resultado lo podés ver en el navegador o bajarlo e importarlo acá. Bajá solo videos que sean
-            tuyos o que tengas permiso de usar.
+            Pegá el link de un archivo de video (.mp4, .webm, .mov… o un archivo de Google Drive compartido), o buscá en YouTube con palabras o un link. El video se baja entero a
+            la biblioteca; desde ahí elegís qué tramo poner en la película, todas las veces que quieras. Bajá solo videos que sean tuyos o que tengas permiso de usar.
           </p>
           <form
             className="row"
@@ -78,19 +75,9 @@ export function WebVideoDialog({ onPick, onClose }: { onPick(source: VideoSource
           >
             <input className="grow" autoFocus placeholder="https://… o qué buscar" value={text} onChange={(e) => setText(e.target.value)} />
             <button className="btn primary" disabled={!text.trim() || searching}>
-              {directLink(text) ? "Ver y elegir el tramo" : searching ? "Buscando…" : "Buscar"}
+              {directLink(text) ? "Bajar a la biblioteca" : searching ? "Buscando…" : "Buscar"}
             </button>
           </form>
-          {chooseMode && (
-            <div className="segmented">
-              <button type="button" className={mode === "frames" ? "active" : ""} onClick={() => setMode("frames")}>
-                Cuadro por cuadro, desde la celda elegida
-              </button>
-              <button type="button" className={mode === "track" ? "active" : ""} onClick={() => setMode("track")}>
-                En un track nuevo, para calcar
-              </button>
-            </div>
-          )}
           {error && <p className="panel-error">{error}</p>}
           {results && (
             <ul className="yt-results">
@@ -109,8 +96,24 @@ export function WebVideoDialog({ onPick, onClose }: { onPick(source: VideoSource
                     <button className="btn small ghost" onClick={() => void native.youtube.open(v.id)} title="Abrirlo en el navegador">
                       <Icon name="play" size={12} /> Ver en YouTube
                     </button>
-                    <button className="btn small primary" onClick={() => onPick({ kind: "youtube", id: v.id, name: v.title }, mode)} title="Bajarlo e importarlo">
-                      <Icon name="import" size={12} /> Bajar e importar
+                    <button
+                      className="btn small primary"
+                      disabled={asked.has(v.id)}
+                      onClick={() => {
+                        downloadToLibrary({ kind: "youtube", id: v.id, name: v.title });
+                        setAsked(new Set(asked).add(v.id));
+                      }}
+                      title="Bajarlo entero a la biblioteca"
+                    >
+                      {asked.has(v.id) ? (
+                        <>
+                          <Icon name="check" size={12} /> Bajando a la biblioteca
+                        </>
+                      ) : (
+                        <>
+                          <Icon name="import" size={12} /> Bajar a la biblioteca
+                        </>
+                      )}
                     </button>
                   </div>
                 </li>

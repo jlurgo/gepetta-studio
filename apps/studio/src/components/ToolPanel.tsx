@@ -9,7 +9,7 @@ import { CameraControls } from "./CameraControls";
 import { FocusMeterPanel } from "./FocusMeterPanel";
 import { FOCUS_KEYS, FocusPanel } from "./FocusPanel";
 import { Icon } from "./Icon";
-import { ImportPanel } from "./ImportPanel";
+import { LibraryPanel } from "./LibraryPanel";
 import { LassoPanel } from "./LassoPanel";
 import { MagnifyPanel, ZOOM_KEYS } from "./MagnifyPanel";
 import { SoundEditPanel } from "./SoundEditPanel";
@@ -392,7 +392,7 @@ export function ToolPanel() {
       ) : tool === "gain" || tool === "pan" ? (
         <SoundEditPanel tool={tool} />
       ) : tool === "import" ? (
-        <ImportPanel />
+        <LibraryPanel />
       ) : tool === "lasso" ? (
         <LassoPanel />
       ) : (
