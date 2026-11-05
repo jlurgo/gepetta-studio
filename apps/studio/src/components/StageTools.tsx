@@ -10,7 +10,6 @@ import { ZoomControl } from "./Stage";
 
 export const TOOLS: { id: StageTool; icon: IconName; label: string; key: string }[] = [
   { id: "move", icon: "pointer", label: "Elegir", key: "V" },
-  { id: "import", icon: "library", label: "Biblioteca", key: "M" },
   { id: "sound", icon: "sound", label: "Sonidos", key: "N" },
   { id: "gain", icon: "gain", label: "Volumen del sonido", key: "" },
   { id: "pan", icon: "pan", label: "Parlante del sonido (izquierda o derecha)", key: "" },
@@ -113,7 +112,7 @@ export function StageTools({ hidden }: { hidden: boolean }) {
   const rigs = useCamera((s) => s.rigs);
   const free = useFreeCameras();
   const mics = useMics((s) => s.mics);
-  const [pick, importer, sound, gain, pan, ...paint] = TOOLS;
+  const [pick, sound, gain, pan, ...paint] = TOOLS;
   const button = (t: (typeof TOOLS)[number]) => (
     <button key={t.id} className={tool === t.id ? "active" : ""} aria-pressed={tool === t.id} title={t.key ? `${t.label} (${t.key})` : t.label} onClick={() => showTool(t.id)}>
       <Icon name={t.icon} size={18} />
@@ -124,7 +123,6 @@ export function StageTools({ hidden }: { hidden: boolean }) {
     <div className={`stage-tools${hidden ? " hidden" : ""}`}>
       <div className="tool-buttons" role="toolbar" aria-label="Herramientas">
         {button(pick!)}
-        {button(importer!)}
         {button(sound!)}
         {button(gain!)}
         {button(pan!)}

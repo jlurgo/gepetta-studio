@@ -1,4 +1,4 @@
-import { usePaint } from "../state/paint";
+import { useLibraryOpen } from "./LibraryPanel";
 import { Mixer } from "./Mixer";
 import { Section } from "./Section";
 
@@ -11,7 +11,7 @@ export function SoundToolPanel() {
     <div className="tool-options">
       <p className="hint">
         Música, voces y efectos se agregan en la{" "}
-        <button className="link-btn" onClick={() => usePaint.getState().setTool("import")}>
+        <button className="link-btn" onClick={() => useLibraryOpen.getState().set(true)}>
           Biblioteca
         </button>{" "}
         y de ahí se arrastran a la línea de tiempo. Para grabar, agregá un micrófono en la barra (al lado de las cámaras).

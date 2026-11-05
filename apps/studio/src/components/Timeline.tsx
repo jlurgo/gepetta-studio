@@ -1113,7 +1113,7 @@ export function Timeline() {
           )}
           {headMark && <div className="tl-drop" style={headMark} />}
           <div className="tl-adds">
-            <button className="btn small ghost tl-add" onClick={() => addTrack()} title="Agregar un track vacío arriba (videos, imágenes y sonidos: herramienta «Biblioteca»)">
+            <button className="btn small ghost tl-add" onClick={() => addTrack()} title="Agregar un track vacío arriba (videos, imágenes y sonidos: desde la «Biblioteca»)">
               <Icon name="plus" size={14} /> Track
             </button>
           </div>

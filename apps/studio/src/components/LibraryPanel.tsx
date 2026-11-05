@@ -38,6 +38,44 @@ const KINDS: { id: LibraryKind; label: string; icon: IconName }[] = [
 ];
 
 /** What the panel shows, kept while other tools are used. */
+/** Whether the library column is open (remembered on this computer). */
+export const useLibraryOpen = create<{ open: boolean; set(open: boolean): void }>((set) => {
+  let open = false;
+  try {
+    open = localStorage.getItem("gepetta.libraryOpen") === "1";
+  } catch {
+    // Starts closed.
+  }
+  return {
+    open,
+    set(next) {
+      try {
+        localStorage.setItem("gepetta.libraryOpen", next ? "1" : "0");
+      } catch {
+        // Not remembered.
+      }
+      set({ open: next });
+    },
+  };
+});
+
+/** The library as a column beside the stage, opened from the top bar. */
+export function LibraryColumn() {
+  const open = useLibraryOpen((s) => s.open);
+  if (!open) return null;
+  return (
+    <aside className="side-panel library-column" aria-label="Biblioteca">
+      <div className="row spread">
+        <h3>Biblioteca</h3>
+        <button className="icon-btn" onClick={() => useLibraryOpen.getState().set(false)} title="Cerrar la biblioteca (M)">
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+      <LibraryPanel />
+    </aside>
+  );
+}
+
 const useLibraryView = create<{ tab: Tab; kind: LibraryKind | null; selected: string[] }>(() => ({ tab: "mine", kind: null, selected: [] }));
 
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;

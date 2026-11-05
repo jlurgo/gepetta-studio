@@ -491,10 +491,15 @@ input[type="range"] {
     var(--panel);
 }
 
-.side-panel.history {
+.side-panel.history,
+.side-panel.library-column {
   border-left: none;
   border-right: 1px solid var(--line);
   width: 280px;
+}
+
+.side-panel.library-column {
+  width: 300px;
 }
 
 .effects {

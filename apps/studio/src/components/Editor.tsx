@@ -29,6 +29,7 @@ import { useEditor } from "../state/editor";
 import { useGuides } from "../state/guides";
 import { useLayers } from "../state/layers";
 import { selectStrokes, useStrokes } from "../state/strokes";
+import { LibraryColumn, useLibraryOpen } from "./LibraryPanel";
 import { ToolPanel } from "./ToolPanel";
 import { GuidesControl } from "./GuidesControl";
 import { DetailPanel } from "./TrackPanel";
@@ -118,6 +119,7 @@ function useShortcuts() {
       else if (e.key === "-") changeHold(-1);
       else if (key === "o") s.setOnion({ enabled: !s.onion.enabled });
       else if (key === "l") s.set({ loop: !s.loop });
+      else if (key === "m") useLibraryOpen.getState().set(!useLibraryOpen.getState().open);
       else if (TOOLS.some((t) => t.key.toLowerCase() === key)) usePaint.getState().setTool(TOOLS.find((t) => t.key.toLowerCase() === key)!.id);
       else if (key === "c" && useCamera.getState().activeRig) usePaint.getState().setTool("camera");
       else if ((e.key === "[" || e.key === "]") && hasSettings(usePaint.getState().tool)) {
@@ -196,6 +198,7 @@ function TopBar({
   historyOpen: boolean;
 }) {
   const releaseCount = useEditor((s) => s.releases.length);
+  const libraryOpen = useLibraryOpen((s) => s.open);
   const film = useEditor((s) => s.film)!;
   const saveStatus = useEditor((s) => s.saveStatus);
   const { close, commit } = useEditor.getState();
@@ -251,6 +254,13 @@ function TopBar({
           <option value="pingpong">⇄ Ping-pong</option>
         </select>
       </label>
+      <button
+        className={`btn${libraryOpen ? " active" : ""}`}
+        onClick={() => useLibraryOpen.getState().set(!libraryOpen)}
+        title="Biblioteca (M): videos, fotos, dibujos, sonidos y animaciones de esta película, para arrastrar a la línea de tiempo"
+      >
+        <Icon name="library" /> <span className="btn-label">Biblioteca</span>
+      </button>
       <button className={`btn${historyOpen ? " active" : ""}`} onClick={onToggleHistory} title="Historial de cambios">
         <Icon name="history" /> <span className="btn-label">Historial</span>
       </button>
@@ -515,6 +525,9 @@ export function Editor() {
             <HistoryPanel />
           </ErrorBoundary>
         )}
+        <ErrorBoundary label="la biblioteca">
+          <LibraryColumn />
+        </ErrorBoundary>
         <LibraryVideoDialog />
         <StageTools hidden={playing} />
         <Stage />
