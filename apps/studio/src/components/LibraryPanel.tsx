@@ -242,7 +242,7 @@ export function LibraryPanel() {
             <div key={d.id} className="web-progress">
               <span title={d.name}>
                 {d.status ?? `Bajando «${d.name}»…`}
-                {d.received > 0 ? ` ${mb(d.received)}${d.total ? ` de ${mb(d.total)}` : ""}` : ""}
+                {d.received > 0 && d.unit === "s" ? ` ${mmss(d.received)} de ${mmss(d.total)}` : d.received > 0 ? ` ${mb(d.received)}${d.total ? ` de ${mb(d.total)}` : ""}` : ""}
               </span>
               {d.total > 0 && <progress value={d.received} max={d.total} />}
             </div>

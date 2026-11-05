@@ -3298,3 +3298,40 @@ input[type="range"] {
 .range-times strong {
   color: var(--text);
 }
+
+.stretch-title {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stretch-title small {
+  color: var(--muted);
+}
+
+.stretch-yt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.stretch-yt img,
+.stretch-yt .yt-thumb {
+  width: 192px;
+  height: 108px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.stretch-times {
+  flex-wrap: wrap;
+  align-items: end;
+}
+
+.clock-input {
+  width: 6.5em;
+  font-variant-numeric: tabular-nums;
+}

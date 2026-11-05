@@ -5,6 +5,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import { app } from "electron";
+import { ensureFfmpeg, lastTime } from "./ffmpeg";
 
 /**
  * Downloading YouTube videos with yt-dlp (github.com/yt-dlp/yt-dlp). YouTube
@@ -88,7 +89,7 @@ function describeError(stderr: string): string {
   return "No se pudo bajar el video de YouTube. Probá de nuevo, y fijate que el link ande y que haya internet.";
 }
 
-function runYtDlp(bin: string, args: string[], cwd: string, onProgress: (received: number, total: number) => void): Promise<void> {
+function runYtDlp(bin: string, args: string[], cwd: string, onProgress: (received: number, total: number) => void, onTime?: (seconds: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     let child: ChildProcess;
     try {
@@ -112,6 +113,9 @@ function runYtDlp(bin: string, args: string[], cwd: string, onProgress: (receive
       }
     });
     child.stderr?.on("data", (chunk: Buffer) => {
+      // Downloading a stretch, ffmpeg tells how far it got.
+      const t = onTime ? lastTime(chunk.toString()) : null;
+      if (t !== null) onTime!(t);
       stderr += chunk.toString();
       if (stderr.length > 16384) stderr = stderr.slice(-16384);
     });
@@ -131,13 +135,21 @@ function runYtDlp(bin: string, args: string[], cwd: string, onProgress: (receive
  * enough to trace over or pull frames from, and no muxing needed), reporting
  * how far it got.
  */
-export async function downloadYouTube(id: string, onProgress: (received: number, total: number) => void, onStatus: (msg: string) => void): Promise<{ name: string; mime: string; data: ArrayBuffer }> {
+export async function downloadYouTube(
+  id: string,
+  onProgress: (received: number, total: number, unit?: "s") => void,
+  onStatus: (msg: string) => void,
+  /** Only this stretch (seconds), cut with ffmpeg. */
+  section?: { from: number; to: number },
+): Promise<{ name: string; mime: string; data: ArrayBuffer }> {
   if (!/^[\w-]{11}$/.test(id)) throw new YtDlpError("No se reconoce ese video de YouTube.");
+  if (section && !(Number.isFinite(section.from) && Number.isFinite(section.to) && section.to > section.from && section.from >= 0)) throw new YtDlpError("Ese tramo no sirve: el fin tiene que ir después del inicio.");
   const bin = await ensureYtDlp(onStatus);
+  const ffmpeg = section ? await ensureFfmpeg(onStatus) : null;
   const work = path.join(app.getPath("userData"), "yt-tmp", `${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await mkdir(work, { recursive: true });
   try {
-    onStatus("Bajando el video de YouTube…");
+    onStatus(section ? "Bajando el tramo de YouTube…" : "Bajando el video de YouTube…");
     const args = [
       // Prefer H.264 mp4 up to 720p, as a single file (no audio track, no ffmpeg needed).
       "-f",
@@ -148,6 +160,7 @@ export async function downloadYouTube(id: string, onProgress: (received: number,
       "--no-warnings",
       "--max-filesize",
       "2G",
+      ...(section && ffmpeg ? ["--download-sections", `*${section.from}-${section.to}`, "--ffmpeg-location", ffmpeg] : []),
       "--newline",
       "--progress-template",
       "PROG %(progress.downloaded_bytes)s %(progress.total_bytes)s %(progress.total_bytes_estimate)s",
@@ -155,7 +168,8 @@ export async function downloadYouTube(id: string, onProgress: (received: number,
       path.join(work, "video.%(ext)s"),
       `https://www.youtube.com/watch?v=${id}`,
     ];
-    await runYtDlp(bin, args, work, onProgress);
+    const length = section ? section.to - section.from : 0;
+    await runYtDlp(bin, args, work, section ? () => {} : onProgress, section ? (t) => onProgress(Math.min(t, length), length, "s") : undefined);
     const file = (await readdir(work)).find((f) => !f.endsWith(".part"));
     if (!file) throw new YtDlpError("El video es demasiado grande o no se pudo bajar.");
     const data = await readFile(path.join(work, file));

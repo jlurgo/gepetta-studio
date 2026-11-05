@@ -8,7 +8,7 @@ import { Dialog } from "./Dialog";
 const mmss = (s: number) => (Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "—");
 
 /** A bar for the whole video with two handles: the start and end of what gets imported, over the playhead. */
-function RangeBar({ duration, from, to, current, onFrom, onTo, onSeek }: { duration: number; from: number; to: number; current: number; onFrom(t: number): void; onTo(t: number): void; onSeek(t: number): void }) {
+export function RangeBar({ duration, from, to, current, onFrom, onTo, onSeek }: { duration: number; from: number; to: number; current: number; onFrom(t: number): void; onTo(t: number): void; onSeek(t: number): void }) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<"from" | "to" | null>(null);
   const pct = (t: number) => `${Math.max(0, Math.min(100, (t / duration) * 100))}%`;

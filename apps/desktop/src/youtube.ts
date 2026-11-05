@@ -86,18 +86,22 @@ async function assertDownloadable(id: string): Promise<void> {
 export function registerYouTubeIpc(getWindow: () => BrowserWindow | null) {
   ipcMain.handle("youtube:search", (_e, query: unknown) => (typeof query === "string" && query.trim() ? searchYouTube(query) : []));
   // Only YouTube's own page for that video, never another address.
-  ipcMain.handle("youtube:open", (_e, id: unknown) => {
-    if (typeof id === "string" && /^[\w-]{11}$/.test(id)) return shell.openExternal(`https://www.youtube.com/watch?v=${id}`);
+  ipcMain.handle("youtube:open", (_e, id: unknown, at?: unknown) => {
+    const t = typeof at === "number" && Number.isFinite(at) && at > 0 ? `&t=${Math.floor(at)}s` : "";
+    if (typeof id === "string" && /^[\w-]{11}$/.test(id)) return shell.openExternal(`https://www.youtube.com/watch?v=${id}${t}`);
   });
-  ipcMain.handle("youtube:download", async (_e, id: unknown) => {
+  ipcMain.handle("youtube:download", async (_e, id: unknown, section?: unknown) => {
     if (typeof id !== "string") throw new YouTubeError("Falta el video.");
+    const s = section as { from?: unknown; to?: unknown } | undefined;
+    const stretch = s && typeof s.from === "number" && typeof s.to === "number" ? { from: s.from, to: s.to } : undefined;
     const send = (channel: string, ...args: unknown[]) => getWindow()?.webContents.send(channel, ...args);
     try {
       await assertDownloadable(id);
       return await downloadYouTube(
         id,
-        (received, total) => send("youtube:progress", received, total),
+        (received, total, unit) => send("youtube:progress", received, total, unit),
         (msg) => send("youtube:status", msg),
+        stretch,
       );
     } catch (e) {
       // Only the message crosses to the window, in Spanish when it is ours.

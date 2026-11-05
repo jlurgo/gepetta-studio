@@ -47,13 +47,15 @@ contextBridge.exposeInMainWorld("gepetta", {
   },
   video: {
     download: (link: string) => ipcRenderer.invoke("video:download", link),
-    onProgress: (cb: (received: number, total: number) => void) => subscribe("video:progress", cb),
+    downloadSection: (link: string, from: number, to: number) => ipcRenderer.invoke("video:downloadSection", link, from, to),
+    onProgress: (cb: (received: number, total: number, unit?: "s") => void) => subscribe("video:progress", cb),
+    onStatus: (cb: (message: string) => void) => subscribe("video:status", cb),
   },
   youtube: {
     search: (query: string) => ipcRenderer.invoke("youtube:search", query),
-    open: (id: string) => ipcRenderer.invoke("youtube:open", id),
-    download: (id: string) => ipcRenderer.invoke("youtube:download", id),
-    onProgress: (cb: (received: number, total: number) => void) => subscribe("youtube:progress", cb),
+    open: (id: string, at?: number) => ipcRenderer.invoke("youtube:open", id, at),
+    download: (id: string, section?: { from: number; to: number }) => ipcRenderer.invoke("youtube:download", id, section),
+    onProgress: (cb: (received: number, total: number, unit?: "s") => void) => subscribe("youtube:progress", cb),
     onStatus: (cb: (message: string) => void) => subscribe("youtube:status", cb),
   },
   updates: {

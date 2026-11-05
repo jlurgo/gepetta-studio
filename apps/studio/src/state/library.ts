@@ -242,12 +242,14 @@ export async function animationToLibrary(anim: EffectAnimation): Promise<Library
   return item;
 }
 
-/** A video or sound being downloaded into the library. */
+/** A video being downloaded into the library. */
 export interface Download {
   id: number;
   name: string;
+  /** Bytes, or seconds of the stretch when `unit` is "s". */
   received: number;
   total: number;
+  unit?: "s";
   status?: string;
 }
 
@@ -256,26 +258,35 @@ export const useDownloads = create<{ items: Download[] }>(() => ({ items: [] }))
 let queue: Promise<void> = Promise.resolve();
 let nextDownload = 1;
 
+const clock = (s: number) => `${Math.floor(s / 60)}.${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
 /**
- * Downloads a whole video into the library: from the link of a video file or
- * from YouTube. One at a time; the rest wait their turn.
+ * Downloads a video into the library, whole or only a stretch (seconds): from
+ * the link of a video file or from YouTube. One at a time; the rest wait
+ * their turn.
  */
-export function downloadToLibrary(source: { kind: "web"; url: string; name: string } | { kind: "youtube"; id: string; name: string }) {
+export function downloadToLibrary(source: { kind: "web"; url: string; name: string } | { kind: "youtube"; id: string; name: string }, section?: { from: number; to: number }) {
   const native = window.gepetta;
   if (!native) return;
-  const job: Download = { id: nextDownload++, name: source.name, received: 0, total: 0 };
+  const label = section ? `${source.name} (${clock(section.from)} a ${clock(section.to)})` : source.name;
+  const job: Download = { id: nextDownload++, name: label, received: 0, total: 0 };
   const update = (patch: Partial<Download>) => useDownloads.setState({ items: useDownloads.getState().items.map((d) => (d.id === job.id ? { ...d, ...patch } : d)) });
   useDownloads.setState({ items: [...useDownloads.getState().items, job] });
   const filmId = useEditor.getState().filmId;
   queue = queue.then(async () => {
-    const onProgress = (received: number, total: number) => update({ received, total });
-    const offs = source.kind === "web" ? [native.video.onProgress(onProgress)] : [native.youtube.onProgress?.(onProgress), native.youtube.onStatus?.((status) => update({ status }))];
+    const onProgress = (received: number, total: number, unit?: "s") => update({ received, total, unit });
+    const onStatus = (status: string) => update({ status });
+    const offs = source.kind === "web" ? [native.video.onProgress(onProgress), native.video.onStatus?.(onStatus)] : [native.youtube.onProgress?.(onProgress), native.youtube.onStatus?.(onStatus)];
     try {
-      const got = source.kind === "web" ? await native.video.download(source.url) : await native.youtube.download(source.id);
+      let got: { name: string; mime: string; data: ArrayBuffer };
+      if (source.kind === "youtube") got = await native.youtube.download(source.id, section);
+      else if (!section) got = await native.video.download(source.url);
+      else if (native.video.downloadSection) got = await native.video.downloadSection(source.url, section.from, section.to);
+      else throw new Error("La app se actualizó: cerrala y volvé a abrirla para bajar solo un tramo.");
       if (useEditor.getState().filmId !== filmId) return;
-      const name = source.kind === "web" && got.name ? got.name : `${source.name}.${got.mime.split("/")[1] ?? "mp4"}`;
-      update({ status: "Guardándolo en la biblioteca…" });
-      await addToLibrary([new File([got.data], name, { type: got.mime })], source.kind === "web" ? source.url : "YouTube");
+      const ext = got.mime.split("/")[1] ?? "mp4";
+      update({ status: "Guardándolo en la biblioteca…", unit: undefined, total: 0 });
+      await addToLibrary([new File([got.data], `${label}.${ext}`, { type: got.mime })], source.kind === "web" ? source.url : "YouTube");
     } catch (e) {
       console.error("[gepetta] download", e);
       const text = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(e);

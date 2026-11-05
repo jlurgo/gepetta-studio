@@ -110,16 +110,21 @@ export interface GepettaNative {
   video: {
     /** Downloads a video file from a link (rejects, with a message to show, when it is not one). */
     download(link: string): Promise<{ name: string; mime: string; data: ArrayBuffer }>; // video:download
-    onProgress(cb: (received: number, total: number) => void): () => void; // event video:progress
+    /** Downloads only a stretch (seconds) of the video at a link (newer apps only). */
+    downloadSection?(link: string, from: number, to: number): Promise<{ name: string; mime: string; data: ArrayBuffer }>; // video:downloadSection
+    /** Bytes, or seconds of the stretch when `unit` is "s". */
+    onProgress(cb: (received: number, total: number, unit?: "s") => void): () => void; // event video:progress
+    onStatus?(cb: (message: string) => void): () => void; // event video:status
   };
   youtube: {
     /** Videos for a search, or the one of a pasted link. */
     search(query: string): Promise<YouTubeVideo[]>; // youtube:search
     /** Opens the video's YouTube page in the browser. */
-    open(id: string): Promise<void>; // youtube:open
+    open(id: string, at?: number): Promise<void>; // youtube:open (at: seconds to start from)
     /** Downloads a video as a single .mp4 (rejects, with a message to show, when it can't). */
-    download(id: string): Promise<{ name: string; mime: string; data: ArrayBuffer }>; // youtube:download
-    onProgress(cb: (received: number, total: number) => void): () => void; // event youtube:progress
+    download(id: string, section?: { from: number; to: number }): Promise<{ name: string; mime: string; data: ArrayBuffer }>; // youtube:download (section: only that stretch, in seconds)
+    /** Bytes, or seconds of the stretch when `unit` is "s". */
+    onProgress(cb: (received: number, total: number, unit?: "s") => void): () => void; // event youtube:progress
     /** Progress text while downloading (e.g. the first-time setup step). */
     onStatus(cb: (message: string) => void): () => void; // event youtube:status
   };
