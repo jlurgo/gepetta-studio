@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
 import { type VideoInfo, loadVideo, sampleTimes } from "../media/video";
 import { importVideoStills } from "../state/actions";
 import { type GridCursor, useEditor } from "../state/editor";
@@ -7,34 +7,114 @@ import { Dialog } from "./Dialog";
 
 const mmss = (s: number) => (Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "—");
 
-/** A bar for the whole video with two handles: the start and end of what gets imported, over the playhead. */
-export function RangeBar({ duration, from, to, current, onFrom, onTo, onSeek }: { duration: number; from: number; to: number; current: number; onFrom(t: number): void; onTo(t: number): void; onSeek(t: number): void }) {
+/** How long a stretch lasts, to read: "8 s", "1 min 20 s", "1 h 05 min". */
+export function lengthText(s: number): string {
+  if (s < 10) return `${Number(s.toFixed(1)).toLocaleString("es-AR")} s`;
+  const t = Math.round(s);
+  if (t < 60) return `${t} s`;
+  if (t < 3600) return t % 60 ? `${Math.floor(t / 60)} min ${t % 60} s` : `${t / 60} min`;
+  return `${Math.floor(t / 3600)} h ${String(Math.floor((t % 3600) / 60)).padStart(2, "0")} min`;
+}
+
+/** How near (px) a handle has to be touched to grab it. */
+const GRAB = 10;
+
+type Drag = { kind: "from" | "to" | "move"; x0: number; from0: number; moved: boolean } | { kind: "seek" };
+
+/**
+ * A bar for the whole video with the stretch chosen on it, over the
+ * playhead. The handles change where it starts or ends (the preview shows
+ * that frame); dragging the stretch moves it without changing how long it is;
+ * a click (on it or anywhere) shows that frame. Times are rounded to `step`.
+ */
+export function RangeBar({
+  duration,
+  from,
+  to,
+  current,
+  step = 0.01,
+  onChange,
+  onSeek,
+}: {
+  duration: number;
+  from: number;
+  to: number;
+  current: number;
+  step?: number;
+  onChange(from: number, to: number): void;
+  onSeek(t: number): void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
-  const drag = useRef<"from" | "to" | null>(null);
+  const drag = useRef<Drag | null>(null);
   const pct = (t: number) => `${Math.max(0, Math.min(100, (t / duration) * 100))}%`;
+  const round = (t: number) => Number((Math.round(t / step) * step).toFixed(2));
+  const width = () => ref.current!.getBoundingClientRect().width || 1;
   const timeAt = (clientX: number) => {
     const r = ref.current!.getBoundingClientRect();
-    return Math.max(0, Math.min(duration, Number((((clientX - r.left) / r.width) * duration).toFixed(2))));
+    return Math.max(0, Math.min(duration, ((clientX - r.left) / r.width) * duration));
   };
-  const move = (which: "from" | "to", t: number) => {
-    if (which === "from") onFrom(Math.min(t, to));
-    else onTo(Math.max(t, from));
-    onSeek(t);
-  };
+  const length = to - from;
+
+  /** What a touch at `clientX` grabs: the nearest handle when close, else the stretch, or the bar. */
+  function grabAt(clientX: number): "from" | "to" | "move" | "seek" {
+    const t = timeAt(clientX);
+    const px = (t2: number) => Math.abs(((t - t2) / duration) * width());
+    if (Math.min(px(from), px(to)) <= GRAB) return px(from) < px(to) || (px(from) === px(to) && t < from) ? "from" : "to";
+    return t > from && t < to ? "move" : "seek";
+  }
+
+  function onDown(e: ReactPointerEvent) {
+    const t = timeAt(e.clientX);
+    const what = grabAt(e.clientX);
+    if (what !== "seek") drag.current = { kind: what, x0: e.clientX, from0: from, moved: false };
+    else {
+      drag.current = { kind: "seek" };
+      onSeek(t);
+    }
+    ref.current!.setPointerCapture(e.pointerId);
+  }
+
+  function onMove(e: ReactPointerEvent) {
+    const d = drag.current;
+    if (!d) {
+      const what = grabAt(e.clientX);
+      ref.current!.style.cursor = what === "move" ? "grab" : what === "seek" ? "pointer" : "ew-resize";
+      return;
+    }
+    const t = timeAt(e.clientX);
+    if (d.kind !== "seek") {
+      // A few pixels of wobble is still a click.
+      if (!d.moved && Math.abs(e.clientX - d.x0) < 4) return;
+      d.moved = true;
+    }
+    if (d.kind === "from") {
+      const f = Math.min(round(t), to);
+      onChange(f, to);
+      onSeek(f);
+    } else if (d.kind === "to") {
+      const end = Math.max(round(t), from);
+      onChange(from, end);
+      onSeek(end);
+    } else if (d.kind === "move") {
+      ref.current!.style.cursor = "grabbing";
+      const f = Math.max(0, Math.min(duration - length, round(d.from0 + ((e.clientX - d.x0) / width()) * duration)));
+      onChange(f, Number((f + length).toFixed(2)));
+      onSeek(f);
+    } else onSeek(t);
+  }
+
+  function onUp(e: ReactPointerEvent) {
+    const d = drag.current;
+    drag.current = null;
+    // A click on the stretch or a handle (without moving it) shows that frame.
+    if (d && d.kind !== "seek" && !d.moved) onSeek(timeAt(e.clientX));
+  }
+
   return (
-    <div
-      className="range-bar"
-      ref={ref}
-      onPointerDown={(e) => {
-        const t = timeAt(e.clientX);
-        drag.current = Math.abs(t - from) <= Math.abs(t - to) ? "from" : "to";
-        ref.current!.setPointerCapture(e.pointerId);
-        move(drag.current, t);
-      }}
-      onPointerMove={(e) => drag.current && move(drag.current, timeAt(e.clientX))}
-      onPointerUp={() => (drag.current = null)}
-    >
-      <div className="range-sel" style={{ left: pct(from), width: pct(to - from) }} />
+    <div className="range-bar" ref={ref} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={() => (drag.current = null)}>
+      <div className="range-sel" style={{ left: pct(from), width: pct(length) }} title="Arrastralo para moverlo sin cambiar cuánto dura">
+        <span className="range-len">{lengthText(length)}</span>
+      </div>
       <div className="range-play" style={{ left: pct(current) }} />
       <div className="range-handle start" style={{ left: pct(from) }} title="Inicio" />
       <div className="range-handle end" style={{ left: pct(to) }} title="Fin" />
@@ -108,10 +188,15 @@ export function VideoImportDialog({ file, mode = "frames", at, onClose }: { file
       {error && <p className="panel-error">{error}</p>}
       {ok && (
         <>
-          <RangeBar duration={info!.duration} from={from} to={Math.min(to, info!.duration)} current={current} onFrom={(t) => setFrom(Number(t.toFixed(2)))} onTo={(t) => setTo(Number(t.toFixed(2)))} onSeek={seek} />
+          <RangeBar duration={info!.duration} from={from} to={Math.min(to, info!.duration)} current={current} onChange={(f, t) => {
+              setFrom(f);
+              setTo(t);
+            }}
+            onSeek={seek}
+          />
           <div className="range-times">
             <span>
-              Tramo: <strong>{mmss(from)}</strong> → <strong>{mmss(Math.min(to, info!.duration))}</strong> (dura {mmss(Math.max(0, to - from))})
+              Tramo: <strong>{mmss(from)}</strong> → <strong>{mmss(Math.min(to, info!.duration))}</strong> (dura {lengthText(Math.max(0, Math.min(to, info!.duration) - from))})
             </span>
           </div>
           <div className="row">

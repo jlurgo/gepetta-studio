@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { createWriteStream, existsSync } from "node:fs";
 import { chmod, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -181,4 +181,32 @@ export async function downloadYouTube(
   } finally {
     await rm(work, { recursive: true, force: true });
   }
+}
+
+/**
+ * A link to watch a YouTube video in the app (to choose the stretch to
+ * download): a small H.264 picture, without sound. It can be played and
+ * jumped around in a <video> without downloading the whole thing; it stops
+ * working after a few hours.
+ */
+export async function previewUrl(id: string): Promise<string> {
+  if (!/^[\w-]{11}$/.test(id)) throw new YtDlpError("No se reconoce ese video de YouTube.");
+  const bin = await ensureYtDlp();
+  const args = [
+    "-g",
+    "-f",
+    "bv*[vcodec~='^avc'][height<=?360][protocol^=https][ext=mp4]/bv*[height<=?480][protocol^=https][ext=mp4]/b[height<=?480][protocol^=https]",
+    "--no-playlist",
+    "--no-cache-dir",
+    "--no-warnings",
+    `https://www.youtube.com/watch?v=${id}`,
+  ];
+  return new Promise((resolve, reject) => {
+    execFile(bin, args, { windowsHide: true, timeout: 60_000 }, (err, stdout, stderr) => {
+      const url = stdout.split("\n").find((l) => l.startsWith("https://"));
+      if (!err && url) return resolve(url.trim());
+      console.error("[gepetta] yt-dlp preview failed", err?.message, String(stderr).slice(-2000));
+      reject(new YtDlpError(describeError(String(stderr))));
+    });
+  });
 }

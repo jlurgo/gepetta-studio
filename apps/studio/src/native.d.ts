@@ -121,6 +121,8 @@ export interface GepettaNative {
     search(query: string): Promise<YouTubeVideo[]>; // youtube:search
     /** Opens the video's YouTube page in the browser. */
     open(id: string, at?: number): Promise<void>; // youtube:open (at: seconds to start from)
+    /** A link to watch the video in the app (small, no sound; it expires after a few hours). Missing before the app restarts after an update. */
+    preview?(id: string): Promise<string>; // youtube:preview
     /** Downloads a video as a single .mp4 (rejects, with a message to show, when it can't). */
     download(id: string, section?: { from: number; to: number }): Promise<{ name: string; mime: string; data: ArrayBuffer }>; // youtube:download (section: only that stretch, in seconds)
     /** Bytes, or seconds of the stretch when `unit` is "s". */

@@ -1323,7 +1323,7 @@ input[type="range"] {
 
 .video-preview video {
   width: 100%;
-  max-height: 300px;
+  max-height: min(300px, 34vh);
   background: #000;
   border-radius: 8px;
 }
@@ -3267,6 +3267,19 @@ input[type="range"] {
   background: color-mix(in srgb, var(--accent) 35%, transparent);
   border-left: 2px solid var(--accent);
   border-right: 2px solid var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* How long the stretch lasts, on it (hidden when it does not fit). */
+.range-len {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .range-play {
@@ -3329,6 +3342,25 @@ input[type="range"] {
 .stretch-times {
   flex-wrap: wrap;
   align-items: end;
+}
+
+.stretch-length {
+  padding-bottom: 8px;
+  color: var(--muted);
+}
+
+.stretch-length strong {
+  color: var(--text);
+}
+
+.stretch-marks {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.video-preview.waiting {
+  padding: 4px 0;
 }
 
 .clock-input {
