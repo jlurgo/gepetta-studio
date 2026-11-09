@@ -35,6 +35,12 @@ export interface CameraSource {
   autoRotation?(): number | null;
   /** Called whenever controls or readiness change. Returns an unsubscribe function. */
   onChange(cb: () => void): () => void;
+  /**
+   * Turns the device off while nothing shows it (a webcam's light goes off),
+   * keeping the camera ready: `wake` turns it on again. Only webcams.
+   */
+  sleep?(): void;
+  wake?(): Promise<void>;
   close(): void;
 }
 

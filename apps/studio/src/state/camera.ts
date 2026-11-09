@@ -85,7 +85,7 @@ interface CameraState {
   /** Picks the cell for the camera being picked for, and stops picking. */
   pick(target: GridCursor): void;
   cancelPicking(): void;
-  /** Shows or hides a camera's live view on the grid (hiding keeps the camera open). */
+  /** Shows or hides a camera's live view on the grid (a hidden webcam turns off until it is shown again). */
   setLive(rigId: string, on: boolean): void;
   setEnabled(rigId: string, enabled: boolean): void;
   /** The camera's next photos start a sequence of their own. */
@@ -465,10 +465,11 @@ export const useCamera = create<CameraState>((set, get) => {
     pick(to) {
       const target = inLoop(to);
       const rigId = get().picking;
-      set({ picking: null });
-      if (!rigId || !rig(rigId)) return;
-      // Choosing a cell shows the camera live there and starts a new sequence of photos.
+      if (!rigId || !rig(rigId)) return set({ picking: null });
+      // Choosing a cell shows the camera live there and starts a new sequence of photos
+      // (live before picking ends, so a webcam does not turn off in between).
       patch(rigId, { target, seq: newId(), live: true });
+      set({ picking: null });
       useEditor.getState().moveTo(target.cell, target.track);
     },
 
@@ -621,6 +622,24 @@ function inLoop(target: GridCursor): GridCursor {
   const film = useEditor.getState().film;
   return film ? { ...target, cell: wrapCell(film, target.cell) } : target;
 }
+
+/**
+ * A webcam is on only while something shows it: live on a cell, choosing its
+ * cell, or recording. Otherwise it sleeps, so its light goes off; it wakes
+ * by itself when a cell is chosen again.
+ */
+useCamera.subscribe((state) => {
+  for (const r of state.rigs) {
+    const source = r.source;
+    if (!source?.sleep || !source.wake) continue;
+    if (r.live || r.recording || state.picking === r.id) {
+      source.wake().catch((e) => {
+        console.error("[gepetta] camera", e);
+        useBusy.getState().notify("No se pudo volver a prender la cámara: fijate que no la esté usando otro programa.");
+      });
+    } else source.sleep();
+  }
+});
 
 /** A phone that disconnects stops being a camera. */
 useRemote.subscribe((state, prev) => {

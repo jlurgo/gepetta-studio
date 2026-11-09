@@ -198,7 +198,7 @@ function CameraTarget({ rig, color }: { rig: Rig; color: string }) {
           {picking ? "Cancelar (Esc)" : rig.live ? "Cambiar de celda" : "Elegir celda"}
         </button>
         {rig.live && !picking && (
-          <button className="btn small" onClick={() => useCamera.getState().setLive(rig.id, false)} title="Deja de mostrar la cámara en vivo (la cámara sigue disponible)">
+          <button className="btn small" onClick={() => useCamera.getState().setLive(rig.id, false)} title="Deja de mostrar la cámara en vivo y la apaga (se vuelve a prender al elegir una celda)">
             Quitar el vivo
           </button>
         )}

@@ -69,28 +69,42 @@ async function captureStill(video: HTMLVideoElement, average: number): Promise<B
 
 /** Opens a webcam. `deviceId` null = the system default. */
 export async function openWebcam(deviceId: string | null, res: ResolutionPreset): Promise<CameraSource> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      deviceId: deviceId ? { exact: deviceId } : undefined,
-      width: { ideal: res.width },
-      height: { ideal: res.height },
-    },
-  });
-  const track = stream.getVideoTracks()[0]!;
+  const request = (id: string | null) =>
+    navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        deviceId: id ? { exact: id } : undefined,
+        width: { ideal: res.width },
+        height: { ideal: res.height },
+      },
+    });
+  let stream = await request(deviceId);
+  let track = stream.getVideoTracks()[0]!;
+  const realId = track.getSettings().deviceId ?? deviceId;
   const video = Object.assign(document.createElement("video"), { muted: true, playsInline: true });
   video.srcObject = stream;
   await video.play().catch(() => undefined);
   const listeners = new Listeners();
   let controls = readTrackControls(track);
+  let asleep = false;
+  /** Whether it should be on: a wake that ends after a later sleep turns it off again. */
+  let wanted = true;
+  let closed = false;
+  let waking: Promise<void> | null = null;
 
   return {
-    id: `webcam:${track.getSettings().deviceId ?? deviceId ?? "default"}`,
+    id: `webcam:${realId ?? "default"}`,
     kind: "webcam",
     live: () =>
       video.readyState >= 2 && video.videoWidth ? { image: video, width: video.videoWidth, height: video.videoHeight } : null,
     controls: () => controls,
     async setControl(control: CameraControl, value: ControlValue) {
+      if (asleep) {
+        // Kept, and set when it turns on again.
+        controls = controls.map((c) => (c.key === control.key && "value" in c ? ({ ...c, value } as CameraControl) : c));
+        listeners.emit();
+        return;
+      }
       try {
         await applyTrackControl(track, control, value);
       } catch (e) {
@@ -103,7 +117,45 @@ export async function openWebcam(deviceId: string | null, res: ResolutionPreset)
       return { image: await captureStill(video, average), raw: null };
     },
     onChange: (cb) => listeners.add(cb),
+    sleep() {
+      wanted = false;
+      if (asleep || closed) return;
+      asleep = true;
+      stream.getTracks().forEach((t) => t.stop());
+      video.srcObject = null;
+      listeners.emit();
+    },
+    wake() {
+      wanted = true;
+      if (!asleep || closed) return waking ?? Promise.resolve();
+      waking ??= (async () => {
+        try {
+          const next = await request(realId ?? null);
+          if (closed || !wanted) {
+            next.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          stream = next;
+          track = stream.getVideoTracks()[0]!;
+          // The camera starts again with its own defaults: put back what was set.
+          const fresh = readTrackControls(track);
+          for (const c of controls) {
+            const now = fresh.find((f) => f.key === c.key);
+            if (now && "value" in c && "value" in now && now.value !== c.value) await applyTrackControl(track, c, c.value).catch(() => undefined);
+          }
+          controls = readTrackControls(track);
+          video.srcObject = stream;
+          await video.play().catch(() => undefined);
+          asleep = false;
+        } finally {
+          waking = null;
+          listeners.emit();
+        }
+      })();
+      return waking;
+    },
     close() {
+      closed = true;
       stream.getTracks().forEach((t) => t.stop());
       video.srcObject = null;
     },
