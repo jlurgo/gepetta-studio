@@ -13,11 +13,13 @@ describe("parseDevices", () => {
       "List of devices attached",
       "R58M12ABCDE            device usb:1-1 product:a52q model:SM_A525M device:a52q transport_id:3",
       "0123456789ABCDEF       unauthorized usb:1-2 transport_id:4",
+      "ZY22DM5M34             device usb:17825792X product:borneo_t model:moto_g_power__2021_ device:borneo transport_id:1",
       "",
     ].join("\n");
     expect(parseDevices(text)).toEqual([
       { serial: "R58M12ABCDE", state: "device", model: "SM A525M" },
       { serial: "0123456789ABCDEF", state: "unauthorized", model: "celular" },
+      { serial: "ZY22DM5M34", state: "device", model: "moto g power 2021" },
     ]);
   });
   it("is empty when nothing is plugged in (also with Windows line ends)", () => {

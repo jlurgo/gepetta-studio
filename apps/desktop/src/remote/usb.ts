@@ -84,7 +84,7 @@ export function parseDevices(text: string): { serial: string; state: string; mod
     .slice(1)
     .map((line) => line.trim().match(/^(\S+)\s+(device|unauthorized|offline|no permissions)\b(.*)$/))
     .filter((m): m is RegExpMatchArray => !!m)
-    .map((m) => ({ serial: m[1]!, state: m[2]!, model: (m[3]!.match(/model:(\S+)/)?.[1] ?? "celular").replace(/_/g, " ") }));
+    .map((m) => ({ serial: m[1]!, state: m[2]!, model: (m[3]!.match(/model:(\S+)/)?.[1] ?? "celular").replace(/_+/g, " ").trim() }));
 }
 
 const HELP =
@@ -98,9 +98,14 @@ const HELP =
 export async function connectUsbPhones(ports: number[], url: string): Promise<string[]> {
   const adb = await ensureAdb();
   await run(adb, ["start-server"]);
-  const listed = await run(adb, ["devices", "-l"]);
-  if (!listed.ok) throw new UsbError("No se pudo buscar el celular por USB.");
-  const phones = parseDevices(listed.stdout);
+  // adb takes a while to see a phone after it starts (some 10 s on a Mac): look for a moment.
+  let phones: ReturnType<typeof parseDevices> = [];
+  for (let tries = 0; tries < 15 && phones.length === 0; tries++) {
+    if (tries) await new Promise((r) => setTimeout(r, 1000));
+    const listed = await run(adb, ["devices", "-l"]);
+    if (!listed.ok) throw new UsbError("No se pudo buscar el celular por USB.");
+    phones = parseDevices(listed.stdout);
+  }
   if (phones.length === 0) throw new UsbError(`No veo ningún celular por USB. ${HELP}`);
   const ready = phones.filter((p) => p.state === "device");
   if (ready.length === 0) {
