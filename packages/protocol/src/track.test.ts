@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { modeStuck, readTrackControls } from "./track";
+import { applyTrackControl, modeStuck, readTrackControls } from "./track";
 
 const fakeTrack = (caps: Record<string, unknown>, settings: Record<string, unknown>) => ({ getCapabilities: () => caps, getSettings: () => settings }) as unknown as MediaStreamTrack;
 
@@ -31,5 +31,24 @@ describe("modeStuck", () => {
     expect(modeStuck(fakeTrack(CAPS, { whiteBalanceMode: "manual" }), control, "continuous")).toBe(true);
     expect(modeStuck(fakeTrack(CAPS, { whiteBalanceMode: "continuous" }), control, "continuous")).toBe(false);
     expect(modeStuck(fakeTrack(CAPS, { whiteBalanceMode: "manual" }), control, "manual")).toBe(false);
+  });
+});
+
+describe("applyTrackControl", () => {
+  const asked = async (settings: Record<string, unknown>, control: Parameters<typeof applyTrackControl>[1], value: number | string) => {
+    let sent: unknown = null;
+    const track = { getSettings: () => settings, applyConstraints: async (c: { advanced: unknown[] }) => void (sent = c.advanced[0]) } as unknown as MediaStreamTrack;
+    await applyTrackControl(track, control, value);
+    return sent;
+  };
+  const zoom = { kind: "range" as const, key: "zoom", label: "", min: 1, max: 8, step: 0.1, value: 1 };
+  const focusMode = { kind: "choice" as const, key: "focusMode", label: "", options: [], value: "manual" };
+
+  it("sends a manual focus along with any other change (Chrome on Android loses it otherwise)", async () => {
+    expect(await asked({ focusMode: "manual", focusDistance: 0.26 }, zoom, 2)).toEqual({ zoom: 2, focusMode: "manual", focusDistance: 0.26 });
+  });
+  it("leaves an automatic focus alone, and a change of the focus mode itself", async () => {
+    expect(await asked({ focusMode: "continuous", focusDistance: 0.26 }, zoom, 2)).toEqual({ zoom: 2 });
+    expect(await asked({ focusMode: "manual", focusDistance: 0.26 }, focusMode, "continuous")).toEqual({ focusMode: "continuous" });
   });
 });

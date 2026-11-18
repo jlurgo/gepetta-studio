@@ -89,5 +89,12 @@ export async function applyTrackControl(track: MediaStreamTrack, control: Camera
   const constraint: Caps = { [control.key]: value };
   // A manual value only sticks if its mode is manual (e.g. focus distance needs focusMode=manual).
   if (control.kind === "range" && control.manualMode) constraint[control.manualMode] = "manual";
+  // Chrome on Android turns a manual focus distance into its inverse (0.26 ↔ 3.85) each time anything
+  // else is set without it: a manual focus always goes along, as it is.
+  const settings = track.getSettings() as Caps;
+  if (constraint.focusMode === undefined && settings.focusMode === "manual" && typeof settings.focusDistance === "number") {
+    constraint.focusMode = "manual";
+    constraint.focusDistance = settings.focusDistance;
+  }
   await track.applyConstraints({ advanced: [constraint as MediaTrackConstraintSet] });
 }
