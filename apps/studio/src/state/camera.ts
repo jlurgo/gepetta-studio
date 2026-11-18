@@ -132,6 +132,10 @@ interface CameraState {
   /** Opens one more camera and makes it the active one. */
   addCamera(deviceId: string): Promise<void>;
   removeCamera(rigId: string): void;
+  /** A camera's device is gone (a phone disconnected): it stays, without picture, saying why. */
+  lose(rigId: string, message: string): void;
+  /** Gives a camera another device (a phone that came back has a new session). */
+  setDevice(rigId: string, deviceId: string): Promise<void>;
   activate(rigId: string): void;
   selectResolution(id: string): Promise<void>;
   setControl(control: CameraControl, value: ControlValue): Promise<void>;
@@ -156,7 +160,9 @@ function loadPrefs(): Prefs {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
     const listed: unknown[] = Array.isArray(p.devices) ? p.devices : [p.selectedId ?? null];
     const devices = listed.filter((d): d is string | null => d === null || (typeof d === "string" && !d.startsWith("phone:")));
-    return { devices: devices.length ? devices : [null], resolutionId: p.resolutionId ?? "1080" };
+    // No cameras is a choice too (all were taken off, or only phones were in use): only a first run starts with the webcam.
+    const untouched = !Array.isArray(p.devices) && p.selectedId === undefined;
+    return { devices: untouched ? [null] : devices, resolutionId: p.resolutionId ?? "1080" };
   } catch {
     return { devices: [null], resolutionId: "1080" };
   }
@@ -516,7 +522,7 @@ export const useCamera = create<CameraState>((set, get) => {
       const cursor = useEditor.getState().cursor;
       if (get().rigs.length === 0) {
         const rigs = loadPrefs().devices.map((d) => newRig(d, cursor));
-        set({ rigs, activeRig: rigs[0]!.id });
+        set({ rigs, activeRig: rigs[0]?.id ?? null });
         mirror();
       }
       await Promise.all(get().rigs.map((r) => open(r.id)));
@@ -566,6 +572,20 @@ export const useCamera = create<CameraState>((set, get) => {
         else mirror();
       }
       savePrefs(rigs, get().resolutionId);
+    },
+
+    lose(rigId, message) {
+      if (!rig(rigId)) return;
+      generations.set(rigId, (generations.get(rigId) ?? 0) + 1);
+      attach(rigId, null);
+      patch(rigId, { opening: false, error: { message } });
+    },
+
+    async setDevice(rigId, deviceId) {
+      if (!rig(rigId)) return;
+      patch(rigId, { deviceId });
+      savePrefs(get().rigs, get().resolutionId);
+      await open(rigId);
     },
 
     activate(rigId) {
@@ -641,16 +661,24 @@ useCamera.subscribe((state) => {
   }
 });
 
-/** A phone that disconnects stops being a camera. */
+/**
+ * A phone that disconnects stays as a camera, without picture (no other
+ * camera takes its place); when a phone connects again (it comes with a new
+ * session) the camera that lost its phone takes it.
+ */
 useRemote.subscribe((state, prev) => {
   if (state.devices === prev.devices) return;
-  for (const r of useCamera.getState().rigs) {
-    if (!r.deviceId?.startsWith("phone:")) continue;
-    const sessionId = r.deviceId.slice("phone:".length);
-    if (state.devices.some((d) => d.sessionId === sessionId)) continue;
-    useBusy.getState().notify("Se desconectó el celular.");
-    if (useCamera.getState().rigs.length > 1) useCamera.getState().removeCamera(r.id);
-    else void useCamera.getState().select("webcam:");
+  const camera = useCamera.getState();
+  const connected = (r: Rig) => state.devices.some((d) => `phone:${d.sessionId}` === r.deviceId);
+  const lost = camera.rigs.filter((r) => r.deviceId?.startsWith("phone:") && !connected(r));
+  const free = state.devices.filter((d) => d.mode === "live" && !camera.rigs.some((r) => r.deviceId === `phone:${d.sessionId}`));
+  for (const r of lost) {
+    const back = free.shift();
+    if (back) void camera.setDevice(r.id, `phone:${back.sessionId}`);
+    else if (r.source) {
+      useBusy.getState().notify("Se desconectó el celular.");
+      camera.lose(r.id, "Se desconectó el celular. Cuando vuelva a conectarse (abrí de nuevo la cámara en el celular) sigue acá.");
+    }
   }
 });
 

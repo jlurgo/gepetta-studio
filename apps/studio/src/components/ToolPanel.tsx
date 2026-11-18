@@ -212,7 +212,6 @@ function CameraToolPanel() {
   const rig = useCamera((s) => s.rigs.find((r) => r.id === s.activeRig));
   const index = useCamera((s) => s.rigs.findIndex((r) => r.id === s.activeRig));
   const label = useCamera((s) => (rig ? s.labelOf(rig.source?.id ?? rig.deviceId) : null)) ?? "Cámara";
-  const many = useCamera((s) => s.rigs.length > 1);
   const { resolutionId, source, controls, error } = useCamera();
   const { selectResolution, setControl, start } = useCamera.getState();
   const captureAverage = useEditor((s) => s.captureAverage);
@@ -319,11 +318,9 @@ function CameraToolPanel() {
         <CameraControls controls={extra} slow={source?.kind === "dslr"} onChange={(c, v) => void setControl(c, v)} />
       </Section>
 
-      {many && (
-        <button className="btn small danger" onClick={() => useCamera.getState().removeCamera(rig.id)} disabled={!!rig.recording}>
-          <Icon name="close" size={14} /> Dejar de usar esta cámara
-        </button>
-      )}
+      <button className="btn small danger" onClick={() => useCamera.getState().removeCamera(rig.id)} disabled={!!rig.recording} title="La saca de la barra; se vuelve a agregar con el «+» de cámara">
+        <Icon name="close" size={14} /> Dejar de usar esta cámara
+      </button>
     </div>
   );
 }

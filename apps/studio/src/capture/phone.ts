@@ -13,10 +13,73 @@ export function openPhone(sessionId: string): CameraSource {
   let rotation: number | null = null;
   const pending = new Map<string, { resolve(b: Blob): void; reject(e: Error): void }>();
 
+  // The preview as video (when this app can decode it): much smoother than JPEG after JPEG.
+  const canVideo = typeof VideoDecoder === "function";
+  let decoder: VideoDecoder | null = null;
+  let decoderCodec = "";
+  let videoFrame: VideoFrame | null = null;
+  let waitingKey = true;
+  let closed = false;
+  const askVideo = () => canVideo && void sendToPhone(sessionId, { t: "previewVideo" });
+
+  function decode(header: { key: boolean; ts: number; codec: string }, payload: Uint8Array) {
+    if (!decoder || decoder.state === "closed" || decoderCodec !== header.codec) {
+      if (decoder && decoder.state !== "closed") decoder.close();
+      const made = new VideoDecoder({
+        output: (frame) => {
+          if (closed) return frame.close();
+          const first = !videoFrame;
+          videoFrame?.close();
+          videoFrame = frame;
+          if (first) listeners.emit();
+        },
+        error: (e) => {
+          console.warn("[gepetta] phone video", e);
+          if (decoder === made) decoder = null;
+          waitingKey = true;
+          askVideo();
+        },
+      });
+      made.configure({ codec: header.codec, optimizeForLatency: true });
+      decoder = made;
+      decoderCodec = header.codec;
+      waitingKey = true;
+    }
+    // Behind: let go of what is queued and start again from the next key frame.
+    if (decoder.decodeQueueSize > 4) {
+      waitingKey = true;
+      askVideo();
+    }
+    if (waitingKey && !header.key) return;
+    waitingKey = false;
+    decoder.decode(new EncodedVideoChunk({ type: header.key ? "key" : "delta", timestamp: header.ts, data: payload }));
+  }
+
   const unsubscribe = onRemoteMessage((sid, header, payload) => {
     if (sid !== sessionId) return;
     switch (header.t) {
+      case "video":
+        if (payload && canVideo) {
+          try {
+            decode(header, payload);
+          } catch (e) {
+            console.warn("[gepetta] phone video", e);
+            decoder = null;
+            waitingKey = true;
+          }
+        }
+        if ((header.rotation ?? null) !== rotation) {
+          rotation = header.rotation ?? null;
+          listeners.emit();
+        }
+        break;
       case "preview":
+        // JPEG again (the phone reconnected, or can't make video): ask for video once more.
+        if (videoFrame) {
+          videoFrame.close();
+          videoFrame = null;
+          askVideo();
+        }
         if (payload) frames.push(payload.slice(), () => listeners.emit());
         if ((header.rotation ?? null) !== rotation) {
           rotation = header.rotation ?? null;
@@ -46,10 +109,12 @@ export function openPhone(sessionId: string): CameraSource {
     }
   });
 
+  askVideo();
+
   return {
     id: `phone:${sessionId}`,
     kind: "phone",
-    live: () => frames.get(),
+    live: () => (videoFrame ? { image: videoFrame, width: videoFrame.displayWidth, height: videoFrame.displayHeight } : frames.get()),
     autoRotation: () => rotation,
     controls: () => controls,
     async setControl(control: CameraControl, value: ControlValue) {
@@ -77,7 +142,11 @@ export function openPhone(sessionId: string): CameraSource {
     },
     onChange: (cb) => listeners.add(cb),
     close() {
+      closed = true;
       unsubscribe();
+      if (decoder && decoder.state !== "closed") decoder.close();
+      videoFrame?.close();
+      videoFrame = null;
       frames.close();
       pending.forEach((p) => p.reject(new Error("Se cambió de cámara")));
       pending.clear();

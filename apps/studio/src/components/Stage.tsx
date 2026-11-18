@@ -923,6 +923,7 @@ export function Stage() {
   const pointerTool = useCamera((s) => s.pointerTool);
   const magnified = useCamera((s) => (magnifyControl(s.controls)?.value ?? "1") !== "1");
   const hasSource = useCamera((s) => s.source !== null);
+  const hasCamera = useCamera((s) => s.activeRig !== null);
   const focusOpacity = useEditor((s) => s.focusOpacity);
   const focused = useEditor((s) => {
     const id = s.selection.length === 1 ? s.selection[0]! : null;
@@ -1205,7 +1206,7 @@ export function Stage() {
       <StageSoundView />
       {marker && <div className="focus-marker" style={{ left: marker.x, top: marker.y }} />}
       {!playing && magnified && <div className="stage-badge zoom">🔍 Lupa · arrastrá para mover</div>}
-      {!playing && !hasSource && (
+      {!playing && !hasSource && hasCamera && (
         <div className="stage-note">{cameraError ?? "Conectando la cámara…"}</div>
       )}
       {playing && <div className="stage-badge">▶ Reproduciendo</div>}

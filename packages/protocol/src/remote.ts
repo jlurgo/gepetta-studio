@@ -19,6 +19,13 @@ export type PhoneMessage =
    * the picture must turn to be upright, from the phone's motion sensor; absent when unknown.
    */
   | { t: "preview"; w: number; h: number; rotation?: number }
+  /**
+   * Payload: one piece of the preview as H.264 video (Annex B; key frames carry
+   * what a decoder needs to start). Sent instead of "preview" once the desktop
+   * asked for it with "previewVideo": the phone's chip compresses video much
+   * faster than JPEG after JPEG. `ts`: microseconds.
+   */
+  | { t: "video"; key: boolean; ts: number; codec: string; w: number; h: number; rotation?: number }
   /** Payload: full-resolution photo. requestId is null when shot from the phone itself. */
   | { t: "photo"; requestId: string | null; mime: string; rotation?: number }
   | { t: "error"; requestId?: string; message: string };
@@ -29,7 +36,9 @@ export type DesktopMessage =
   | { t: "setControl"; key: string; value: ControlValue }
   /** Payload: JPEG of the previous frame for onion skinning on the phone; no payload clears it. */
   | { t: "onion"; filmName: string | null }
-  | { t: "previewSettings"; maxWidth: number; fps: number };
+  | { t: "previewSettings"; maxWidth: number; fps: number }
+  /** The desktop can show the preview as video: send "video" (starting with a key frame; also asked again to get a new one). */
+  | { t: "previewVideo" };
 
 export interface Envelope<M> {
   header: M;

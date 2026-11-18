@@ -87,6 +87,29 @@ export function parseDevices(text: string): { serial: string; state: string; mod
     .map((m) => ({ serial: m[1]!, state: m[2]!, model: (m[3]!.match(/model:(\S+)/)?.[1] ?? "celular").replace(/_+/g, " ").trim() }));
 }
 
+/**
+ * Closes the tabs of the phone page left open in the phone's Chrome (through
+ * its debugging door, which the cable gives): each time the page is opened
+ * Chrome makes a new tab, and they pile up. Best effort: other browsers, or a
+ * Chrome that does not answer, just keep their tabs.
+ */
+async function closeOldTabs(adb: string, at: string[], ports: number[]): Promise<void> {
+  const door = await run(adb, [...at, "forward", "tcp:0", "localabstract:chrome_devtools_remote"], 5000);
+  const local = Number(door.stdout.trim());
+  if (!door.ok || !local) return;
+  try {
+    const base = `http://127.0.0.1:${local}/json`;
+    const tabs = (await (await fetch(base, { signal: AbortSignal.timeout(3000) })).json()) as { id: string; type: string; url: string }[];
+    for (const tab of tabs) {
+      if (tab.type === "page" && ports.some((p) => tab.url.startsWith(`http://localhost:${p}/`))) await fetch(`${base}/close/${tab.id}`, { signal: AbortSignal.timeout(3000) }).catch(() => undefined);
+    }
+  } catch {
+    // No Chrome to ask.
+  } finally {
+    await run(adb, [...at, "forward", "--remove", `tcp:${local}`], 5000);
+  }
+}
+
 const HELP =
   "En el celular: Ajustes → Acerca del teléfono → tocá 7 veces «Número de compilación»; después, en Opciones para desarrolladores, prendé «Depuración por USB». Conectalo con un cable de datos.";
 
@@ -123,6 +146,7 @@ export async function connectUsbPhones(ports: number[], url: string): Promise<st
       const done = await run(adb, [...at, "reverse", `tcp:${port}`, `tcp:${port}`]);
       if (!done.ok) throw new UsbError(`No se pudo enlazar el ${phone.model} por el cable. Desenchufalo, volvé a enchufarlo y probá de nuevo.`);
     }
+    await closeOldTabs(adb, at, ports);
     // The phone's shell reads this line: the address goes quoted (it has ? and #).
     const opened = await run(adb, [...at, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", `'${url}'`]);
     if (!opened.ok) throw new UsbError(`No se pudo abrir la cámara en el ${phone.model}: desbloquealo y probá de nuevo.`);

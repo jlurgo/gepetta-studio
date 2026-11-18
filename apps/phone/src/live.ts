@@ -20,7 +20,11 @@ declare class ImageCapture {
 
 const MAX_BUFFERED = 256 * 1024;
 
-/** The biggest photo within the camera's widest and tallest that keeps the live picture's shape (the two maximums need not be one real size). */
+/**
+ * The biggest photo within the camera's widest and tallest that keeps the
+ * live picture's shape (the two maximums need not be one real size). Sizes are
+ * the sensor's, which lies on its side: `aspect` is long side over short side.
+ */
 function biggestPhoto(maxWidth: number, maxHeight: number, aspect: number): { imageWidth: number; imageHeight: number } | undefined {
   if (!(aspect > 0)) return undefined;
   const width = Math.min(maxWidth, Math.round(maxHeight * aspect));
@@ -33,7 +37,8 @@ export function renderLive(root: HTMLElement) {
   let track: MediaStreamTrack | null = null;
   let controls: CameraControl[] = [];
   let facing: "environment" | "user" = "environment";
-  let preview = { maxWidth: 640, fps: 10 };
+  // On the USB cable (the computer is this phone's "localhost") there is room for a bigger, smoother preview than over WiFi.
+  let preview = location.hostname === "localhost" ? { maxWidth: 1280, fps: 20 } : { maxWidth: 640, fps: 10 };
   let onionUrl: string | null = null;
   let capturing = false;
 
@@ -86,7 +91,11 @@ export function renderLive(root: HTMLElement) {
   function connect() {
     conn = new Connection("live", {
       onStatus: (status) => pill.set(status),
-      onOpen: () => sendControls(),
+      onOpen: () => {
+        // A new connection starts with JPEG until the desktop asks for video again.
+        videoAsked = false;
+        sendControls();
+      },
       onMessage: (header, payload) => void handleMessage(header, payload),
     });
   }
@@ -105,6 +114,10 @@ export function renderLive(root: HTMLElement) {
       case "onion":
         if (header.filmName) filmName.textContent = header.filmName;
         setOnion(payload);
+        break;
+      case "previewVideo":
+        videoAsked = true;
+        needKey = true;
         break;
       case "previewSettings":
         preview = {
@@ -129,7 +142,10 @@ export function renderLive(root: HTMLElement) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { facingMode: { ideal: facing }, width: { ideal: 4032 }, height: { ideal: 3024 } },
+        // Full HD to watch: at the sensor's full size the camera gives only a few pictures a second.
+        // Photos are taken apart, at the biggest size (see takePhoto). No frame rate is asked for: asking 30
+        // made a Motorola give an upright 1080×1920 strip instead of the whole picture.
+        video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
       });
     } catch (error) {
       showError(cameraErrorText(error));
@@ -308,15 +324,78 @@ export function renderLive(root: HTMLElement) {
   onionSlider.addEventListener("input", updateOnion);
 
   // ---- Preview stream ----
+  // As video (H.264, compressed by the phone's chip) when the desktop asks and the browser can; else JPEG after JPEG.
   const previewCanvas = document.createElement("canvas");
   let encoding = false;
+  const VIDEO_CODEC = "avc1.42E01F";
+  let videoAsked = false;
+  let videoBroken = typeof VideoEncoder !== "function" || typeof video.requestVideoFrameCallback !== "function";
+  let encoder: VideoEncoder | null = null;
+  let encoderSize = "";
+  let needKey = true;
+  let lastKey = 0;
+  const videoPreview = () => videoAsked && !videoBroken;
+
+  function dropEncoder() {
+    if (encoder && encoder.state !== "closed") encoder.close();
+    encoder = null;
+    encoderSize = "";
+  }
+
+  function videoLoop(_now: number, meta: VideoFrameCallbackMetadata) {
+    video.requestVideoFrameCallback(videoLoop);
+    if (!videoPreview() || capturing || !conn?.isOpen || !video.videoWidth) return;
+    if (conn.bufferedAmount > MAX_BUFFERED || (encoder && encoder.encodeQueueSize > 2)) return;
+    // The limit is for the long side; H.264 wants even sizes.
+    const scale = Math.min(1, preview.maxWidth / Math.max(video.videoWidth, video.videoHeight));
+    const w = Math.round((video.videoWidth * scale) / 2) * 2;
+    const hgt = Math.round((video.videoHeight * scale) / 2) * 2;
+    try {
+      if (!encoder || encoderSize !== `${w}x${hgt}`) {
+        dropEncoder();
+        const made = new VideoEncoder({
+          output: (chunk) => {
+            const bytes = new Uint8Array(chunk.byteLength);
+            chunk.copyTo(bytes);
+            conn?.send({ t: "video", key: chunk.type === "key", ts: chunk.timestamp, codec: VIDEO_CODEC, w, h: hgt, rotation: uprightRotation() }, bytes);
+          },
+          error: (error) => {
+            console.warn("video preview", error);
+            if (encoder === made) videoBroken = true;
+          },
+        });
+        made.configure({ codec: VIDEO_CODEC, width: w, height: hgt, bitrate: Math.max(2_000_000, w * hgt * 8), framerate: 30, latencyMode: "realtime", avc: { format: "annexb" } });
+        encoder = made;
+        encoderSize = `${w}x${hgt}`;
+        needKey = true;
+      }
+      const now = performance.now();
+      // A key frame every couple of seconds, so a decoder that lost its way recovers.
+      const key = needKey || now - lastKey > 2000;
+      const frame = new VideoFrame(video, { timestamp: Math.round(meta.mediaTime * 1e6) });
+      encoder.encode(frame, { keyFrame: key });
+      frame.close();
+      if (key) {
+        needKey = false;
+        lastKey = now;
+      }
+    } catch (error) {
+      console.warn("video preview", error);
+      videoBroken = true;
+      dropEncoder();
+    }
+  }
+  if (!videoBroken) video.requestVideoFrameCallback(videoLoop);
 
   function previewLoop() {
     window.setTimeout(previewLoop, 1000 / preview.fps);
+    if (videoPreview()) return;
     if (encoding || capturing || document.hidden || !conn?.isOpen || conn.bufferedAmount > MAX_BUFFERED) return;
     if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth) return;
-    const w = Math.min(preview.maxWidth, video.videoWidth);
-    const hgt = Math.round((video.videoHeight * w) / video.videoWidth);
+    // The limit is for the long side: a phone held upright gives a tall picture.
+    const scale = Math.min(1, preview.maxWidth / Math.max(video.videoWidth, video.videoHeight));
+    const w = Math.round(video.videoWidth * scale);
+    const hgt = Math.round(video.videoHeight * scale);
     if (previewCanvas.width !== w || previewCanvas.height !== hgt) {
       previewCanvas.width = w;
       previewCanvas.height = hgt;
@@ -363,7 +442,7 @@ export function renderLive(root: HTMLElement) {
         const capture = new ImageCapture(track);
         // The biggest photo the camera gives (the default can be smaller).
         const caps = await capture.getPhotoCapabilities().catch(() => null);
-        const biggest = caps?.imageWidth?.max && caps.imageHeight?.max ? biggestPhoto(caps.imageWidth.max, caps.imageHeight.max, video.videoWidth / video.videoHeight) : undefined;
+        const biggest = caps?.imageWidth?.max && caps.imageHeight?.max ? biggestPhoto(caps.imageWidth.max, caps.imageHeight.max, Math.max(video.videoWidth, video.videoHeight) / Math.min(video.videoWidth, video.videoHeight)) : undefined;
         const blob = await capture.takePhoto(biggest).catch((e) => {
           if (!biggest) throw e;
           return capture.takePhoto();
@@ -417,10 +496,26 @@ export function renderLive(root: HTMLElement) {
   void watchOrientation();
   document.addEventListener("click", () => void watchOrientation(), { once: true });
 
+  /** Another tab of this page took the camera. */
+  let superseded = false;
+
+  // ---- Turning the phone ----
+  // The camera keeps the shape it was opened with: turned afterwards, the picture is a strip cut from
+  // the middle. Opening it again (with its settings) gives the whole picture the new way round.
+  let turning: number | undefined;
+  const onTurn = () => {
+    clearTimeout(turning);
+    turning = window.setTimeout(() => {
+      if (!track || document.hidden || superseded || capturing) return;
+      void reopenWith(null).then(refreshControls);
+    }, 400);
+  };
+  if (window.screen.orientation?.addEventListener) window.screen.orientation.addEventListener("change", onTurn);
+  else window.addEventListener("orientationchange", onTurn);
+
   // ---- One tab at a time ----
   // Every time the computer opens this page the browser makes a new tab; several holding the camera
   // leave all of them without picture. The newest keeps it: the others let go and say so.
-  let superseded = false;
   if (typeof BroadcastChannel === "function") {
     const tabs = new BroadcastChannel("gepetta-camara");
     tabs.postMessage("abierta");
