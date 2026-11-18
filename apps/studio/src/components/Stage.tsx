@@ -1005,8 +1005,9 @@ export function Stage() {
       const { playback, onion, cursor } = state;
       if (playback) {
         // A loop film goes on from its first cell, until stopped.
-        const cell = playedCell(film, playbackCell(playback, size.fps));
-        if (cell >= film.length) {
+        const n = playbackCell(playback, size.fps);
+        const cell = playedCell(film, n);
+        if (cell >= film.length || (playback.until !== undefined && n >= playback.until)) {
           if (playback.loop) useEditor.setState({ playback: { ...playback, startCell: playback.loopFrom, startedAt: performance.now() } });
           else state.stop();
           ctx.restore();

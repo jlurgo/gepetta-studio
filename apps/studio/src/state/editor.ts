@@ -16,6 +16,7 @@ import {
   setCursor as historySetCursor,
   setEntryEnabled as historySetEnabled,
   tailStartCell,
+  playedEnd,
   playedCell,
   wrapCell,
   trackClips,
@@ -39,6 +40,8 @@ export interface Playback {
   startCell: number;
   /** Where a loop starts over: the film's start, or the start of the last seconds. */
   loopFrom: number;
+  /** Where it ends (and loops from): the cell after the last one played; the film's end when not given. */
+  until?: number;
   loop: boolean;
   /** performance.now() when playback (or the current loop) began. */
   startedAt: number;
@@ -351,7 +354,8 @@ export const useEditor = create<EditorState>((set, get) => {
       const tail = mode === true;
       const tailStart = tailStartCell(film, tailSeconds);
       const from = mode === "start" ? 0 : tail ? tailStart : cursor.cell < film.length - 1 ? cursor.cell : 0;
-      set({ playback: { startCell: from, loopFrom: tail ? tailStart : 0, loop, startedAt: performance.now() } });
+      // The last seconds are of what there is: empty cells left at the end are not played.
+      set({ playback: { startCell: from, loopFrom: tail ? tailStart : 0, ...(tail && { until: playedEnd(film) }), loop, startedAt: performance.now() } });
     },
     pause() {
       const { playback, film, cursor } = get();

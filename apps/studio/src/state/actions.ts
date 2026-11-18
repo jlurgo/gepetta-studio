@@ -574,31 +574,6 @@ function shrinkEnd(film: FilmState, ops: Op[], count: number): Op[] {
   return length < after.length ? [...ops, { type: "film.setLength", length }] : ops;
 }
 
-/** The last «new cell» step, so holding an arrow past an end makes one undo step. */
-let grown: { id: string; at: "start" | "end"; count: number } | null = null;
-
-/**
- * An arrow past the film's end (or before its start, not in a loop) makes a
- * new empty cell there and goes to it, as typing past the end of a line.
- */
-function growFilm(at: "start" | "end") {
-  const { film, cursor, commit, history } = useEditor.getState();
-  if (!film || film.settings.loop) return;
-  const last = history?.entries[history.cursor - 1];
-  const again = grown && grown.at === at && last?.id === grown.id ? grown : null;
-  const count = (again?.count ?? 0) + 1;
-  const label = at === "end" ? (count === 1 ? "Celda nueva al final" : `${count} celdas nuevas al final`) : count === 1 ? "Celda nueva al principio" : `${count} celdas nuevas al principio`;
-  const ops = insertColumnsOps(film, at === "end" ? film.length : 0, 1);
-  // At the end the new cell joins the film and the cursor goes on to the next one; at the start it stays on the new first cell.
-  const cell = at === "end" ? film.length + 1 : 0;
-  const id = commit(ops, label, { cursor: { ...cursor, cell }, selection: [], ...(again && { amend: again.id }) });
-  if (id) grown = { id, at, count };
-  if (at === "start") {
-    shiftCameras(film.tracks.map((t) => t.id), 0, 1);
-    shiftMics(film.tracks.map((t) => t.id), 0, 1);
-  }
-}
-
 /** Microphones recording to these tracks from `from` on move along with their cells. */
 function shiftMics(tracks: TrackId[], from: number, by: number) {
   const { mics } = useMics.getState();
@@ -661,8 +636,9 @@ function anchorSpan() {
 }
 
 /**
- * ← → in the timeline, as in a text: one cell, or with `word` (Ctrl) to the
- * next run of pictures or gap; with `extend` (⇧) picking the cells on the way.
+ * ← → in the timeline: one cell, or with `word` (Ctrl) to the next run of
+ * pictures or gap; with `extend` (⇧) picking the cells on the way. They only
+ * move (the film is never made longer by them).
  * Without ⇧, picked cells let go (the cursor goes to their side first).
  */
 export function moveCursor(dir: -1 | 1, opts: { extend?: boolean; word?: boolean } = {}) {
@@ -685,14 +661,27 @@ export function moveCursor(dir: -1 | 1, opts: { extend?: boolean; word?: boolean
   if (opts.extend) anchorSpan();
   else setSpan(null);
   let cell = cursor.cell + dir;
-  if (!opts.extend && !opts.word && !film.settings.loop && (cell > film.length || cell < 0)) return growFilm(cell < 0 ? "start" : "end");
   if (opts.word) {
     const end = Math.max(film.length, cursor.cell + 1);
     // Picking forward stops on the run's last cell (so the gap after it is not taken).
     cell = dir > 0 ? (opts.extend ? Math.max(cursor.cell, nextRunEdge(film, cursor.track, cursor.cell + 1, 1, end) - 1) : nextRunEdge(film, cursor.track, cursor.cell, 1, end)) : nextRunEdge(film, cursor.track, cursor.cell, -1);
   }
-  moveTo(Math.max(0, cell));
+  // Arrows only go places, never change the film: they stop at the first cell and at the one after the last.
+  moveTo(film.settings.loop ? Math.max(0, cell) : Math.min(Math.max(film.length, cursor.cell), Math.max(0, cell)));
   if (opts.extend || span) pickSpanClips();
+  else pickUnderCursor();
+}
+
+/**
+ * What is picked follows the cursor moved with the arrows (the picture there,
+ * or nothing), as a click on the cell does: so keys that act on what is picked
+ * (delete, lengthen…) act where the cursor is, not on a picture left behind.
+ */
+function pickUnderCursor() {
+  const { film, cursor, setSelection } = useEditor.getState();
+  if (!film) return;
+  const here = clipAt(film, cursor.track, cursor.cell);
+  setSelection(here ? [here.id] : []);
 }
 
 /** Inicio / Fin: the first cell, or the one after the track's last picture (⇧: picking the way). */
@@ -938,8 +927,7 @@ export function nudgeSelected(dir: -1 | 1) {
 
 /**
  * ↑ / ↓ through the timeline's rows, as they are on screen: above the top
- * track is the results row (its column gets picked); below the bottom one a
- * new empty track is made (unless that one is empty already).
+ * track is the results row (its column gets picked); the bottom one is the last.
  */
 export function moveRow(dir: "up" | "down", extend = false) {
   const { film, cursor, columns, moveTo, setColumns, setSelection, commit } = useEditor.getState();
@@ -961,6 +949,7 @@ export function moveRow(dir: "up" | "down", extend = false) {
     setColumns(null);
     moveTo(cursor.cell, track);
     useLayers.getState().showCell(track);
+    pickUnderCursor();
   };
   if (columns) {
     if (dir === "down") goTo(top);
@@ -973,11 +962,8 @@ export function moveRow(dir: "up" | "down", extend = false) {
     setColumns([{ start: cursor.cell, end: cursor.cell + 1 }]);
     return;
   }
-  if (i > 0) return goTo(stops[i - 1]!);
-  // Past the bottom track: a new empty one there (as an arrow past the end makes a new cell).
-  const { id, op } = newTrackOp(`Capa ${film.tracks.length}`);
-  commit([op, { type: "track.move", trackId: id, index: 0 }], "Track nuevo abajo", { cursor: { track: id, cell: cursor.cell } });
-  useLayers.getState().showCell(id);
+  // The bottom track is the last stop (tracks are added with «+ Track»).
+  if (i > 0) goTo(stops[i - 1]!);
 }
 
 /** Adds seconds of empty cells at the end. */
