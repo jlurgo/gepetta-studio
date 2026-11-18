@@ -4,8 +4,22 @@ import { useEffect, useState } from "react";
 type Range = Extract<CameraControl, { kind: "range" }>;
 
 function formatValue(c: Range, v: number) {
+  if (c.key === "exposureTime") return shutter(v);
   return c.step >= 1 ? String(Math.round(v)) : v.toFixed(2);
 }
+
+/** A browser's exposure time (in tenths of a millisecond) as photographers say it: "1/50 s". */
+function shutter(v: number): string {
+  const seconds = v / 10000;
+  if (!(seconds > 0)) return "—";
+  return seconds >= 1 ? `${Number(seconds.toFixed(1)).toLocaleString("es-AR")} s` : `1/${Math.round(1 / seconds)} s`;
+}
+
+/**
+ * Exposure times that mains lighting does not flicker with (no dark bands
+ * across the picture): whole multiples of 1/100 s, where the mains are 50 Hz.
+ */
+const NO_FLICKER = [100, 200, 300, 400, 500, 1000];
 
 function RangeControl({ control, onChange, applyOnRelease }: { control: Range; onChange(v: number): void; applyOnRelease: boolean }) {
   const [value, setValue] = useState(control.value);
@@ -30,6 +44,25 @@ function RangeControl({ control, onChange, applyOnRelease }: { control: Range; o
         onPointerUp={applyOnRelease ? commit : undefined}
         onKeyUp={applyOnRelease ? commit : undefined}
       />
+      {control.key === "exposureTime" && (
+        <span className="action-row" title="Con luz de lámpara, estos tiempos no dejan franjas oscuras en la imagen (corriente de 50 Hz)">
+          <small>Sin parpadeo:</small>
+          {NO_FLICKER.filter((v) => v >= control.min && v <= control.max).map((v) => (
+            <button
+              key={v}
+              type="button"
+              className={`btn small${!control.auto && Math.abs(control.value - v) < 1 ? " active" : ""}`}
+              onClick={(e) => {
+                e.preventDefault();
+                setValue(v);
+                onChange(v);
+              }}
+            >
+              {shutter(v)}
+            </button>
+          ))}
+        </span>
+      )}
     </label>
   );
 }
