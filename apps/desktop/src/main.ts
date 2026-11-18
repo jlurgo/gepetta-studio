@@ -8,6 +8,7 @@ import { registerRemoteIpc } from "./remote/ipc";
 import { registerUpdates } from "./updates";
 import { registerVideoLinkIpc } from "./videoLink";
 import { registerYouTubeIpc } from "./youtube";
+import { saveFilters, withExtension } from "./saveName";
 
 /** Gepetta Studio's logo: the renderer ships it (studio's public/logo.png). */
 const APP_ICON = path.join(__dirname, "..", "renderer", "logo.png");
@@ -33,10 +34,13 @@ function registerIpc() {
     const win = BrowserWindow.fromWebContents(e.sender)!;
     const result = await dialog.showSaveDialog(win, {
       defaultPath: path.join(app.getPath("videos"), defaultName),
+      filters: saveFilters(defaultName),
     });
     if (result.canceled || !result.filePath) return null;
-    await writeFile(result.filePath, Buffer.from(data));
-    return result.filePath;
+    // A name typed again may come without its extension (Windows): the file would open with nothing.
+    const filePath = withExtension(result.filePath, defaultName);
+    await writeFile(filePath, Buffer.from(data));
+    return filePath;
   });
   // Exported files listed in a film's versions: still there? show them.
   ipcMain.handle("file:exists", async (_e, filePath: unknown) => {
