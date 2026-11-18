@@ -79,20 +79,28 @@ export class RemoteServer {
   private info: RemoteServerInfo | null = null;
   private starting: Promise<RemoteServerInfo> | null = null;
   private caDer: Buffer | null = null;
+  private httpPort = 0;
 
   constructor(
     private readonly opts: { certDir: string; phoneDir: string; onEvent(e: RemoteEvent): void },
   ) {}
 
-  start(): Promise<RemoteServerInfo> {
+  /** `offline`: also without a network (a phone on the USB cable reaches it as its own localhost). */
+  start(offline = false): Promise<RemoteServerInfo> {
     if (this.info) return Promise.resolve(this.info);
-    this.starting ??= this.doStart().finally(() => (this.starting = null));
+    this.starting ??= this.doStart(offline).finally(() => (this.starting = null));
     return this.starting;
   }
 
-  private async doStart(): Promise<RemoteServerInfo> {
+  /** What a phone on the USB cable opens (live camera), and the port it needs to reach. */
+  async usbTarget(): Promise<{ port: number; url: string }> {
+    await this.start(true);
+    return { port: this.httpPort, url: `http://localhost:${this.httpPort}/?t=${this.token}#vivo` };
+  }
+
+  private async doStart(offline: boolean): Promise<RemoteServerInfo> {
     const addresses = lanAddresses();
-    if (addresses.length === 0) throw new Error("La computadora no está conectada a ninguna red WiFi o cableada.");
+    if (addresses.length === 0 && !offline) throw new Error("La computadora no está conectada a ninguna red WiFi o cableada.");
     const { ca, server } = await loadCertificates(this.opts.certDir, [...addresses, "localhost", "127.0.0.1"]);
     this.caDer = certToDer(ca.cert);
 
@@ -109,7 +117,8 @@ export class RemoteServer {
     });
     this.heartbeat = setInterval(() => this.ping(), 15_000);
 
-    const host = addresses[0]!;
+    this.httpPort = httpPort;
+    const host = addresses[0] ?? "localhost";
     const httpUrl = `http://${host}:${httpPort}/?t=${this.token}`;
     this.info = {
       httpUrl,

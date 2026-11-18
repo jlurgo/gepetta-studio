@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld("gepetta", {
   remote: {
     start: () => ipcRenderer.invoke("remote:start"),
     stop: () => ipcRenderer.invoke("remote:stop"),
+    usb: () => ipcRenderer.invoke("remote:usb"),
     send: (sessionId: string, header: unknown, payload?: Uint8Array | null) =>
       ipcRenderer.invoke("remote:send", sessionId, header, payload ?? null),
     onEvent: (cb: (e: unknown) => void) => subscribe("remote:event", cb),

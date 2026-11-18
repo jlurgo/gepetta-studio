@@ -14,6 +14,7 @@ import { h, toast } from "./dom";
 declare class ImageCapture {
   constructor(track: MediaStreamTrack);
   takePhoto(settings?: Record<string, unknown>): Promise<Blob>;
+  getPhotoCapabilities(): Promise<{ imageWidth?: { max: number }; imageHeight?: { max: number } }>;
 }
 
 const MAX_BUFFERED = 256 * 1024;
@@ -332,7 +333,14 @@ export function renderLive(root: HTMLElement) {
     if (!track || track.readyState !== "live") throw new Error("La cámara no está activa");
     if (typeof window.ImageCapture === "function") {
       try {
-        const blob = await new ImageCapture(track).takePhoto();
+        const capture = new ImageCapture(track);
+        // The biggest photo the camera gives (the default can be smaller).
+        const caps = await capture.getPhotoCapabilities().catch(() => null);
+        const biggest = caps?.imageWidth?.max && caps.imageHeight?.max ? { imageWidth: caps.imageWidth.max, imageHeight: caps.imageHeight.max } : undefined;
+        const blob = await capture.takePhoto(biggest).catch((e) => {
+          if (!biggest) throw e;
+          return capture.takePhoto();
+        });
         return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type || "image/jpeg" };
       } catch (error) {
         console.warn("takePhoto failed, using the video frame", error);

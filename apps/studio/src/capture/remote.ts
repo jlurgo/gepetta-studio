@@ -9,9 +9,18 @@ interface RemoteState {
   devices: RemoteDevice[];
   starting: boolean;
   error: string | null;
+  /** Linking Android phones on the USB cable. */
+  usbBusy: boolean;
+  /** The phones the last USB link opened the camera on. */
+  usbPhones: string[];
   start(): Promise<void>;
+  /** Links the Android phones on the USB cable and opens the camera on them. */
+  usb(): Promise<void>;
   stop(): Promise<void>;
 }
+
+/** Whether this app's desktop part can link phones by USB (not before it restarts after an update). */
+export const usbAvailable = Boolean(window.gepetta?.remote.usb);
 
 export const remoteAvailable = Boolean(window.gepetta);
 
@@ -39,6 +48,20 @@ export const useRemote = create<RemoteState>((set, get) => ({
   devices: [],
   starting: false,
   error: null,
+  usbBusy: false,
+  usbPhones: [],
+  async usb() {
+    if (!window.gepetta?.remote.usb || get().usbBusy) return;
+    set({ usbBusy: true, error: null, usbPhones: [] });
+    try {
+      const { info, phones } = await window.gepetta.remote.usb();
+      set({ server: info, usbPhones: phones });
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(e) });
+    } finally {
+      set({ usbBusy: false });
+    }
+  },
   async start() {
     if (!window.gepetta || get().server || get().starting) return;
     set({ starting: true, error: null });
@@ -52,7 +75,7 @@ export const useRemote = create<RemoteState>((set, get) => ({
   },
   async stop() {
     await window.gepetta?.remote.stop();
-    set({ server: null, devices: [] });
+    set({ server: null, devices: [], usbPhones: [] });
   },
 }));
 

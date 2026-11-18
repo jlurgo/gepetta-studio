@@ -19,6 +19,7 @@
 - [x] Fuentes de cámara intercambiables (webcam / celular / réflex) con ajustes genéricos
 - [x] Réflex vía gphoto2 (Mac): vista en vivo, ISO, diafragma, velocidad, balance de blancos, formato, foco manual/automático, disparo JPEG + RAW. Probado con Canon EOS 500D / Rebel T1i
 - [x] Celular: página web por QR, modo en vivo (HTTPS con certificado local) y modo foto simple; vista previa, disparo remoto o desde el teléfono, ajustes, papel de cebolla en el teléfono. Probado con celular simulado
+- [x] Celular Android por cable USB (sin WiFi): con «Depuración por USB», `adb reverse` hace que el celular llegue a la compu como su propio localhost y la app le abre la página de cámara; adb se usa el instalado o se baja solo. Fotos al máximo que da la cámara (`getPhotoCapabilities`). Falta probar con un celular real
 - [ ] Probar con celulares reales (iPhone con certificado instalado, Android)
 - [x] Réflex en Windows vía gphoto2 de MSYS2 + WinUSB (Zadig) (falta probar en una PC real)
 - [x] Control de Xbox (Bluetooth o USB) como control remoto: foto, celdas y tracks, vivo de la cámara, cebolla, reproducir, foto/video

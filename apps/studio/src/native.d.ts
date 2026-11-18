@@ -88,6 +88,8 @@ export interface GepettaNative {
   remote: {
     start(): Promise<RemoteServerInfo>; // remote:start
     stop(): Promise<void>; // remote:stop
+    /** Links the Android phones on the USB cable and opens the camera page on them; returns their names. Missing before the app restarts after an update. */
+    usb?(): Promise<{ info: RemoteServerInfo; phones: string[] }>; // remote:usb
     send(sessionId: string, header: DesktopMessage, payload?: Uint8Array | null): Promise<void>; // remote:send
     /** Event channel remote:event. Returns an unsubscribe function. */
     onEvent(cb: (e: RemoteEvent) => void): () => void;
