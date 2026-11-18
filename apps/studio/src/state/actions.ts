@@ -686,8 +686,16 @@ function pickUnderCursor() {
 
 /** Inicio / Fin: the first cell, or the one after the track's last picture (⇧: picking the way). */
 export function moveToEdge(edge: "start" | "end", extend = false) {
-  const { film, cursor, moveTo, setSpan } = useEditor.getState();
+  const { film, cursor, columns, moveTo, setSpan, setColumns } = useEditor.getState();
   if (!film) return;
+  if (columns) {
+    // The results row: the picked column goes there (⇧: grows up to it). The end is the column after the film's last picture.
+    const end = Math.max(0, ...Object.values(film.clips).map((c) => c.start + c.length));
+    moveTo(edge === "start" ? 0 : extend ? Math.max(0, end - 1) : end);
+    const here = { start: useEditor.getState().cursor.cell, end: useEditor.getState().cursor.cell + 1 };
+    setColumns(extend ? extendColumns(columns, here) : [here]);
+    return;
+  }
   if (extend) anchorSpan();
   else setSpan(null);
   const last = afterLastPicture(film, cursor.track);
