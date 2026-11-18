@@ -40,14 +40,29 @@ function fit(c: Range, v: number): number {
   return Number(Math.min(c.max, Math.max(c.min, stepped)).toFixed(6));
 }
 
+/**
+ * How fast (units a second) the jog knob changes a value, pulled `reach` (0..1)
+ * of its travel. It grows evenly all the way, each bit of travel multiplying
+ * the speed by the same, so precision and range blend into each other: from
+ * fine (two steps a second; or 1% of the value a second when the range spans
+ * many times its start, like an exposure time, where two steps is nothing) to
+ * half the range a second.
+ */
+export function jogSpeed(c: { min: number; max: number; step: number }, value: number, reach: number): number {
+  const wide = c.min > 0 && c.max / c.min > 50;
+  const slow = Math.max(c.step * 2, wide ? Math.abs(value) * 0.01 : 0);
+  const fast = (c.max - c.min) / 2;
+  return fast > slow ? slow * (fast / slow) ** reach : slow;
+}
+
 /** How far (px) the knob goes for its fastest speed, and the still zone around its rest. */
 const JOG_REACH = 90;
 const JOG_STILL = 4;
 
 /**
  * A knob with a spring: dragged up the value grows, down it shrinks; a little
- * way it goes step by step, further it runs (the whole range in a couple of
- * seconds at the end of its travel). Let go, it comes back and the value stays.
+ * way it goes finely, further it runs (see jogSpeed). Let go, it comes back
+ * and the value stays.
  */
 function Jog({ control, value, onValue, onDone }: { control: Range; value: number; onValue(v: number): void; onDone(): void }) {
   const [pull, setPull] = useState(0);
@@ -73,10 +88,7 @@ function Jog({ control, value, onValue, onDone }: { control: Range; value: numbe
     st.last = now;
     const reach = Math.min(1, Math.max(0, (Math.abs(st.pull) - JOG_STILL) / (JOG_REACH - JOG_STILL)));
     if (reach > 0) {
-      // From about two steps a second to half the range a second.
-      const slow = c.step * 2;
-      const fast = (c.max - c.min) / 2;
-      const speed = slow + (fast - slow) * reach ** 3;
+      const speed = jogSpeed(c, st.value, reach);
       st.value = Math.min(c.max, Math.max(c.min, st.value + Math.sign(st.pull) * speed * dt));
       const v = fit(c, st.value);
       if (v !== live.current.value) live.current.onValue(v);
