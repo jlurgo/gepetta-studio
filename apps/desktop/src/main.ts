@@ -102,6 +102,10 @@ function createWindow() {
   else void win.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
 }
 
+// For trying things without a real camera: GEPETTA_FAKE_CAMERA=1 puts Chromium's made-up camera (a moving
+// test picture, with focus and exposure time to set) in place of the computer's webcams.
+if (process.env.GEPETTA_FAKE_CAMERA) app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+
 app.whenReady().then(async () => {
   // While developing (not packaged) the Dock shows Electron's icon otherwise.
   if (process.platform === "darwin" && !app.isPackaged && existsSync(APP_ICON)) app.dock?.setIcon(APP_ICON);
