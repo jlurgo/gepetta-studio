@@ -10,6 +10,8 @@ export type CameraControl =
       value: number;
       /** Mode that must be "manual" for this value to stick (e.g. focusDistance → focusMode). */
       manualMode?: string;
+      /** The camera is choosing this by itself (its mode is automatic): `value` is not what it is using now. */
+      auto?: boolean;
     }
   | { kind: "choice"; key: string; label: string; options: ControlOption[]; value: string }
   | { kind: "toggle"; key: string; label: string; value: boolean }

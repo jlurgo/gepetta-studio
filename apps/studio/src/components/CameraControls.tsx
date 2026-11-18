@@ -14,7 +14,7 @@ function RangeControl({ control, onChange, applyOnRelease }: { control: Range; o
   return (
     <label className="control">
       <span>
-        {control.label} <small>{formatValue(control, value)}</small>
+        {control.label} <small title={control.auto ? "La cámara lo elige sola; movelo para fijarlo a mano" : undefined}>{control.auto ? "auto" : formatValue(control, value)}</small>
       </span>
       <input
         type="range"

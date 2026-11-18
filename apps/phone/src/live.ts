@@ -4,6 +4,7 @@ import {
   type ControlValue,
   type DesktopMessage,
   applyTrackControl,
+  modeStuck,
   readTrackControls,
 } from "@gepetta/protocol";
 import { setupHelp, statusPill } from "./common";
@@ -18,6 +19,13 @@ declare class ImageCapture {
 }
 
 const MAX_BUFFERED = 256 * 1024;
+
+/** The biggest photo within the camera's widest and tallest that keeps the live picture's shape (the two maximums need not be one real size). */
+function biggestPhoto(maxWidth: number, maxHeight: number, aspect: number): { imageWidth: number; imageHeight: number } | undefined {
+  if (!(aspect > 0)) return undefined;
+  const width = Math.min(maxWidth, Math.round(maxHeight * aspect));
+  return { imageWidth: width, imageHeight: Math.round(width / aspect) };
+}
 
 export function renderLive(root: HTMLElement) {
   const pill = statusPill();
@@ -172,11 +180,30 @@ export function renderLive(root: HTMLElement) {
     if (!track || !control) return;
     try {
       await applyTrackControl(track, control, value);
+      if (modeStuck(track, control, value)) await reopenWith(key);
     } catch (error) {
       console.warn("applyConstraints", key, error);
       toast(`No se pudo cambiar “${control.label}”`, "error");
     }
     refreshControls();
+  }
+
+  /**
+   * Opens the camera again, which is the only way some browsers go back to an
+   * automatic mode (`mode`), and puts back the other settings as they were.
+   */
+  async function reopenWith(mode: string) {
+    const before = controls;
+    if (!(await startCamera()) || !track) return;
+    const fresh = readTrackControls(track);
+    for (const was of before) {
+      const now = fresh.find((c) => c.key === was.key);
+      if (!now || was.key === mode || !("value" in was) || !("value" in now) || was.value === now.value) continue;
+      // What the camera chooses by itself, and what `mode` governs, stay automatic.
+      if (was.kind === "range" && (was.auto || was.manualMode === mode)) continue;
+      if (was.kind === "choice" && was.value !== "manual") continue;
+      await applyTrackControl(track, was, was.value).catch((error) => console.warn("applyConstraints", was.key, error));
+    }
   }
 
   /** Applies slider values one at a time, always ending with the latest one. */
@@ -336,7 +363,7 @@ export function renderLive(root: HTMLElement) {
         const capture = new ImageCapture(track);
         // The biggest photo the camera gives (the default can be smaller).
         const caps = await capture.getPhotoCapabilities().catch(() => null);
-        const biggest = caps?.imageWidth?.max && caps.imageHeight?.max ? { imageWidth: caps.imageWidth.max, imageHeight: caps.imageHeight.max } : undefined;
+        const biggest = caps?.imageWidth?.max && caps.imageHeight?.max ? biggestPhoto(caps.imageWidth.max, caps.imageHeight.max, video.videoWidth / video.videoHeight) : undefined;
         const blob = await capture.takePhoto(biggest).catch((e) => {
           if (!biggest) throw e;
           return capture.takePhoto();
