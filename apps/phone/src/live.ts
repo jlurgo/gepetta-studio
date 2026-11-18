@@ -137,7 +137,8 @@ export function renderLive(root: HTMLElement) {
     }
     track = stream.getVideoTracks()[0] ?? null;
     video.srcObject = stream;
-    await video.play().catch(() => {});
+    // Not for ever: with the camera busy elsewhere (another tab), the picture never comes.
+    await Promise.race([video.play().catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
     refreshControls();
     void checkMultipleCameras();
     return true;
@@ -192,8 +193,7 @@ export function renderLive(root: HTMLElement) {
    * Opens the camera again, which is the only way some browsers go back to an
    * automatic mode (`mode`), and puts back the other settings as they were.
    */
-  async function reopenWith(mode: string) {
-    const before = controls;
+  async function reopenWith(mode: string | null, before = controls) {
     if (!(await startCamera()) || !track) return;
     const fresh = readTrackControls(track);
     for (const was of before) {
@@ -398,10 +398,42 @@ export function renderLive(root: HTMLElement) {
     }
   }
   document.addEventListener("visibilitychange", () => void keepAwake());
+  // Out of sight (another tab, the screen off) the camera is let go, so another
+  // tab of this page can use it; back in sight it opens again as it was.
+  let setAside: CameraControl[] | null = null;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (!track) return;
+      setAside = controls;
+      stopCamera();
+    } else if (setAside && !track && !superseded) {
+      const before = setAside;
+      setAside = null;
+      void reopenWith(null, before).then(refreshControls);
+    }
+  });
   document.addEventListener("click", () => void keepAwake(), { once: true });
   // The motion sensor tells which way the phone is held (iOS asks permission on the first tap).
   void watchOrientation();
   document.addEventListener("click", () => void watchOrientation(), { once: true });
+
+  // ---- One tab at a time ----
+  // Every time the computer opens this page the browser makes a new tab; several holding the camera
+  // leave all of them without picture. The newest keeps it: the others let go and say so.
+  let superseded = false;
+  if (typeof BroadcastChannel === "function") {
+    const tabs = new BroadcastChannel("gepetta-camara");
+    tabs.postMessage("abierta");
+    tabs.onmessage = () => {
+      superseded = true;
+      stopCamera();
+      conn?.close();
+      tabs.close();
+      screen.replaceChildren(
+        h("div", { class: "page error-page" }, h("h1", {}, "La cámara se abrió en otra pestaña"), h("p", { class: "muted" }, "Podés cerrar esta.")),
+      );
+    };
+  }
 
   // ---- Errors ----
   function showError(message: string) {
@@ -423,7 +455,7 @@ export function renderLive(root: HTMLElement) {
   }
 
   void startCamera().then((ok) => {
-    if (!ok) return;
+    if (!ok || superseded) return stopCamera();
     connect();
     void keepAwake();
     previewLoop();
