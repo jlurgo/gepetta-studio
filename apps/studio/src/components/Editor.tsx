@@ -406,6 +406,15 @@ function Transport() {
       </div>
 
       <div className="group">
+        <button className="btn small go-edge" onClick={() => moveToEdge("start")} title="Ir a la primera celda (tecla Inicio; en Mac, fn + ←)">
+          <Icon name="toStart" size={14} /> <span className="btn-label">Ir al principio</span>
+        </button>
+        <button className="btn small go-edge" onClick={() => moveToEdge("end")} title="Ir al final: la celda que sigue a la última imagen del track (tecla Fin; en Mac, fn + →)">
+          <span className="btn-label">Ir al final</span> <Icon name="toEnd" size={14} />
+        </button>
+      </div>
+
+      <div className="group">
         <button className="icon-btn" onClick={() => play("start")} title="Ver toda la película desde el principio (⇧ + Enter)" disabled={film.length === 0}>
           <Icon name="first" />
         </button>

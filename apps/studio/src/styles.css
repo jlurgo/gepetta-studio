@@ -736,6 +736,13 @@ input[type="range"] {
   }
 }
 
+/* «Ir al principio / al final» say so where there is room; else just their arrows. */
+@media (max-width: 1500px) {
+  .transport .go-edge .btn-label {
+    display: none;
+  }
+}
+
 .topbar > :not(.film-name, .spacer),
 .transport .group:not(.status) {
   flex-shrink: 0;
@@ -745,6 +752,13 @@ input[type="range"] {
   .transport .btn-label,
   .topbar-logo {
     display: none;
+  }
+  /* Just their arrows, close together. */
+  .transport .go-edge {
+    padding: 4px 5px;
+  }
+  .transport .group:has(.go-edge) {
+    gap: 2px;
   }
   .transport {
     gap: 8px;
@@ -765,6 +779,18 @@ input[type="range"] {
   }
   .transport .group {
     gap: 3px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .transport .go-edge {
+    padding: 4px 2px;
+  }
+  .transport input[type="range"] {
+    width: 44px;
+  }
+  .transport select {
+    max-width: 92px;
   }
 }
 
