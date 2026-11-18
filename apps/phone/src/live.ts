@@ -20,6 +20,24 @@ declare class ImageCapture {
 
 const MAX_BUFFERED = 256 * 1024;
 
+/** A choice kept on this phone. */
+function recall(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function remember<T extends string>(key: string, value: T): T {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Not remembered.
+  }
+  return value;
+}
+
 /**
  * The biggest photo within the camera's widest and tallest that keeps the
  * live picture's shape (the two maximums need not be one real size). Sizes are
@@ -36,6 +54,8 @@ export function renderLive(root: HTMLElement) {
   let stream: MediaStream | null = null;
   let track: MediaStreamTrack | null = null;
   let controls: CameraControl[] = [];
+  let photoFrom: "video" | "still" = recall("gepetta.photoFrom") === "still" ? "still" : "video";
+  let liveSize = recall("gepetta.liveSize") ?? "4000";
   let facing: "environment" | "user" = "environment";
   // On the USB cable (the computer is this phone's "localhost") there is room for a bigger, smoother preview than over WiFi.
   let preview = location.hostname === "localhost" ? { maxWidth: 1280, fps: 20 } : { maxWidth: 640, fps: 10 };
@@ -142,10 +162,9 @@ export function renderLive(root: HTMLElement) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        // Full HD to watch: at the sensor's full size the camera gives only a few pictures a second.
-        // Photos are taken apart, at the biggest size (see takePhoto). No frame rate is asked for: asking 30
+        // The size chosen (see LIVE_SIZE): photos come from this video unless asked apart. No frame rate is asked for: asking 30
         // made a Motorola give an upright 1080×1920 strip instead of the whole picture.
-        video: { facingMode: { ideal: facing }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: { facingMode: { ideal: facing }, width: { ideal: Number(liveSize) }, height: { ideal: Math.round((Number(liveSize) * 9) / 16) } },
       });
     } catch (error) {
       showError(cameraErrorText(error));
@@ -186,8 +205,37 @@ export function renderLive(root: HTMLElement) {
   // ---- Controls ----
   let dragging = false;
 
+  // Two settings of this page, shown with the camera's own.
+  // Where a photo comes from: the video being watched (what is seen is what is kept: focus and light
+  // stay as set), or a photo taken apart (the camera's biggest, but taking it the browser starts the
+  // camera again and the lens moves by itself, even with manual focus).
+  const PHOTO_FROM = "gepetta.photoFrom";
+  // The long side of the video (and so of a photo that comes from it): bigger is slower to watch.
+  const LIVE_SIZE = "gepetta.liveSize";
+  const SIZES = [
+    { value: "1920", label: "1920 × 1080" },
+    { value: "2560", label: "2560 × 1440" },
+    { value: "3264", label: "3264 × 1836" },
+    { value: "4000", label: "Máximo" },
+  ];
+  function ownControls(): CameraControl[] {
+    return [
+      {
+        kind: "choice",
+        key: PHOTO_FROM,
+        label: "Fotos",
+        options: [
+          { value: "video", label: "Del video (foco y luz fijos)" },
+          { value: "still", label: "Foto aparte (máximo; reenfoca)" },
+        ],
+        value: photoFrom,
+      },
+      { kind: "choice", key: LIVE_SIZE, label: "Tamaño de la imagen", options: SIZES, value: liveSize },
+    ];
+  }
+
   function refreshControls() {
-    controls = track ? readTrackControls(track) : [];
+    controls = track ? [...ownControls(), ...readTrackControls(track)] : [];
     sendControls();
     if (!dragging) renderControls();
   }
@@ -195,6 +243,14 @@ export function renderLive(root: HTMLElement) {
   async function setControl(key: string, value: ControlValue) {
     const control = controls.find((c) => c.key === key);
     if (!track || !control) return;
+    if (key === PHOTO_FROM || key === LIVE_SIZE) {
+      if (key === PHOTO_FROM) photoFrom = remember(PHOTO_FROM, value === "still" ? "still" : "video");
+      else liveSize = remember(LIVE_SIZE, SIZES.some((s) => s.value === value) ? String(value) : liveSize);
+      // Another size is another opening of the camera (with its settings).
+      if (key === LIVE_SIZE) await reopenWith(null);
+      refreshControls();
+      return;
+    }
     try {
       await applyTrackControl(track, control, value);
       if (modeStuck(track, control, value)) await reopenWith(key);
@@ -437,7 +493,7 @@ export function renderLive(root: HTMLElement) {
 
   async function takePhoto(): Promise<{ bytes: Uint8Array; mime: string }> {
     if (!track || track.readyState !== "live") throw new Error("La cámara no está activa");
-    if (typeof window.ImageCapture === "function") {
+    if (photoFrom === "still" && typeof window.ImageCapture === "function") {
       try {
         const capture = new ImageCapture(track);
         // The biggest photo the camera gives (the default can be smaller).
@@ -457,7 +513,7 @@ export function renderLive(root: HTMLElement) {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     canvas.getContext("2d")!.drawImage(video, 0, 0);
-    const bytes = await toJpeg(canvas, 0.95);
+    const bytes = await toJpeg(canvas, 0.97);
     canvas.width = canvas.height = 0; // free the memory now (iOS is strict about canvas memory)
     if (!bytes) throw new Error("No se pudo codificar la foto");
     return { bytes, mime: "image/jpeg" };
