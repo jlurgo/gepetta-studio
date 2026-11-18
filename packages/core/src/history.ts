@@ -75,7 +75,18 @@ export function replay(history: History): Replay {
   return { film, errors };
 }
 
-export function pushEntry(history: History, entry: HistoryEntry): History {
+/**
+ * A new step, at the cursor. Steps after the cursor (undone, or ahead of a
+ * place gone back to) stay ahead of it, to be replayed on top of it later
+ * (which may overwrite what the new step made); with `setAside` they are
+ * instead kept before it, turned off: nothing is left to redo over the new
+ * step, and nothing is lost either (a step set aside can be turned on again).
+ */
+export function pushEntry(history: History, entry: HistoryEntry, opts: { setAside?: boolean } = {}): History {
+  if (opts.setAside && history.cursor < history.entries.length) {
+    const aside = history.entries.slice(history.cursor).map((e) => ({ ...e, enabled: false }));
+    return { ...history, entries: [...history.entries.slice(0, history.cursor), ...aside, entry], cursor: history.entries.length + 1 };
+  }
   const entries = [...history.entries];
   entries.splice(history.cursor, 0, entry);
   return { ...history, entries, cursor: history.cursor + 1 };
@@ -93,12 +104,18 @@ export function setCursor(history: History, cursor: number): History {
   return { ...history, cursor: Math.max(0, Math.min(history.entries.length, cursor)) };
 }
 
+/** One step back: the last step that is on (steps turned off change nothing, so they are passed over). */
 export function undo(history: History): History {
-  return setCursor(history, history.cursor - 1);
+  let cursor = history.cursor - 1;
+  while (cursor > 0 && !history.entries[cursor]!.enabled) cursor--;
+  return setCursor(history, cursor);
 }
 
+/** One step forward, likewise. */
 export function redo(history: History): History {
-  return setCursor(history, history.cursor + 1);
+  let cursor = history.cursor + 1;
+  while (cursor < history.entries.length && !history.entries[cursor - 1]!.enabled) cursor++;
+  return setCursor(history, cursor);
 }
 
 function mapEntry(history: History, id: string, fn: (e: HistoryEntry) => HistoryEntry): History {

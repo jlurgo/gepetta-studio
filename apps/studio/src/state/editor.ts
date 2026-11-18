@@ -196,6 +196,15 @@ export const useEditor = create<EditorState>((set, get) => {
     saveTimer = setTimeout(flushSave, SAVE_DELAY_MS);
   }
 
+  /** The last thing done to the history was Ctrl+Z (see commit). */
+  let undone = false;
+
+  /** After undoing, the cursor is not left past the cell after the film's last. */
+  function keepCursorInFilm() {
+    const { film, cursor } = get();
+    if (film && !film.settings.loop && cursor.cell > film.length) set({ cursor: { ...cursor, cell: film.length } });
+  }
+
   /** Recomputes the film from history and schedules a save. */
   function setHistory(history: History, after?: { cursor?: GridCursor; selection?: ClipId[] }) {
     const { film, errors } = replay(history);
@@ -281,20 +290,29 @@ export const useEditor = create<EditorState>((set, get) => {
         return last.id;
       }
       const entry = makeEntry(ops, label);
-      setHistory(pushEntry(history, entry), after);
+      // After Ctrl+Z, what was undone is set aside (off, still in the history): redoing it over the new
+      // step would overwrite it without a word. Going back from the history panel keeps its steps ahead.
+      setHistory(pushEntry(history, entry, { setAside: undone }), after);
+      undone = false;
       return entry.id;
     },
 
     undo() {
       const { history } = get();
-      if (history) setHistory(historyUndo(history));
+      if (!history) return;
+      undone = true;
+      setHistory(historyUndo(history));
+      keepCursorInFilm();
     },
     redo() {
       const { history } = get();
-      if (history) setHistory(historyRedo(history));
+      if (!history) return;
+      setHistory(historyRedo(history));
+      keepCursorInFilm();
     },
     setCursor(cursor) {
       const { history } = get();
+      undone = false;
       if (history) setHistory(historySetCursor(history, cursor));
     },
     setEntryEnabled(id, enabled) {

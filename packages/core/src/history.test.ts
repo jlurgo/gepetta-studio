@@ -52,6 +52,36 @@ describe("history", () => {
     expect(canUndo(h)).toBe(true);
   });
 
+  it("a new step after undoing, with setAside, turns the undone steps off instead of leaving them to be redone over it", () => {
+    let h = createHistory(SETTINGS);
+    h = pushEntry(h, makeEntry([place(clip("a", 0))]));
+    h = pushEntry(h, makeEntry([place(clip("b", 1))]));
+    h = undo(h);
+    h = pushEntry(h, makeEntry([place(clip("c", 1))]), { setAside: true });
+    expect(cells(h)).toEqual(["a@0+1", "c@1+1"]);
+    // Nothing to redo: "c" is safe; "b" is still in the history, turned off.
+    expect(canRedo(h)).toBe(false);
+    expect(cells(redo(h))).toEqual(["a@0+1", "c@1+1"]);
+    expect(h.entries.map((e) => e.enabled)).toEqual([true, false, true]);
+    expect(h.cursor).toBe(3);
+  });
+
+  it("undo and redo pass over steps that are turned off", () => {
+    let h = createHistory(SETTINGS);
+    h = pushEntry(h, makeEntry([place(clip("a", 0))]));
+    h = pushEntry(h, makeEntry([place(clip("b", 1))]));
+    h = undo(h);
+    h = pushEntry(h, makeEntry([place(clip("c", 1))]), { setAside: true });
+    h = undo(h);
+    expect(cells(h)).toEqual(["a@0+1"]);
+    h = undo(h);
+    expect(cells(h)).toEqual([]);
+    h = redo(h);
+    expect(cells(h)).toEqual(["a@0+1"]);
+    h = redo(h);
+    expect(cells(h)).toEqual(["a@0+1", "c@1+1"]);
+  });
+
   it("disabling a past step recomputes and flags steps that no longer apply", () => {
     let h = createHistory(SETTINGS);
     const add = makeEntry([place(clip("a", 0, 3))]);

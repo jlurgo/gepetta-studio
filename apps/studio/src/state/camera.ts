@@ -644,6 +644,29 @@ function inLoop(target: GridCursor): GridCursor {
 }
 
 /**
+ * Undoing a photo takes the camera back to its cell (the next photo goes
+ * where the undone one was, not one further, leaving a hole); redoing it
+ * moves the camera on again. The cursor goes along when it was on the camera's cell.
+ */
+useEditor.subscribe((state, prev) => {
+  const [now, was] = [state.history, prev.history];
+  // Undo and redo move the cursor over the same steps.
+  if (!now || !was || now.entries !== was.entries || now.cursor === was.cursor || !state.film || !prev.film || state.filmId !== prev.filmId) return;
+  const [film, before] = [state.film, prev.film];
+  const camera = useCamera.getState();
+  for (const r of camera.rigs) {
+    const { track, cell } = r.target;
+    // A picture that went away ending where the camera is: back to its start. One that came back starting there: on to its end.
+    const gone = Object.values(before.clips).find((c) => !film.clips[c.id] && c.track === track && c.start + c.length === cell);
+    const back = Object.values(film.clips).find((c) => !before.clips[c.id] && c.track === track && c.start === cell);
+    const to = gone ? gone.start : back ? back.start + back.length : null;
+    if (to === null) continue;
+    camera.setTarget(r.id, { track, cell: to });
+    if (state.cursor.track === track && state.cursor.cell === cell) useEditor.getState().moveTo(to, track);
+  }
+});
+
+/**
  * A webcam is on only while something shows it: live on a cell, choosing its
  * cell, or recording. Otherwise it sleeps, so its light goes off; it wakes
  * by itself when a cell is chosen again.
