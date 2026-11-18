@@ -1,5 +1,5 @@
 import type { CameraControl, ControlValue } from "@gepetta/protocol";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Range = Extract<CameraControl, { kind: "range" }>;
 
@@ -21,29 +21,155 @@ function shutter(v: number): string {
  */
 const NO_FLICKER = [100, 200, 300, 400, 500, 1000];
 
+/** What is typed as a value: a number (comma or point); an exposure time also as "1/50" (or just "50"). */
+function parseValue(c: Range, text: string): number | null {
+  const t = text.trim().replace(/\s*s$/i, "").replace(",", ".");
+  if (c.key === "exposureTime") {
+    const m = /^(?:(\d+(?:\.\d+)?)\s*\/\s*)?(\d+(?:\.\d+)?)$/.exec(t);
+    if (!m) return null;
+    const seconds = m[1] ? Number(m[1]) / Number(m[2]) : 1 / Number(m[2]);
+    return Number.isFinite(seconds) ? seconds * 10000 : null;
+  }
+  const n = Number(t);
+  return t !== "" && Number.isFinite(n) ? n : null;
+}
+
+/** A value within the control's range, on its steps. */
+function fit(c: Range, v: number): number {
+  const stepped = c.min + Math.round((v - c.min) / c.step) * c.step;
+  return Number(Math.min(c.max, Math.max(c.min, stepped)).toFixed(6));
+}
+
+/** How far (px) the knob goes for its fastest speed, and the still zone around its rest. */
+const JOG_REACH = 90;
+const JOG_STILL = 4;
+
+/**
+ * A knob with a spring: dragged up the value grows, down it shrinks; a little
+ * way it goes step by step, further it runs (the whole range in a couple of
+ * seconds at the end of its travel). Let go, it comes back and the value stays.
+ */
+function Jog({ control, value, onValue, onDone }: { control: Range; value: number; onValue(v: number): void; onDone(): void }) {
+  const [pull, setPull] = useState(0);
+  const state = useRef<{ y0: number; pull: number; value: number; raf: number; last: number } | null>(null);
+  const live = useRef({ control, value, onValue });
+  live.current = { control, value, onValue };
+
+  const stop = () => {
+    const st = state.current;
+    if (!st) return;
+    cancelAnimationFrame(st.raf);
+    state.current = null;
+    setPull(0);
+    onDone();
+  };
+  useEffect(() => stop, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tick = (now: number) => {
+    const st = state.current;
+    if (!st) return;
+    const c = live.current.control;
+    const dt = Math.min(0.1, (now - st.last) / 1000);
+    st.last = now;
+    const reach = Math.min(1, Math.max(0, (Math.abs(st.pull) - JOG_STILL) / (JOG_REACH - JOG_STILL)));
+    if (reach > 0) {
+      // From about two steps a second to half the range a second.
+      const slow = c.step * 2;
+      const fast = (c.max - c.min) / 2;
+      const speed = slow + (fast - slow) * reach ** 3;
+      st.value = Math.min(c.max, Math.max(c.min, st.value + Math.sign(st.pull) * speed * dt));
+      const v = fit(c, st.value);
+      if (v !== live.current.value) live.current.onValue(v);
+    }
+    st.raf = requestAnimationFrame(tick);
+  };
+
+  return (
+    <span
+      className={`jog${pull ? " pulled" : ""}`}
+      title="Perilla: arrastrala hacia arriba o abajo; cuanto más lejos, más rápido cambia. Al soltarla vuelve."
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        state.current = { y0: e.clientY, pull: 0, value: live.current.value, raf: requestAnimationFrame(tick), last: performance.now() };
+      }}
+      onPointerMove={(e) => {
+        const st = state.current;
+        if (!st) return;
+        st.pull = Math.max(-JOG_REACH, Math.min(JOG_REACH, st.y0 - e.clientY));
+        setPull(st.pull);
+      }}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+    >
+      <span className="jog-knob" style={{ transform: `translateY(${(-pull / JOG_REACH) * 9}px)` }} />
+    </span>
+  );
+}
+
 function RangeControl({ control, onChange, applyOnRelease }: { control: Range; onChange(v: number): void; applyOnRelease: boolean }) {
   const [value, setValue] = useState(control.value);
   useEffect(() => setValue(control.value), [control.value]);
-  const commit = () => value !== control.value && onChange(value);
+  /** What is being typed, or null while the field shows the value. */
+  const [typed, setTyped] = useState<string | null>(null);
+  const latest = useRef(value);
+  latest.current = value;
+  const commit = () => latest.current !== control.value && onChange(latest.current);
+  const set = (v: number) => {
+    latest.current = v;
+    setValue(v);
+    if (!applyOnRelease) onChange(v);
+  };
+  const enter = () => {
+    const v = typed === null ? null : parseValue(control, typed);
+    setTyped(null);
+    if (v === null) return;
+    const fitted = fit(control, v);
+    latest.current = fitted;
+    setValue(fitted);
+    onChange(fitted);
+  };
+  const shown = control.key === "exposureTime" ? formatValue(control, value).replace(/ s$/, "") : formatValue(control, value);
   return (
-    <label className="control">
-      <span>
-        {control.label} <small title={control.auto ? "La cámara lo elige sola; movelo para fijarlo a mano" : undefined}>{control.auto ? "auto" : formatValue(control, value)}</small>
+    <div className="control ranged">
+      <span className="control-head">
+        <span>{control.label}</span>
+        <input
+          className="control-number"
+          type="text"
+          inputMode="decimal"
+          aria-label={control.label}
+          value={typed ?? (control.auto ? "" : shown)}
+          placeholder={control.auto ? "auto" : undefined}
+          title={control.key === "exposureTime" ? "Escribí el tiempo: 1/50, o solo 50 (segundos: 1/50)" : control.auto ? "La cámara lo elige sola; escribí un valor para fijarlo a mano" : "Escribí el valor y Enter"}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => setTyped(e.target.value)}
+          onBlur={enter}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            else if (e.key === "Escape") {
+              setTyped(null);
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+        />
+        {control.key === "exposureTime" && <small className="control-unit">s</small>}
       </span>
-      <input
-        type="range"
-        min={control.min}
-        max={control.max}
-        step={control.step}
-        value={value}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          setValue(v);
-          if (!applyOnRelease) onChange(v);
-        }}
-        onPointerUp={applyOnRelease ? commit : undefined}
-        onKeyUp={applyOnRelease ? commit : undefined}
-      />
+      <span className="control-row">
+        <input
+          type="range"
+          aria-label={control.label}
+          min={control.min}
+          max={control.max}
+          step={control.step}
+          value={value}
+          onChange={(e) => set(Number(e.target.value))}
+          onPointerUp={applyOnRelease ? commit : undefined}
+          onKeyUp={applyOnRelease ? commit : undefined}
+        />
+        <Jog control={control} value={value} onValue={set} onDone={() => applyOnRelease && commit()} />
+      </span>
       {control.key === "exposureTime" && (
         <span className="action-row" title="Con luz de lámpara, estos tiempos no dejan franjas oscuras en la imagen (corriente de 50 Hz)">
           <small>Sin parpadeo:</small>
@@ -52,8 +178,8 @@ function RangeControl({ control, onChange, applyOnRelease }: { control: Range; o
               key={v}
               type="button"
               className={`btn small${!control.auto && Math.abs(control.value - v) < 1 ? " active" : ""}`}
-              onClick={(e) => {
-                e.preventDefault();
+              onClick={() => {
+                latest.current = v;
                 setValue(v);
                 onChange(v);
               }}
@@ -63,7 +189,7 @@ function RangeControl({ control, onChange, applyOnRelease }: { control: Range; o
           ))}
         </span>
       )}
-    </label>
+    </div>
   );
 }
 
