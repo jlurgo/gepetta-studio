@@ -10,6 +10,13 @@ import type { DslrCamera, DslrErrorCode } from "./types";
  *     ----------------------------------------------------------
  *     Canon EOS 600D                 usb:020,005
  */
+/**
+ * Phones and tablets: gphoto2 lists them as cameras (they speak the same
+ * protocol to copy photos), but they can't be shot from the computer.
+ */
+const PHONE =
+  /^(Motorola|Google|Xiaomi|Huawei|Honor|OnePlus|Oppo|Realme|Vivo|ZTE|Lenovo|Asus|LG|HTC|Nokia|Alcatel|TCL|Amazon|Apple|Acer|BlackBerry|Fairphone|Nothing|Tecno|Infinix)\b|\b(Android|Galaxy|Xperia|iPhone|iPad|iPod|Pixel|Redmi|Moto|Kindle|MTP Device|Phone|Tablet)\b/i;
+
 export function parseAutoDetect(out: string): DslrCamera[] {
   const cameras: DslrCamera[] = [];
   let pastHeader = false;
@@ -23,7 +30,7 @@ export function parseAutoDetect(out: string): DslrCamera[] {
     if (!m) continue;
     const [, model, port] = m as unknown as [string, string, string];
     // Mass-storage mounts cannot be tethered.
-    if (port.startsWith("disk:")) continue;
+    if (port.startsWith("disk:") || PHONE.test(model)) continue;
     cameras.push({ id: port, model });
   }
   return cameras;

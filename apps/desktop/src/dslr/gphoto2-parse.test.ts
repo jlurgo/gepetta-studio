@@ -17,6 +17,19 @@ describe("parseAutoDetect", () => {
     ]);
   });
 
+  it("leaves out phones, which gphoto2 lists as cameras", () => {
+    const out = [
+      "Model                          Port            ",
+      "----------------------------------------------------------",
+      "Motorola Moto Z2 (XT1789)      usb:001,001     ",
+      "Samsung Galaxy models (MTP)    usb:001,004",
+      "Apple iPhone 5 (PTP mode)      usb:001,006",
+      "Sony Alpha-A6000 (Control)     usb:001,008",
+      "Canon EOS 250D                 usb:001,009",
+    ].join("\n");
+    expect(parseAutoDetect(out).map((c) => c.model)).toEqual(["Sony Alpha-A6000 (Control)", "Canon EOS 250D"]);
+  });
+
   it("returns nothing when no camera is connected (real gphoto2 2.5.32 output)", () => {
     const out = "Model                          Port            \n----------------------------------------------------------\n";
     expect(parseAutoDetect(out)).toEqual([]);
