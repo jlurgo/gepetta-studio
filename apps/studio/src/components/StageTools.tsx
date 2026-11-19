@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useRemote } from "../capture/remote";
-import { type Rig, rigColor, useCamera } from "../state/camera";
+import { type Rig, claimedDslrs, rigColor, useCamera } from "../state/camera";
 import { useLayers } from "../state/layers";
 import { type Mic, micColor, micLabel, useMics } from "../state/mics";
 import { type StageTool, usePaint } from "../state/paint";
@@ -31,7 +31,7 @@ export function useFreeCameras(): { id: string; label: string; group: string }[]
   const dslrs = useCamera((s) => s.dslrs);
   const devices = useRemote((s) => s.devices);
   return useMemo(() => {
-    const inUse = new Set(rigs.map((r) => r.source?.id ?? r.deviceId));
+    const inUse = new Set<string | null>([...rigs.map((r) => r.source?.id ?? r.deviceId), ...claimedDslrs(rigs, dslrs)]);
     return [
       ...webcams.map((w) => ({ id: w.id, label: w.label, group: "Webcam" })),
       ...dslrs.map((d) => ({ id: d.id, label: d.label, group: "Cámara réflex" })),

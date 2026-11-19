@@ -159,13 +159,40 @@ function loadPrefs(): Prefs {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
     const listed: unknown[] = Array.isArray(p.devices) ? p.devices : [p.selectedId ?? null];
-    const devices = listed.filter((d): d is string | null => d === null || (typeof d === "string" && !d.startsWith("phone:")));
+    // A device is one camera: a list saved with one twice (it happened with a DSLR that would not open) is mended.
+    const devices = [...new Set(listed)].filter((d): d is string | null => d === null || (typeof d === "string" && !d.startsWith("phone:")));
     // No cameras is a choice too (all were taken off, or only phones were in use): only a first run starts with the webcam.
     const untouched = !Array.isArray(p.devices) && p.selectedId === undefined;
     return { devices: untouched ? [null] : devices, resolutionId: p.resolutionId ?? "1080" };
   } catch {
     return { devices: [null], resolutionId: "1080" };
   }
+}
+
+/**
+ * The DSLRs that already are a camera in the bar. One that is open holds its
+ * port; one that is not (asleep, unplugged, refusing) has a port that may have
+ * changed since, so it holds a found camera nobody else has: found again, it is
+ * that same tool coming back, never a second one.
+ */
+export function claimedDslrs(rigs: Pick<Rig, "deviceId" | "source">[], found: { id: string }[]): Set<string> {
+  const listed = new Set(found.map((d) => d.id));
+  const held = new Set<string>();
+  const adrift: unknown[] = [];
+  for (const r of rigs) {
+    const id = r.source?.id ?? r.deviceId;
+    if (!id?.startsWith("dslr:")) continue;
+    if (r.source || listed.has(id)) held.add(id);
+    else adrift.push(r);
+  }
+  for (const d of found) {
+    if (adrift.length === 0) break;
+    if (!held.has(d.id)) {
+      held.add(d.id);
+      adrift.pop();
+    }
+  }
+  return held;
 }
 
 function savePrefs(rigs: Rig[], resolutionId: string) {
@@ -290,7 +317,7 @@ export const useCamera = create<CameraState>((set, get) => {
     const ref = rest.join(":");
     if (kind === "phone") return openPhone(ref);
     if (kind === "dslr") {
-      const port = await resolveDslrPort(ref);
+      const port = await resolveDslrPort(rigId, ref);
       const mine = () => rig(rigId)?.source?.id === `dslr:${port}`;
       return openDslr(
         port,
@@ -322,6 +349,11 @@ export const useCamera = create<CameraState>((set, get) => {
     try {
       const source = await openDevice(rigId, rig(rigId)?.deviceId ?? null);
       if (generations.get(rigId) !== gen || !rig(rigId)) return source.close();
+      // Two tools that found the same camera at once (both were looking for it): one is enough.
+      if (get().rigs.some((r) => r.id !== rigId && r.source?.id === source.id)) {
+        source.close();
+        return get().removeCamera(rigId);
+      }
       attach(rigId, source);
       const shot = loadShots()[shotKey(source)];
       if (shot) patch(rigId, { shot: { ...PLAIN_SHOT, ...shot } });
@@ -346,12 +378,15 @@ export const useCamera = create<CameraState>((set, get) => {
    * USB ports change when a camera is replugged or wakes up, so a remembered
    * "dslr:<port>" that is gone falls back to the camera of the same model (or any).
    */
-  async function resolveDslrPort(port: string): Promise<string> {
+  async function resolveDslrPort(rigId: string, port: string): Promise<string> {
     const dslrs = await listDslrs().catch(() => []);
     set({ dslrs });
-    if (dslrs.some((d) => d.id === `dslr:${port}`)) return port;
+    // A camera another tool has open is not this one.
+    const taken = new Set(get().rigs.filter((r) => r.id !== rigId).map((r) => r.source?.id));
+    const free = dslrs.filter((d) => !taken.has(d.id));
+    if (free.some((d) => d.id === `dslr:${port}`)) return port;
     const model = localStorage.getItem(MODEL_KEY);
-    const match = dslrs.find((d) => d.label === model) ?? dslrs[0];
+    const match = free.find((d) => d.label === model) ?? free[0];
     if (!match) throw new Error("No encuentro la cámara réflex. Revisá que esté prendida y enchufada.");
     return match.id.slice("dslr:".length);
   }
@@ -553,6 +588,21 @@ export const useCamera = create<CameraState>((set, get) => {
     },
 
     async addCamera(deviceId) {
+      const rigs = get().rigs;
+      const same = rigs.find((r) => (r.source?.id ?? r.deviceId) === deviceId);
+      if (same) return get().activate(same.id);
+      if (deviceId.startsWith("dslr:")) {
+        // A DSLR tool that lost its camera takes the one found (its port changes when replugged): no second tool for it.
+        const listed = new Set(get().dslrs.map((d) => d.id));
+        const adrift = rigs.find((r) => !r.source && r.deviceId?.startsWith("dslr:") && !listed.has(r.deviceId));
+        if (adrift) {
+          patch(adrift.id, { deviceId });
+          savePrefs(get().rigs, get().resolutionId);
+          get().activate(adrift.id);
+          if (!adrift.opening) await open(adrift.id);
+          return;
+        }
+      }
       const r = newRig(deviceId, useEditor.getState().cursor);
       set({ rigs: [...get().rigs, r] });
       // A new camera asks where its photos go.
