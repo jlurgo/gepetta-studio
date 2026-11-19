@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MSG_BUSY, MSG_BUSY_WINDOWS, classifyGphotoError, parseAutoDetect, parseConfigList, rawMimeOf, toCameraControls } from "./gphoto2-parse";
+import { MSG_BUSY, MSG_BUSY_WINDOWS, classifyCommandError, classifyGphotoError, parseAutoDetect, parseConfigList, rawMimeOf, toCameraControls } from "./gphoto2-parse";
 
 describe("parseAutoDetect", () => {
   it("parses models with spaces and skips the header", () => {
@@ -344,6 +344,25 @@ For debugging messages, please use the --debug option.`;
     const r = classifyGphotoError("*** Error (-2: 'Bad parameters') ***");
     expect(r.code).toBe("failed");
     expect(r.message).toMatch(/^La cámara no pudo hacerlo \(Error \(-2: 'Bad parameters'\)\)\.$/);
+  });
+});
+
+describe("classifyCommandError", () => {
+  const out = "*** Error ***\nPTP General Error\n*** Error (-1: 'Unspecified error') ***";
+
+  it("says what was asked when nobody knows the error, with gphoto2's words", () => {
+    expect(classifyCommandError("capture-preview", out)).toEqual({
+      code: "failed",
+      message: "La cámara no dio la vista en vivo (PTP General Error). Apagala y prendela, o desenchufá el cable USB y volvé a enchufarlo.",
+    });
+    expect(classifyCommandError("capture-image-and-download", out).message).toBe("La cámara no sacó la foto (PTP General Error).");
+    expect(classifyCommandError("set-config-value iso=400", out).message).toBe("La cámara no aceptó el cambio (PTP General Error).");
+  });
+
+  it("keeps the known errors", () => {
+    expect(classifyCommandError("capture-preview", "*** Error (-110: 'I/O in progress') ***").message).toMatch(/ocupada/);
+    expect(classifyCommandError("capture-preview", "*** Error (-7: 'I/O problem') ***", true).code).toBe("disconnected");
+    expect(classifyCommandError("capture-preview", "*** Error (-53: 'Could not claim the USB device') ***").code).toBe("busy");
   });
 });
 

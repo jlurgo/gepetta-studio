@@ -9,6 +9,7 @@ import {
   READ_NAMES,
   SETTABLE_NAMES,
   ZOOM_STEPS,
+  classifyCommandError,
   classifyGphotoError,
   parseAutoDetect,
   parseConfigList,
@@ -228,8 +229,8 @@ export class Gphoto2Shell {
     const raw = (await done).replace(PROMPT, "");
     const text = raw.startsWith(line) ? raw.slice(line.length).replace(/^\r?\n/, "") : raw;
     if (/\*\*\* Error/.test(text)) {
-      const { code, message } = classifyGphotoError(text, this.worked);
-      throw new DslrError(code === "failed" ? "La cámara no aceptó el cambio." : message, code, text);
+      const { code, message } = classifyCommandError(line, text, this.worked);
+      throw new DslrError(message, code, text);
     }
     this.worked = true;
     return text;
@@ -387,6 +388,21 @@ export function createGphoto2Driver(): DslrDriver {
     const shell = s.shell;
     s.shell = null;
     shell?.kill();
+  }
+
+  /**
+   * What unplugging the camera and plugging it back does, without the hands:
+   * ends a gphoto2 left behind by an app that was closed badly (Windows keeps
+   * them alive, holding the camera) and resets the camera's USB connection.
+   * Best effort: whatever fails, the next try tells.
+   */
+  async function resetUsb(id: string) {
+    const others = [...sessions.values()].some((o) => o.id !== id && o.shell?.alive);
+    if (IS_WINDOWS && !others) {
+      await new Promise<void>((resolve) => execFile("taskkill", ["/F", "/IM", "gphoto2.exe"], { windowsHide: true, timeout: 5000 }, () => resolve()));
+    }
+    await runOnce(["--port", id, "--reset"], TIMEOUT.detect).catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 2000));
   }
 
   /** Drops one open() lease; the last one stops live view and ends the shell. */
@@ -662,7 +678,19 @@ export function createGphoto2Driver(): DslrDriver {
       s.wantLive = true;
       try {
         await bin();
-        await preview(s); // first frame, so errors reach the caller
+        try {
+          await preview(s); // first frame, so errors reach the caller
+        } catch (err) {
+          if (!(err instanceof DslrError) || err.code !== "failed" || !s.wantLive) throw err;
+          // The camera is there but refuses: most often a session left half open. Start it over and try once more.
+          console.warn("[gepetta] camera: first frame failed, resetting", err.message, err.detail ?? "");
+          await s.queue;
+          const stuck = s.shell;
+          s.shell = null;
+          await stuck?.close();
+          await resetUsb(s.id);
+          await preview(s);
+        }
       } catch (err) {
         await release(s);
         throw err;

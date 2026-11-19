@@ -317,6 +317,37 @@ export function classifyGphotoError(
   platform: string = process.platform,
 ): { code: DslrErrorCode; message: string } {
   const text = stderr.replace(/\*{3,}/g, " ");
+  const known = knownError(text, wasWorking, platform);
+  if (known) return known;
+  const detail = firstErrorLine(text);
+  return { code: "failed", message: detail ? `La cámara no pudo hacerlo (${detail}).` : "La cámara no pudo hacerlo." };
+}
+
+/**
+ * The error of one command sent to a camera that is open. An error nobody
+ * recognises says what was being asked (the first live-view frame failing is
+ * not "a change the camera refused") and keeps gphoto2's own words, the only
+ * clue there is when it happens far from a developer.
+ */
+export function classifyCommandError(
+  line: string,
+  output: string,
+  wasWorking = false,
+  platform: string = process.platform,
+): { code: DslrErrorCode; message: string } {
+  const text = output.replace(/\*{3,}/g, " ");
+  const known = knownError(text, wasWorking, platform);
+  if (known) return known;
+  const detail = firstErrorLine(text);
+  const said = detail ? ` (${detail})` : "";
+  if (line.startsWith("capture-preview")) {
+    return { code: "failed", message: `La cámara no dio la vista en vivo${said}. Apagala y prendela, o desenchufá el cable USB y volvé a enchufarlo.` };
+  }
+  if (line.startsWith("capture-image")) return { code: "failed", message: `La cámara no sacó la foto${said}.` };
+  return { code: "failed", message: `La cámara no aceptó el cambio${said}.` };
+}
+
+function knownError(text: string, wasWorking: boolean, platform: string): { code: DslrErrorCode; message: string } | null {
   if (/Could not claim the USB device|\(-53\b/i.test(text)) {
     return { code: "busy", message: platform === "win32" ? MSG_BUSY_WINDOWS : MSG_BUSY };
   }
@@ -332,15 +363,15 @@ export function classifyGphotoError(
   if (/no focus|out of focus|could not focus/i.test(text)) {
     return { code: "failed", message: "La cámara no pudo enfocar. Probá con más luz o enfocá a mano." };
   }
-  const detail = firstErrorLine(text);
-  return { code: "failed", message: detail ? `La cámara no pudo hacerlo (${detail}).` : "La cámara no pudo hacerlo." };
+  return null;
 }
 
 function firstErrorLine(text: string): string {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => l && !/^For debugging messages/i.test(l));
+    // A bare "*** Error ***" only announces the lines that say what happened.
+    .filter((l) => l && !/^For debugging messages/i.test(l) && !/^Error$/i.test(l));
   const err = lines.find((l) => /error|could not|failed|unable/i.test(l)) ?? "";
   return err.replace(/^\*+\s*|\s*\*+$/g, "").slice(0, 160);
 }
